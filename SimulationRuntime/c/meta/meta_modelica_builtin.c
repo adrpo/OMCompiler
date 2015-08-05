@@ -389,7 +389,7 @@ modelica_metatype boxptr_stringUpdateStringChar(threadData_t *threadData,metamod
   return res;
 }
 
-metamodelica_string_const stringAppend(metamodelica_string_const s1, metamodelica_string_const s2)
+metamodelica_string stringAppend(metamodelica_string_const s1, metamodelica_string_const s2)
 {
   unsigned len1 = 0, len2 = 0, nbytes = 0, header = 0, nwords = 0;
   void *res = NULL;
