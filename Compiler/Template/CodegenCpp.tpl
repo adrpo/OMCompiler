@@ -4725,8 +4725,7 @@ case efn as EXTERNAL_FUNCTION(extArgs=extArgs) then
 
   let &inputAssign = buffer "" /*BUFD*/
   let &outputAssign = buffer "" /*BUFD*/
-  // make sure the variable is named "out", doh!
-   let retVar = if outVars then '_<%fname%>'
+  let retVar = if outVars then match outVars case {var} then funArgName(var) else '_<%fname%>'
   let &outVarInits = buffer ""
   let callPart =  match outVars   case {var} then
                     extFunCall(fn, &preExp, &varDeclsExtFunCall, &inputAssign, &outputAssign, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation, false)
@@ -4750,8 +4749,6 @@ case efn as EXTERNAL_FUNCTION(extArgs=extArgs) then
     )
    end match
 
-
-
    let &varDecls1 = buffer ""
    let &outVarInits1 = buffer ""
    let &outVarCopy1 = buffer ""
@@ -4769,9 +4766,6 @@ case efn as EXTERNAL_FUNCTION(extArgs=extArgs) then
     let functionBodyExternalFunctionreturn = match outVarAssign1
    case "" then << <%if retVar then 'output = <%retVar%>;' else '/*no output*/' %> >>
    else outVarAssign1
-
-
-
 
   let fnBody = <<
   void /*<%retType%>*/ Functions::<%fname%>(<%funArgs |> var => funArgDefinition(var,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%><%if funArgs then if outVars then "," else ""%> <%if retVar then '<%retType%>& output' %>)/*function2*/
@@ -4792,9 +4786,9 @@ case efn as EXTERNAL_FUNCTION(extArgs=extArgs) then
     <%outVarInits%>
     /* functionBodyExternalFunction: callPart */
     <%callPart%>
-
-    <%outVarAssign%>
-
+    <%outputAssign%>
+    /* functionBodyExternalFunction: return */
+    <%functionBodyExternalFunctionreturn%>
   }
   >>
   <<
@@ -5075,7 +5069,9 @@ template extArg(SimExtArg extArg, Text &preExp, Text &varDecls, Text &inputAssig
     else
       '<%cr%><%match t case T_STRING(__) then ".c_str()" else "_ext"%>'
   case SIMEXTARG(cref=c, isInput=ii, outputIndex=oi, type_=t) then
-    '&<%extVarName2(c)%>'
+    let extName = extVarName2(c)
+    let &outputAssign += '<%contextCref2(c,contextFunction)%> = <%extName%>;<%\n%>'
+    '&<%extName%>'
   case SIMEXTARGEXP(__) then
     daeExternalCExp(exp, contextFunction, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
   case SIMEXTARGSIZE(cref=c) then
