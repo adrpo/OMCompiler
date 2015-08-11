@@ -438,7 +438,8 @@ case SIMCODE(modelInfo=MODELINFO(vars = vars as SIMVARS(__))) then
     virtual const sparsematrix_t& getSparseJacobian(unsigned int index);
 
 
-    virtual void getStateSetJacobian(unsigned int index,matrix_t& matrix);
+    virtual  const matrix_t& getStateSetJacobian(unsigned int index);
+    virtual  const sparsematrix_t& getStateSetSparseJacobian(unsigned int index);
     /// Called to handle all events occured at same time
     virtual bool handleSystemEvents(bool* events);
     //Saves all variables before an event is handled, is needed for the pre, edge and change operator
@@ -1051,6 +1052,42 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
           else "A matrix type is not supported"
           end match
 
+     let statesetjacobian =
+     (stateSets |> set hasindex i1 fromindex 0 => (match set
+       case set as SES_STATESET(__) then
+       match jacobianMatrix case (_,_,name,_,_,_,_) then
+       match type
+       case ("dense") then
+       <<
+       case <%i1%>:
+         return get<%name%>Jacobian();
+         break;
+       >>
+       case ("sparse") then
+       'throw ModelicaSimulationError(MATH_FUNCTION,"Dense matrix is not activated");'
+       else "A matrix type is not supported"
+       )
+       ;separator="\n")
+
+
+ let statesetsparsejacobian =
+     (stateSets |> set hasindex i1 fromindex 0 => (match set
+       case set as SES_STATESET(__) then
+       match jacobianMatrix case (_,_,name,_,_,_,_) then
+       match type
+       case ("dense") then
+       'throw ModelicaSimulationError(MATH_FUNCTION,"Sparse matrix is not activated");'
+       case ("sparse") then
+       <<
+       case <%i1%>:
+         return get<%name%>Jacobian();
+         break;
+       >>
+
+       else "A matrix type is not supported"
+       )
+       ;separator="\n")
+
    <<
    <%classname%>Extension::<%classname%>Extension(IGlobalSettings* globalSettings, boost::shared_ptr<IAlgLoopSolverFactory> nonlinsolverfactory, boost::shared_ptr<ISimData> sim_data, boost::shared_ptr<ISimVars> sim_vars)
        : <%classname%>(globalSettings, nonlinsolverfactory, sim_data,sim_vars)
@@ -1120,26 +1157,24 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
 
 
 
-   void <%classname%>Extension::getStateSetJacobian(unsigned int index,matrix_t& matrix)
+   const matrix_t& <%classname%>Extension::getStateSetJacobian(unsigned int index)
    {
      switch (index)
      {
-       <%(stateSets |> set hasindex i1 fromindex 0 => (match set
-       case set as SES_STATESET(__) then
-       match jacobianMatrix case (_,_,name,_,_,_,_) then
-       <<
-       case <%i1%>:
-         get<%name%>Jacobian(matrix);
-         break;
-       >>
-       )
-       ;separator="\n")
-       %>
+       <%statesetjacobian%>
        default:
           throw ModelicaSimulationError(MATH_FUNCTION,"Not supported statset index");
       }
    }
-
+   const sparsematrix_t& <%classname%>Extension::getStateSetSparseJacobian(unsigned int index)
+   {
+     switch (index)
+     {
+       <%statesetsparsejacobian%>
+       default:
+          throw ModelicaSimulationError(MATH_FUNCTION,"Not supported statset index");
+      }
+   }
    bool <%classname%>Extension::handleSystemEvents(bool* events)
    {
      return <%classname%>::handleSystemEvents(events);
@@ -1631,7 +1666,7 @@ template simulationMainRunScript(SimCode simCode ,Text& extraFuncs,Text& extraFu
     let solver    = settings.method
     let moLib     =  makefileParams.compileDir
     let home      = makefileParams.omhome
-    let execParameters = '-s <%start%> -e <%end%> -f <%stepsize%> -v <%intervals%> -y <%tol%> -i <%solver%> -r <%simulationLibDir(simulationCodeTarget(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%> -m <%moLib%> -R <%simulationResults(getRunningTestsuite(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>'
+    let execParameters = '-S <%start%> -E <%end%> -H <%stepsize%> -G <%intervals%> -T <%tol%> -I <%solver%> -R <%simulationLibDir(simulationCodeTarget(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%> -M <%moLib%> -r <%simulationResults(getRunningTestsuite(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>'
     let outputParameter = if (stringEq(settings.outputFormat, "empty")) then "-O none" else ""
     let fileNamePrefixx = fileNamePrefix
 
@@ -2253,15 +2288,15 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   {
       // default program options
       std::map<std::string, std::string> opts;
-      opts["-s"] = "<%start%>";
-      opts["-e"] = "<%end%>";
-      opts["-f"] = "<%stepsize%>";
-      opts["-v"] = "<%intervals%>";
-      opts["-y"] = "<%tol%>";
-      opts["-i"] = "<%solver%>";
-      opts["-r"] = "<%simulationLibDir(simulationCodeTarget(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>";
-      opts["-m"] = "<%moLib%>";
-      opts["-R"] = "<%simulationResults(getRunningTestsuite(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>";
+      opts["-S"] = "<%start%>";
+      opts["-E"] = "<%end%>";
+      opts["-H"] = "<%stepsize%>";
+      opts["-G"] = "<%intervals%>";
+      opts["-T"] = "<%tol%>";
+      opts["-I"] = "<%solver%>";
+      opts["-R"] = "<%simulationLibDir(simulationCodeTarget(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>";
+      opts["-M"] = "<%moLib%>";
+      opts["-r"] = "<%simulationResults(getRunningTestsuite(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>";
       <%if (stringEq(settings.outputFormat, "empty")) then 'opts["-O"] = "none";' else ""%>
       <%
       match(getConfigString(PROFILING_LEVEL))
@@ -2678,6 +2713,7 @@ template calcHelperMainfile(SimCode simCode ,Text& extraFuncs,Text& extraFuncsDe
     #include <Core/System/DiscreteEvents.h>
     #include <Core/System/EventHandling.h>
     #include <Core/Utils/Modelica/ModelicaUtilities.h>
+    #include <Core/Utils/extension/logger.hpp>
 
     #include "OMCpp<%fileNamePrefix%>Types.h"
     #include "OMCpp<%fileNamePrefix%>.h"
@@ -6038,8 +6074,8 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
             <<
             if(IMixedSystem* jacobian_system = dynamic_cast<IMixedSystem*>( _system))
             {
-                return jacobian_system->getJacobian(<%index%>);
-                // cout << "A Matrix for system " << <%index%> << A_matrix << std::endl;
+                return jacobian_system->getSparseJacobian(<%index%>);
+
             }
             >>
           else "A matrix type is not supported"

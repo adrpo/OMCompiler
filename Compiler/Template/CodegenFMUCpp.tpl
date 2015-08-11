@@ -102,6 +102,7 @@ template fmuCalcHelperMainfile(SimCode simCode)
     #include <Core/System/SimVars.h>
     #include <Core/System/DiscreteEvents.h>
     #include <Core/System/EventHandling.h>
+    #include <Core/Utils/extension/logger.hpp>
 
     #include "OMCpp<%fileNamePrefix%>Types.h"
     #include "OMCpp<%fileNamePrefix%>.h"
@@ -269,6 +270,7 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
 
   // initialization
   void <%modelShortName%>FMU::initialize() {
+    Logger::write("Initializing memory and variables",LC_MOD,LL_DEBUG);
     <%modelShortName%>WriteOutput::initialize();
     <%modelShortName%>Initialize::initializeMemory();
     <%modelShortName%>Initialize::initializeFreeVariables();
@@ -759,16 +761,20 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   <%\t%>rm -rf binaries
   <%\t%><%mkdir%> -p "binaries/$(PLATFORM)"
   <%\t%>cp <%fileNamePrefix%>$(DLLEXT) "binaries/$(PLATFORM)/"
-  <%\t%>rm -f <%modelName%>.fmu
-  <%\t%>zip -r "<%modelName%>.fmu" modelDescription.xml binaries
-  <%\t%>rm -rf binaries
   ifeq ($(USE_FMU_KINSOL),ON)
   <%\t%>rm -rf documentation
   <%\t%><%mkdir%> -p "documentation"
   <%\t%>cp $(SUNDIALS_LIBRARIES_KINSOL) "binaries/$(PLATFORM)/"
   <%\t%>cp $(OMHOME)/share/omc/runtime/cpp/licenses/sundials.license "documentation/"
-  <%\t%>rm -rf documentation
   endif
+  <%\t%>rm -f <%modelName%>.fmu
+  ifeq ($(USE_FMU_KINSOL),ON)
+  <%\t%>zip -r "<%modelName%>.fmu" modelDescription.xml binaries documentation
+  <%\t%>rm -rf documentation
+  else
+  <%\t%>zip -r "<%modelName%>.fmu" modelDescription.xml binaries
+  endif
+  <%\t%>rm -rf binaries
 
   clean:
   <%\t%>rm $(SRC) <%fileNamePrefix%>$(DLLEXT)
