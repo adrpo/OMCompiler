@@ -992,7 +992,7 @@ template populateModelInfo(ModelInfo modelInfo, String fileNamePrefix, String gu
     data->modelData.initXMLData = NULL;
     data->modelData.modelDataXml.infoXMLData = NULL;
     #else
-  {
+    {
     #if defined(_MSC_VER) /* handle joke compilers */
     /* for MSVC we encode a string like char x[] = {'a', 'b', 'c', '\0'} */
     /* because the string constant limit is 65535 bytes */
@@ -1015,7 +1015,7 @@ template populateModelInfo(ModelInfo modelInfo, String fileNamePrefix, String gu
       ;
 
     #endif
-  }
+    }
     #endif
 
     data->modelData.nStates = <%varInfo.numStateVars%>;
@@ -4142,8 +4142,8 @@ case _ then
         TRACE_PUSH
         DATA* data = ((DATA*)inData);
         int index = <%symbolName(modelNamePrefix,"INDEX_JAC_")%><%matrixname%>;
-    const int tmp[<%sizeleadindex%>] = {<%leadindex%>};
-    const int tmpElem[<%sp_size_index%>] = {<%indexElems%>};
+        const int tmp[<%sizeleadindex%>] = {<%leadindex%>};
+        const int tmpElem[<%sp_size_index%>] = {<%indexElems%>};
         int i = 0;
 
         data->simulationInfo.analyticJacobians[index].sizeCols = <%index_%>;
