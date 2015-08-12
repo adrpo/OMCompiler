@@ -1195,7 +1195,7 @@ package System
   function covertTextFileToCLiteral
     input String textFile;
     input String outFile;
-	input String target;
+    input String target;
     output Boolean success;
   end covertTextFileToCLiteral;
 
@@ -1829,6 +1829,23 @@ package DAE
       Binding binding;
     end TYPES_VAR;
   end Var;
+
+  uniontype Binding
+    record UNBOUND end UNBOUND;
+
+    record EQBOUND
+      Exp exp;
+      Option<Values.Value> evaluatedExp;
+      Const constant_;
+      BindingSource source;
+    end EQBOUND;
+
+    record VALBOUND
+      Values.Value valBound;
+      BindingSource source;
+    end VALBOUND;
+  end Binding;
+
 
   type TypeSource = list<Absyn.Path> "the class(es) where the type originated";
 

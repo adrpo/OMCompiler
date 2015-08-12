@@ -131,6 +131,10 @@ ifeq (MINGW32,$(findstring MINGW32,$(shell uname)))
 	(cp -puf $(OMDEV)/tools/msys/mingw32/bin/libexpat-1.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/lib/omniORB-4.2.0-mingw32/bin/x86_win32/omniORB420_rt.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/lib/omniORB-4.2.0-mingw32/bin/x86_win32/omnithread40_rt.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/lib/3rdParty/Sundials/lib/release/mingw/libsundials_kinsol.a $(builddir_lib)/omc/)
+	(cp -puf $(OMDEV)/lib/3rdParty/Sundials/lib/release/mingw/libsundials_nvecserial.a $(builddir_lib)/omc/)
+	(cp -puf $(OMDEV)/lib/lis/liblis.la $(builddir_lib)/omc/)
+	(cp -puf $(OMDEV)/lib/lis/liblis.a $(builddir_lib)/omc/)
 else # mingw64
 	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libgomp-1.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libwinpthread-1.dll $(builddir_bin)/)
@@ -144,9 +148,13 @@ else # mingw64
 	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libintl-8.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libiconv-2.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libgfortran-3.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/msys/msys/mingw64/bin/libexpat-1.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libexpat-1.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/lib/omniORB-4.2.0-mingw64/bin/x86_win32/omniORB420_rt.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/lib/omniORB-4.2.0-mingw64/bin/x86_win32/omnithread40_rt.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/lib/3rdParty/Sundials64/lib/release/mingw/libsundials_kinsol.a $(builddir_lib)/omc/)
+	(cp -puf $(OMDEV)/lib/3rdParty/Sundials64/lib/release/mingw/libsundials_nvecserial.a $(builddir_lib)/omc/)
+	(cp -puf $(OMDEV)/lib/lis64/liblis.la $(builddir_lib)/omc/)
+	(cp -puf $(OMDEV)/lib/lis64/liblis.a $(builddir_lib)/omc/)
 endif
 	(cp -pf $(OMDEV)/lib/expat-win32-msvc/libexpat.dll $(builddir_bin)/)
 	(cp -pf $(OMDEV)/lib/lapack-win32-msvc/blas_win32_MT.dll $(builddir_bin)/)
@@ -154,10 +162,6 @@ endif
 	mkdir -p $(builddir_lib)/omc/libexec/
 	(cp -pufr $(OMDEV)/tools/xsltproc $(builddir_lib)/omc/libexec/)
 	(cp -pufr $(OMDEV)/tools/gnuplot $(builddir_lib)/omc/libexec/)
-	(cp -puf $(OMDEV)/lib/3rdParty/Sundials/lib/release/mingw/libsundials_kinsol.a $(builddir_lib)/omc/)
-	(cp -puf $(OMDEV)/lib/3rdParty/Sundials/lib/release/mingw/libsundials_nvecserial.a $(builddir_lib)/omc/)
-	(cp -puf $(OMDEV)/lib/lis/liblis.la $(builddir_lib)/omc/)
-	(cp -puf $(OMDEV)/lib/lis/liblis.a $(builddir_lib)/omc/)
 
 copycppheader:
 	echo Copying needed header files to the $(OMBUILDDIR)/include/omc/cpp directory
