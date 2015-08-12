@@ -2010,27 +2010,25 @@ match v
 case TYPES_VAR(__) then
    let vn = '<%varName%>._<%name%>'
    let defaultArrayValue =
-	    match ty
+       match ty
          case ty as T_ARRAY(__) then
-          let arrayType = expType(ty, true)
-          let dims = (ty.dims |> dim => dimension(dim) ;separator=", ")
-	      'alloc_<%arrayType%>(&<%vn%>, <%listLength(ty.dims)%>, <%dims%>);'
-		 else
-		  ''
-		end match
-  let &varInits += '/* recordMemberInit varInits */<%\n%>'
-  let &varDecls += '/* recordMemberInit varDecls */<%\n%>'
-  let defaultValue =
-    match binding
-	  case VALBOUND(valBound = val) then
-	    '<%vn%> = <%daeExp(valueExp(val), contextFunction, &varInits, &varDecls, &auxFunction)%>;'
-	  case EQBOUND(evaluatedExp = SOME(val)) then
-	    '<%vn%> = <%daeExp(valueExp(val), contextFunction, &varInits, &varDecls, &auxFunction)%>;'
-	  case EQBOUND(exp = exp) then
-	    '<%vn%> = <%daeExp(exp, contextFunction, &varInits, &varDecls, &auxFunction)%>;'
-      else
-        '<%defaultArrayValue%>'
-    end match
+           let arrayType = expType(ty, true)
+           let dims = (ty.dims |> dim => dimension(dim) ;separator=", ")
+           'alloc_<%arrayType%>(&<%vn%>, <%listLength(ty.dims)%>, <%dims%>);'
+         else
+           ''
+       end match
+   let defaultValue =
+     match binding
+       case VALBOUND(valBound = val) then
+         '<%vn%> = <%daeExp(valueExp(val), contextFunction, &varInits, &varDecls, &auxFunction)%>;'
+       case EQBOUND(evaluatedExp = SOME(val)) then
+         '<%vn%> = <%daeExp(valueExp(val), contextFunction, &varInits, &varDecls, &auxFunction)%>;'
+       case EQBOUND(exp = exp) then
+         '<%vn%> = <%daeExp(exp, contextFunction, &varInits, &varDecls, &auxFunction)%>;'
+       else
+         '<%defaultArrayValue%>'
+       end match
   <<
   <%defaultValue%>
   >>
@@ -4094,6 +4092,7 @@ template tempDeclZero(String ty, Text &varDecls)
         let &varDecls += '<%ty%> <%newVarIx%> = 0;<%\n%>'
         newVarIx
   newVar
+
 end tempDeclZero;
 
 template tempDeclMatchInput(String ty, String prefix, String startIndex, String index, Text &varDecls)
