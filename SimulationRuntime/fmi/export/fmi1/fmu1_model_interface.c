@@ -144,7 +144,7 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
   comp = (ModelInstance *)functions.allocateMemory(1, sizeof(ModelInstance));
   if (comp) {
     DATA* fmudata = NULL;
-	threadData_t *threadData = NULL;
+    threadData_t *threadData = NULL;
     comp->instanceName = (fmiString)functions.allocateMemory(1 + strlen(instanceName), sizeof(char));
     comp->GUID = (fmiString)functions.allocateMemory(1 + strlen(GUID), sizeof(char));
     /* Cannot use functions.allocateMemory since the pointer might not be stored on the stack of the parent */
@@ -157,8 +157,9 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
     pthread_setspecific(fmu1_thread_data_key, threadData);
     */
 
-    fmudata->threadData = threadData;
+    comp->threadData = threadData;
     comp->fmuData = fmudata;
+
     if (!comp->fmuData) {
       functions.logger(NULL, instanceName, fmiError, "error",
           "fmiInstantiateModel: Error: Could not initialize the global data structure file.");
@@ -175,7 +176,7 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
   fmu1_model_interface_setupDataStruc(comp->fmuData);
   useStream[LOG_STDOUT] = 1;
   useStream[LOG_ASSERT] = 1;
-  initializeDataStruc(comp->fmuData);
+  initializeDataStruc(comp->fmuData, comp->threadData);
   /* setup model data with default start data */
   setDefaultStartValues(comp);
   setAllVarsToStart(comp->fmuData);
@@ -192,15 +193,15 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
   /* read input vars */
   //input_function(comp->fmuData);
   /* initial sample and delay before initial the system */
-  comp->fmuData->callback->callExternalObjectConstructors(comp->fmuData);
+  comp->fmuData->callback->callExternalObjectConstructors(comp->fmuData, comp->threadData);
   /* allocate memory for non-linear system solvers */
-  initializeNonlinearSystems(comp->fmuData);
+  initializeNonlinearSystems(comp->fmuData, comp->threadData);
   /* allocate memory for non-linear system solvers */
-  initializeLinearSystems(comp->fmuData);
+  initializeLinearSystems(comp->fmuData, comp->threadData);
   /* allocate memory for mixed system solvers */
-  initializeMixedSystems(comp->fmuData);
+  initializeMixedSystems(comp->fmuData, comp->threadData);
   /* allocate memory for state selection */
-  initializeStateSetJacobians(comp->fmuData);
+  initializeStateSetJacobians(comp->fmuData, comp->threadData);
 
   return comp;
 }
@@ -330,14 +331,14 @@ fmiStatus fmiSetString(fmiComponent c, const fmiValueReference vr[], size_t nvr,
   return fmiOK;
 }
 
-fmiStatus fmiSetTime(fmiComponent c, fmiReal time)
+fmiStatus fmiSetTime(fmiComponent c, fmiReal t)
 {
   ModelInstance* comp = (ModelInstance *)c;
   if (invalidState(comp, "fmiSetTime", modelInstantiated|modelInitialized))
     return fmiError;
   if (comp->loggingOn) comp->functions.logger(c, comp->instanceName, fmiOK, "log",
-      "fmiSetTime: time=%.16g", time);
-  comp->fmuData->localData[0]->timeValue = time;
+      "fmiSetTime: time=%.16g", t);
+  comp->fmuData->localData[0]->timeValue = t;
   return fmiOK;
 }
 
@@ -527,7 +528,7 @@ fmiStatus fmiGetDerivatives(fmiComponent c, fmiReal derivatives[], size_t nx)
 {
   unsigned int i=0;
   ModelInstance* comp = (ModelInstance *)c;
-  threadData_t *threadData = comp->fmuData->threadData;
+  threadData_t *threadData = comp->threadData;
   if (invalidState(comp, "fmiGetDerivatives", not_modelError))
     return fmiError;
   if (invalidNumber(comp, "fmiGetDerivatives", "nx", nx, NUMBER_OF_STATES))
@@ -538,7 +539,7 @@ fmiStatus fmiGetDerivatives(fmiComponent c, fmiReal derivatives[], size_t nx)
   /* try */
   MMC_TRY_INTERNAL(simulationJumpBuffer)
 
-    comp->fmuData->callback->functionODE(comp->fmuData);
+    comp->fmuData->callback->functionODE(comp->fmuData, comp->threadData);
   #if (NUMBER_OF_STATES>0)
     for (i=0; i<nx; i++) {
       fmiValueReference vr = vrStatesDerivatives[i];
@@ -560,7 +561,7 @@ fmiStatus fmiGetEventIndicators(fmiComponent c, fmiReal eventIndicators[], size_
 {
   unsigned int i=0;
   ModelInstance* comp = (ModelInstance *)c;
-  threadData_t *threadData = comp->fmuData->threadData;
+  threadData_t *threadData = comp->threadData;
 
   if (invalidState(comp, "fmiGetEventIndicators", not_modelError))
     return fmiError;
@@ -572,8 +573,8 @@ fmiStatus fmiGetEventIndicators(fmiComponent c, fmiReal eventIndicators[], size_
 
 #if NUMBER_OF_EVENT_INDICATORS>0
     /* eval needed equations*/
-    comp->fmuData->callback->function_ZeroCrossingsEquations(comp->fmuData);
-    comp->fmuData->callback->function_ZeroCrossings(comp->fmuData,comp->fmuData->simulationInfo.zeroCrossings);
+    comp->fmuData->callback->function_ZeroCrossingsEquations(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->function_ZeroCrossings(comp->fmuData, comp->threadData, comp->fmuData->simulationInfo.zeroCrossings);
     for (i=0; i<ni; i++) {
       /* retVal = getEventIndicator(comp, i, eventIndicators[i]); // to be implemented by the includer of this file
        * getEventIndicator(comp, eventIndicators); // to be implemented by the includer of this file */
@@ -601,7 +602,7 @@ fmiStatus fmiInitialize(fmiComponent c, fmiBoolean toleranceControlled, fmiReal 
 {
   double nextSampleEvent=0;
   ModelInstance* comp = (ModelInstance *)c;
-  threadData_t *threadData = comp->fmuData->threadData;
+  threadData_t *threadData = comp->threadData;
   threadData->currentErrorStage = ERROR_SIMULATION;
 
   if (invalidState(comp, "fmiInitialize", modelInstantiated))
@@ -621,7 +622,7 @@ fmiStatus fmiInitialize(fmiComponent c, fmiBoolean toleranceControlled, fmiReal 
   /* try */
   MMC_TRY_INTERNAL(simulationJumpBuffer)
 
-    if(initialization(comp->fmuData, "", "", 0.0, 5))
+    if(initialization(comp->fmuData, comp->threadData, "", "", 0.0, 5))
     {
       comp->state = modelError;
       if(comp->loggingOn) comp->functions.logger(c, comp->instanceName, fmiOK, "log",
@@ -636,7 +637,7 @@ fmiStatus fmiInitialize(fmiComponent c, fmiBoolean toleranceControlled, fmiReal 
 
     /*TODO: Simulation stop time is need to calculate in before hand all sample events
             We shouldn't generate them all in beforehand */
-    initSample(comp->fmuData, comp->fmuData->localData[0]->timeValue, 100 /*should be stopTime*/);
+    initSample(comp->fmuData, comp->threadData, comp->fmuData->localData[0]->timeValue, 100 /*should be stopTime*/);
     initDelay(comp->fmuData, comp->fmuData->localData[0]->timeValue);
 
     /* due to an event overwrite old values */
@@ -670,7 +671,7 @@ fmiStatus fmiEventUpdate(fmiComponent c, fmiBoolean intermediateResults, fmiEven
 {
   int i;
   ModelInstance* comp = (ModelInstance *)c;
-  threadData_t *threadData = comp->fmuData->threadData;
+  threadData_t *threadData = comp->threadData;
   double nextSampleEvent;
   if (invalidState(comp, "fmiEventUpdate", modelInitialized))
     return fmiError;
@@ -684,7 +685,7 @@ fmiStatus fmiEventUpdate(fmiComponent c, fmiBoolean intermediateResults, fmiEven
   /* try */
   MMC_TRY_INTERNAL(simulationJumpBuffer)
 
-    if (stateSelection(comp->fmuData, 1, 1))
+    if (stateSelection(comp->fmuData, threadData, 1, 1))
     {
       if (comp->loggingOn) comp->functions.logger(c, comp->instanceName, fmiOK, "log",
           "fmiEventUpdate: Need to iterate state values changed!");
@@ -704,7 +705,7 @@ fmiStatus fmiEventUpdate(fmiComponent c, fmiBoolean intermediateResults, fmiEven
       }
     }
 
-    comp->fmuData->callback->functionDAE(comp->fmuData);
+    comp->fmuData->callback->functionDAE(comp->fmuData, threadData);
 
     /* deactivate sample events */
     for(i=0; i<comp->fmuData->modelData.nSamples; ++i)
@@ -720,7 +721,7 @@ fmiStatus fmiEventUpdate(fmiComponent c, fmiBoolean intermediateResults, fmiEven
       if((i == 0) || (comp->fmuData->simulationInfo.nextSampleTimes[i] < comp->fmuData->simulationInfo.nextSampleEvent))
         comp->fmuData->simulationInfo.nextSampleEvent = comp->fmuData->simulationInfo.nextSampleTimes[i];
 
-    if(comp->fmuData->callback->checkForDiscreteChanges(comp->fmuData) || comp->fmuData->simulationInfo.needToIterate || checkRelations(comp->fmuData) || eventInfo->stateValuesChanged)
+    if(comp->fmuData->callback->checkForDiscreteChanges(comp->fmuData, threadData) || comp->fmuData->simulationInfo.needToIterate || checkRelations(comp->fmuData) || eventInfo->stateValuesChanged)
     {
       intermediateResults = fmiTrue;
       if (comp->loggingOn)
@@ -778,7 +779,7 @@ fmiStatus fmiEventUpdate(fmiComponent c, fmiBoolean intermediateResults, fmiEven
 fmiStatus fmiCompletedIntegratorStep(fmiComponent c, fmiBoolean* callEventUpdate)
 {
   ModelInstance* comp = (ModelInstance *)c;
-  threadData_t *threadData = comp->fmuData->threadData;
+  threadData_t *threadData = comp->threadData;
   if (invalidState(comp, "fmiCompletedIntegratorStep", modelInitialized))
     return fmiError;
   if (nullPointer(comp, "fmiCompletedIntegratorStep", "callEventUpdate", callEventUpdate))
@@ -789,13 +790,13 @@ fmiStatus fmiCompletedIntegratorStep(fmiComponent c, fmiBoolean* callEventUpdate
   /* try */
   MMC_TRY_INTERNAL(simulationJumpBuffer)
 
-    comp->fmuData->callback->functionAlgebraics(comp->fmuData);
-    comp->fmuData->callback->output_function(comp->fmuData);
-    comp->fmuData->callback->function_storeDelayed(comp->fmuData);
+    comp->fmuData->callback->functionAlgebraics(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->output_function(comp->fmuData, comp->threadData);
+    comp->fmuData->callback->function_storeDelayed(comp->fmuData, comp->threadData);
     storePreValues(comp->fmuData);
     *callEventUpdate  = fmiFalse;
     /******** check state selection ********/
-    if (stateSelection(comp->fmuData,1, 0))
+    if (stateSelection(comp->fmuData, comp->threadData, 1, 0))
     {
       if (comp->loggingOn) comp->functions.logger(c, comp->instanceName, fmiOK, "log",
           "fmiEventUpdate: Need to iterate state values changed!");
@@ -825,18 +826,18 @@ fmiStatus fmiTerminate(fmiComponent c)
 
   comp->state = modelTerminated;
   /* free nonlinear system data */
-  freeNonlinearSystems(comp->fmuData);
+  freeNonlinearSystems(comp->fmuData, comp->threadData);
   /* free mixed system data */
-  freeMixedSystems(comp->fmuData);
+  freeMixedSystems(comp->fmuData, comp->threadData);
   /* free linear system data */
-  freeLinearSystems(comp->fmuData);
+  freeLinearSystems(comp->fmuData, comp->threadData);
 
   /* call external objects destructors */
-  comp->fmuData->callback->callExternalObjectDestructors(comp->fmuData);
+  comp->fmuData->callback->callExternalObjectDestructors(comp->fmuData, comp->threadData);
   /* free stateset data */
   freeStateSetData(comp->fmuData);
   deInitializeDataStruc(comp->fmuData);
-  comp->functions.freeMemory(comp->fmuData->threadData);
+  comp->functions.freeMemory(comp->threadData);
   GC_free(comp->fmuData);
 
   comp->state = modelTerminated;
