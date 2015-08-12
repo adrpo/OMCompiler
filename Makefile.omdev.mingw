@@ -128,21 +128,23 @@ ifeq (MINGW32,$(findstring MINGW32,$(shell uname)))
 	(cp -puf $(OMDEV)/tools/msys/mingw32/bin/libintl-8.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/tools/msys/mingw32/bin/libiconv-2.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/tools/msys/mingw32/bin/libgfortran-3.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw32/bin/libexpat-1.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/lib/omniORB-4.2.0-mingw32/bin/x86_win32/omniORB420_rt.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/lib/omniORB-4.2.0-mingw32/bin/x86_win32/omnithread40_rt.dll $(builddir_bin)/)
 else # mingw64
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libgomp-1.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libwinpthread-1.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libtre-5.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libsystre-0.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libstdc++-6.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libquadmath-0.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libgcc_s_seh-1.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/liblapack.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libblas.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libintl-8.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libiconv-2.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/tools/mingw64/bin/libgfortran-3.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libgomp-1.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libwinpthread-1.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libtre-5.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libsystre-0.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libstdc++-6.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libquadmath-0.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libgcc_s_seh-1.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/liblapack.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libblas.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libintl-8.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libiconv-2.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/mingw64/bin/libgfortran-3.dll $(builddir_bin)/)
+	(cp -puf $(OMDEV)/tools/msys/msys/mingw64/bin/libexpat-1.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/lib/omniORB-4.2.0-mingw64/bin/x86_win32/omniORB420_rt.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/lib/omniORB-4.2.0-mingw64/bin/x86_win32/omnithread40_rt.dll $(builddir_bin)/)
 endif
@@ -314,7 +316,7 @@ runtimeCPPmsvcinstall: mkbuilddirs CMinpack_msvc copycppheader
 	cp -p $(BOOST_PATH)/lib/*vc*.dll $(OMBUILDDIR)/bin/
 	cp -p $(BOOST_PATH)/lib/*vc*.lib $(OMBUILDDIR)/lib/omc/cpp/msvc
 
-simulationruntimecmsvc: mkbuilddirs Umfpack_msvc CMinpack_msvc fmil_msvc
+simulationruntimecmsvc: mkbuilddirs #Umfpack_msvc CMinpack_msvc fmil_msvc
 	test -f """${VS100COMNTOOLS}/../../VC/vcvarsall.bat"""
 	mkdir -p $(OMBUILDDIR)/include/omc/msvc/
 	mkdir -p $(OMBUILDDIR)/lib/omc/msvc/debug

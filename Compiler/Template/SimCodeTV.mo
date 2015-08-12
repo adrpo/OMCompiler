@@ -1195,6 +1195,7 @@ package System
   function covertTextFileToCLiteral
     input String textFile;
     input String outFile;
+	input String target;
     output Boolean success;
   end covertTextFileToCLiteral;
 

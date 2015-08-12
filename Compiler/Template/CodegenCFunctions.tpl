@@ -62,7 +62,7 @@ static int rml_execution_failed()
 
 DLLExport int __omc_main(int argc, char **argv)
 {
-  MMC_INIT();
+  MMC_INIT(0);
   {
   void *lst = mmc_mk_nil();
   int i = 0;
@@ -1037,7 +1037,7 @@ template generateInFunc(Text fname, list<Variable> functionArguments, list<Varia
   }
 
   int main(int argc, char **argv) {
-    MMC_INIT();
+    MMC_INIT(0);
     {
     void *lst = mmc_mk_nil();
     int i = 0;
@@ -3063,8 +3063,10 @@ case STMT_TERMINATE(__) then
   let msgVar = daeExp(msg, context, &preExp, &varDecls, &auxFunction)
   <<
   <%preExp%>
-  FILE_INFO info = {<%infoArgs(getElementSourceFileInfo(source))%>};
-  omc_terminate(info, MMC_STRINGDATA(<%msgVar%>));
+  {
+    FILE_INFO info = {<%infoArgs(getElementSourceFileInfo(source))%>};
+    omc_terminate(info, MMC_STRINGDATA(<%msgVar%>));
+  }
   >>
 end algStmtTerminate;
 
@@ -3859,8 +3861,10 @@ template assertCommon(Exp condition, list<Exp> messages, Exp level, Context cont
     if(!<%condVar%>)
     {
       <%preExpMsg%>
-      FILE_INFO info = {<%infoArgs(info)%>};<%addInfoTextContext%>
-      <%omcAssertFunc%>info, <%eqnsindx%><%msgVar%>);
+      {
+        FILE_INFO info = {<%infoArgs(info)%>};<%addInfoTextContext%>
+        <%omcAssertFunc%>info, <%eqnsindx%><%msgVar%>);
+      }
       <%TriggerVarSet%>
     }
   }<%\n%>
@@ -3889,9 +3893,11 @@ template assertCommonVar(Text condVar, Text msgVar, Context context, Text &preEx
     if(!<%condVar%>)
     {
         <%preExpMsg%>
-        FILE_INFO info = {<%infoArgs(info)%>};
-        omc_assert_warning(info, "The following assertion has been violated at time %f", time);
-        throwStreamPrintWithEquationIndexes(threadData, equationIndexes, <%msgVar%>);
+        {
+          FILE_INFO info = {<%infoArgs(info)%>};
+          omc_assert_warning(info, "The following assertion has been violated at time %f", time);
+          throwStreamPrintWithEquationIndexes(threadData, equationIndexes, <%msgVar%>);
+        }
     }<%\n%>
     >>
 end assertCommonVar;

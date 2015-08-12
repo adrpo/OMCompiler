@@ -1151,8 +1151,9 @@ end alarm;
 public function covertTextFileToCLiteral
   input String textFile;
   input String outFile;
+  input String target "this would be what is set for +target=msvc|gcc";
   output Boolean success;
-external "C" success=SystemImpl__covertTextFileToCLiteral(textFile,outFile);
+external "C" success=SystemImpl__covertTextFileToCLiteral(textFile, outFile, target);
 end covertTextFileToCLiteral;
 
 public function dladdr<T>

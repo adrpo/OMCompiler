@@ -5,16 +5,16 @@ set CPLUS_INCLUDE_PATH=
 set C_INCLUDE_PATH=
 set LIBRARY_PATH=
 set OLD_PATH=%PATH%
-set MINGW=%OPENMODELICAHOME%\MinGW
+set MINGW=%OPENMODELICAHOME%\msys\mingw32
 set ADDITIONAL_ARGS=
 REM If OMDEV is set, use MinGW from there instead of OPENMODELICAHOME
 REM It is not certain that release OMC is installed
-if not %OMDEV%a==a set MINGW=%OMDEV%\tools\MinGW
+if not %OMDEV%a==a set MINGW=%OMDEV%\tools\msys\mingw32
 REM echo OPENMODELICAHOME = %OPENMODELICAHOME% >> %1.log 2>&1
 REM echo MINGW = %MINGW% >>%1.log 2>&1
 set CURRENT_DIR="%CD%"
 cd /D "%MINGW%\bin" >>%CURRENT_DIR%\%1.log 2>&1
-set PATH=%CD%;%CD%\..\libexec\gcc\mingw32\4.4.0\; >>%CURRENT_DIR%\%1.log 2>&1
+set PATH=%CD%;%CD%\..\lib\gcc\i686-w64-mingw32\5.2.0\; >>%CURRENT_DIR%\%1.log 2>&1
 cd /D "%CURRENT_DIR%" >>%CURRENT_DIR%\%1.log 2>&1
 REM echo PATH = %PATH% >>%1.log 2>&1
 REM echo CD = %CD% >>%1.log 2>&1

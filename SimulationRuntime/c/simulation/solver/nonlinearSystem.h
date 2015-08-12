@@ -56,6 +56,14 @@ int solve_nonlinear_system(DATA *data, int sysNumber);
 int check_nonlinear_solutions(DATA *data, int printFailingSystems);
 double extraPolate(DATA *data, const double old1, const double old2, const double minValue, const double maxValue);
 
+extern void debugMatrixPermutedDouble(int logName, char* matrixName, double* matrix, int n, int m, int* indRow, int* indCol);
+extern void debugMatrixDouble(int logName, char* matrixName, double* matrix, int n, int m);
+extern void debugVectorDouble(int logName, char* vectorName, double* vector, int n);
+extern void debugVectorInt(int logName, char* vectorName, modelica_boolean* vector, int n);
+extern void debugString(int logName, char* message);
+extern void debugInt(int logName, char* message, int value);
+extern void debugDouble(int logName, char* message, double value);
+
 #ifdef __cplusplus
 }
 #endif

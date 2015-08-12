@@ -282,12 +282,16 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
   }
   comp = (ModelInstance *)functions->allocateMemory(1, sizeof(ModelInstance));
   if (comp) {
+    DATA* fmudata = NULL;
+    threadData_t *threadData = NULL;
+	int i;
+
     comp->instanceName = (fmi2String)functions->allocateMemory(1 + strlen(instanceName), sizeof(char));
     comp->GUID = (fmi2String)functions->allocateMemory(1 + strlen(fmuGUID), sizeof(char));
     /* Cannot use functions->allocateMemory */
-    DATA* fmudata = (DATA *)GC_malloc_uncollectable(sizeof(DATA));
+    fmudata = (DATA *)GC_malloc_uncollectable(sizeof(DATA));
 
-    threadData_t *threadData = (threadData_t *)functions->allocateMemory(1, sizeof(threadData_t));
+    threadData = (threadData_t *)functions->allocateMemory(1, sizeof(threadData_t));
     memset(threadData, 0, sizeof(threadData_t));
     /*
     pthread_key_create(&fmu2_thread_data_key,NULL);
@@ -301,7 +305,6 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
       return NULL;
     }
     // set all categories to on or off. fmi2SetDebugLogging should be called to choose specific categories.
-    int i;
     for (i = 0; i < NUMBER_OF_CATEGORIES; i++) {
       comp->logCategories[i] = loggingOn;
     }
@@ -381,6 +384,8 @@ fmi2Status fmi2SetupExperiment(fmi2Component c, fmi2Boolean toleranceDefined, fm
 fmi2Status fmi2EnterInitializationMode(fmi2Component c) {
   ModelInstance *comp = (ModelInstance *)c;
   threadData_t *threadData = comp->fmuData->threadData;
+  double nextSampleEvent;
+
   threadData->currentErrorStage = ERROR_SIMULATION;
   if (invalidState(comp, "fmi2EnterInitializationMode", modelInstantiated))
     return fmi2Error;
@@ -413,7 +418,7 @@ fmi2Status fmi2EnterInitializationMode(fmi2Component c) {
       comp->eventInfo.valuesOfContinuousStatesChanged = fmi2True;
 
       /* Get next event time (sample calls)*/
-      double nextSampleEvent = 0;
+      nextSampleEvent = 0;
       nextSampleEvent = getNextSampleTimeFMU(comp->fmuData);
       if (nextSampleEvent == -1) {
         comp->eventInfo.nextEventTimeDefined = fmi2False;

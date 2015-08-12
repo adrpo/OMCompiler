@@ -143,12 +143,14 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
   }
   comp = (ModelInstance *)functions.allocateMemory(1, sizeof(ModelInstance));
   if (comp) {
-    comp->instanceName = functions.allocateMemory(1 + strlen(instanceName), sizeof(char));
-    comp->GUID = functions.allocateMemory(1 + strlen(GUID), sizeof(char));
+    DATA* fmudata = NULL;
+	threadData_t *threadData = NULL;
+    comp->instanceName = (fmiString)functions.allocateMemory(1 + strlen(instanceName), sizeof(char));
+    comp->GUID = (fmiString)functions.allocateMemory(1 + strlen(GUID), sizeof(char));
     /* Cannot use functions.allocateMemory since the pointer might not be stored on the stack of the parent */
-    DATA* fmudata = (DATA *)GC_malloc_uncollectable(sizeof(DATA));
+    fmudata = (DATA *)GC_malloc_uncollectable(sizeof(DATA));
 
-    threadData_t *threadData = (threadData_t *)functions.allocateMemory(1, sizeof(threadData_t));
+    threadData = (threadData_t *)functions.allocateMemory(1, sizeof(threadData_t));
     memset(threadData, 0, sizeof(threadData_t));
     /*
     pthread_key_create(&fmu1_thread_data_key,NULL);
@@ -669,6 +671,7 @@ fmiStatus fmiEventUpdate(fmiComponent c, fmiBoolean intermediateResults, fmiEven
   int i;
   ModelInstance* comp = (ModelInstance *)c;
   threadData_t *threadData = comp->fmuData->threadData;
+  double nextSampleEvent;
   if (invalidState(comp, "fmiEventUpdate", modelInitialized))
     return fmiError;
   if (nullPointer(comp, "fmiEventUpdate", "eventInfo", eventInfo))
@@ -749,7 +752,7 @@ fmiStatus fmiEventUpdate(fmiComponent c, fmiBoolean intermediateResults, fmiEven
       comp->functions.logger(c, comp->instanceName, fmiOK, "log", "fmiEventUpdate: intermediateResults = %d", intermediateResults);
 
     //Get Next Event Time
-    double nextSampleEvent=0;
+    nextSampleEvent = 0;
     nextSampleEvent = getNextSampleTimeFMU(comp->fmuData);
     if (nextSampleEvent == -1)
     {

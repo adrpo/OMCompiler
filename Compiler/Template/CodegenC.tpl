@@ -92,7 +92,7 @@ end translateModel;
     let _ = if simulationSettingsOpt then //tests the Option<> for SOME()
               textFile(simulationInitFile(simCode,guid), '<%fileNamePrefix%>_init.xml')
     let _ = (if stringEq(Config.simCodeTarget(),"JavaScript") then
-              covertTextFileToCLiteral('<%fileNamePrefix%>_init.xml','<%fileNamePrefix%>_init.c'))
+              covertTextFileToCLiteral('<%fileNamePrefix%>_init.xml','<%fileNamePrefix%>_init.c', simulationCodeTarget()))
     ""
 end translateInitFile;
 
@@ -743,17 +743,19 @@ template simulationFile(SimCode simCode, String guid)
                      <<
                      mmc_init_nogc();
                      omc_alloc_interface = omc_alloc_interface_pooled;
+					 omc_alloc_interface.init();
                      >>
                    else if stringEq(Config.simCodeTarget(),"JavaScript") then
                      <<
                      mmc_init_nogc();
                      omc_alloc_interface = omc_alloc_interface_pooled;
+					 omc_alloc_interface.init();
                      >>
                    else
                      <<
-                     MMC_INIT();
+                     MMC_INIT(0);
+					 omc_alloc_interface.init();
                      >>
-    let &mainInit += 'omc_alloc_interface.init();'
     let pminit = if Flags.isSet(Flags.PARMODAUTO) then 'PM_Model_init("<%fileNamePrefix%>", &simulation_data, functionODE_systems);' else ''
     let mainBody =
       <<
@@ -833,7 +835,7 @@ template simulationFile(SimCode simCode, String guid)
     extern int <%symbolName(modelNamePrefixStr,"getTimeGrid")%>(DATA *data, modelica_integer * nsi, modelica_real**t);
     extern void <%symbolName(modelNamePrefixStr,"function_initSynchronous")%>(DATA * data);
     extern modelica_boolean <%symbolName(modelNamePrefixStr,"function_updateSynchronous")%>(DATA * data, long i);
-    extern modelica_boolean <%symbolName(modelNamePrefixStr,"function_equationsSynchronous")%>(DATA * datav);
+    extern modelica_boolean <%symbolName(modelNamePrefixStr,"function_equationsSynchronous")%>(DATA * datav, long i);
 
     struct OpenModelicaGeneratedFunctionCallbacks <%symbolName(modelNamePrefixStr,"callback")%> = {
        (int (*)(DATA *, void *)) <%symbolName(modelNamePrefixStr,"performSimulation")%>,
@@ -990,12 +992,30 @@ template populateModelInfo(ModelInfo modelInfo, String fileNamePrefix, String gu
     data->modelData.initXMLData = NULL;
     data->modelData.modelDataXml.infoXMLData = NULL;
     #else
-    data->modelData.initXMLData =
-    #include "<%fileNamePrefix%>_init.c"
-    ;
-    data->modelData.modelDataXml.infoXMLData =
-    #include "<%fileNamePrefix%>_info.c"
-    ;
+	{
+	  #if defined(_MSC_VER) /* handle joke compilers */
+	  /* for MSVC we encode a string like char x[] = {'a', 'b', 'c', '\0'} */
+	  /* because the string constant limit is 65535 bytes */
+	  static const char contents_init[] =
+      #include "<%fileNamePrefix%>_init.c"
+      ;
+	  static const char contents_info[] =
+      #include "<%fileNamePrefix%>_info.c"
+      ;
+      data->modelData.initXMLData = contents_init;
+      data->modelData.modelDataXml.infoXMLData = contents_info;
+
+	  #else /* handle real compilers */
+
+	  data->modelData.initXMLData =
+	  #include "<%fileNamePrefix%>_init.c"
+      ;
+	  data->modelData.modelDataXml.infoXMLData =
+	  #include "<%fileNamePrefix%>_info.c"
+      ;
+
+	  #endif
+	}
     #endif
 
     data->modelData.nStates = <%varInfo.numStateVars%>;
@@ -4100,8 +4120,9 @@ case _ then
         TRACE_PUSH
         DATA* data = ((DATA*)inData);
         int index = <%symbolName(modelNamePrefix,"INDEX_JAC_")%><%matrixname%>;
-
-        int i;
+		const int tmp[<%sizeleadindex%>] = {<%leadindex%>};
+		const int tmpElem[<%sp_size_index%>] = {<%indexElems%>};
+        int i = 0;
 
         data->simulationInfo.analyticJacobians[index].sizeCols = <%index_%>;
         data->simulationInfo.analyticJacobians[index].sizeRows = <%indexColumn%>;
@@ -4116,15 +4137,13 @@ case _ then
         data->simulationInfo.analyticJacobians[index].sparsePattern.maxColors = <%maxColor%>;
         data->simulationInfo.analyticJacobians[index].jacobian = NULL;
 
-        /* write lead index of compressed sparse column*/
-        const int tmp[<%sizeleadindex%>] = {<%leadindex%>};
+        /* write lead index of compressed sparse column */
         memcpy(data->simulationInfo.analyticJacobians[index].sparsePattern.leadindex, tmp, <%sizeleadindex%>*sizeof(int));
 
         for(i=1;i<<%sizeleadindex%>;++i)
             data->simulationInfo.analyticJacobians[index].sparsePattern.leadindex[i] += data->simulationInfo.analyticJacobians[index].sparsePattern.leadindex[i-1];
 
         /* call sparse index */
-        const int tmpElem[<%sp_size_index%>] = {<%indexElems%>};
         memcpy(data->simulationInfo.analyticJacobians[index].sparsePattern.index, tmpElem, <%sp_size_index%>*sizeof(int));
 
         /* write color array */
@@ -4964,10 +4983,10 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   # /I - Include Directories
   # /DNOMINMAX - Define NOMINMAX (does what it says)
   # /TP - Use C++ Compiler
-  CFLAGS=/Od /ZI /EHa /fp:except /I"<%makefileParams.omhome%>/include/omc/c" /I"<%makefileParams.omhome%>/include/omc/msvc/" /I. /DNOMINMAX /TP /DNO_INTERACTIVE_DEPENDENCY /DOPENMODELICA_XML_FROM_FILE_AT_RUNTIME <%if (Flags.isSet(Flags.HPCOM)) then '/openmp'%>
+  CFLAGS=/MP /Od /ZI /EHa /fp:except /I"<%makefileParams.omhome%>/include/omc/c" /I"<%makefileParams.omhome%>/include/omc/msvc/" /I. /DNOMINMAX /DNO_INTERACTIVE_DEPENDENCY /DOPENMODELICA_XML_FROM_FILE_AT_RUNTIME <%if (Flags.isSet(Flags.HPCOM)) then '/openmp'%>
 
   # /ZI enable Edit and Continue debug info
-  CDFLAGS = /ZI
+  CDFLAGS=/ZI
 
   # /MD - link with MSVCRT.LIB
   # /link - [linker options and libraries]
