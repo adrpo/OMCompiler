@@ -312,11 +312,12 @@ match baseClock
   case DAE.BOOLEAN_CLOCK(__) then
     let cond = cref(expCref(condition))
     <<
-    if (data->simulationInfo.clocksData[i].cnt > 0)
-      data->simulationInfo.clocksData[i].interval = time - data->simulationInfo.clocksData[i].timepoint;
-    else
+    if (data->simulationInfo.clocksData[i].cnt > 0) {
+      data->simulationInfo.clocksData[i].interval = data->localData[0]->timeValue - data->simulationInfo.clocksData[i].timepoint;
+    } else {
       data->simulationInfo.clocksData[i].interval = <%startInterval%>;
-    data->simulationInfo.clocksData[i].timepoint = time;
+    }
+    data->simulationInfo.clocksData[i].timepoint = data->localData[0]->timeValue;
     'return <%cond%> && !$P$PRE<%cond%>;'
     >>
   else
@@ -324,11 +325,11 @@ match baseClock
     let intvl = daeExp(getClockIntvl(baseClock), contextOther, &preExp, &varDecls, &auxFunction)
     <<
     <%preExp%>
-    if (time < data->simulationInfo.clocksData[i].timepoint)
+    if (data->localData[0]->timeValue < data->simulationInfo.clocksData[i].timepoint)
       ret = <%boolStrC(false)%>;
     else {
       data->simulationInfo.clocksData[i].interval = <%intvl%>;
-      data->simulationInfo.clocksData[i].timepoint = time + data->simulationInfo.clocksData[i].interval;
+      data->simulationInfo.clocksData[i].timepoint = data->localData[0]->timeValue + data->simulationInfo.clocksData[i].interval;
       ret = <%boolStrC(true)%>;
     }
     >>
@@ -1122,8 +1123,6 @@ template variableDefinitions(ModelInfo modelInfo, list<BackendDAE.TimeEvent> tim
   match modelInfo
     case MODELINFO(varInfo=VARINFO(numStateVars=numStateVars, numAlgVars= numAlgVars, numDiscreteReal=numDiscreteReal, numOptimizeConstraints=numOptimizeConstraints, numOptimizeFinalConstraints=numOptimizeFinalConstraints), vars=SIMVARS(__)) then
       <<
-      #define time data->localData[0]->timeValue
-
       /* States */
       <%vars.stateVars |> var =>
         globalDataVarDefine(var, "realVars", 0)
@@ -2751,7 +2750,7 @@ template functionStoreDelayed(DelayedExpression delayed, String modelNamePrefix)
       let delayExpMax = daeExp(delayMax, contextSimulationNonDiscrete, &preExp, &varDecls, &auxFunction)
       <<
       <%preExp%>
-      storeDelayedExpression(data, threadData, <%id%>, <%eRes%>, time, <%delayExp%>, <%delayExpMax%>);<%\n%>
+      storeDelayedExpression(data, threadData, <%id%>, <%eRes%>, data->localData[0]->timeValue, <%delayExp%>, <%delayExpMax%>);<%\n%>
       >>
     ))
   <<
@@ -4642,7 +4641,7 @@ template equationNonlinear(SimEqSystem eq, Context context, Text &varDecls, Stri
       let returnval2 = match at case at as SOME(__) then 'return 0;' case at as NONE() then ''
       <<
       int retValue;
-      debugDouble(LOG_DT, "Solving nonlinear system <%nls.index%> (STRICT TEARING SET if tearing enabled) at time =", time);
+      debugDouble(LOG_DT, "Solving nonlinear system <%nls.index%> (STRICT TEARING SET if tearing enabled) at time =", data->localData[0]->timeValue);
       <% if profileSome() then
       <<
       SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%nls.index%>).profileBlockIndex);
@@ -4662,7 +4661,7 @@ template equationNonlinear(SimEqSystem eq, Context context, Text &varDecls, Stri
       /* check if solution process was successful */
       if (retValue > 0){
         const int indexes[2] = {1,<%nls.index%>};
-        throwStreamPrintWithEquationIndexes(threadData, indexes, "Solving non-linear system <%nls.index%> failed at time=%.15g.\nFor more information please use -lv LOG_NLS.", time);
+        throwStreamPrintWithEquationIndexes(threadData, indexes, "Solving non-linear system <%nls.index%> failed at time=%.15g.\nFor more information please use -lv LOG_NLS.", data->localData[0]->timeValue);
         <%returnval2%>
       }
       /* write solution */
@@ -4685,7 +4684,7 @@ template equationNonlinearAlternativeTearing(SimEqSystem eq, Context context, Te
       let nonlinindx = at.indexNonLinearSystem
       <<
       int retValue;
-      debugDouble(LOG_DT, "Solving nonlinear system <%at.index%> (CASUAL TEARING SET) at time =", time);
+      debugDouble(LOG_DT, "Solving nonlinear system <%at.index%> (CASUAL TEARING SET) at time =", data->localData[0]->timeValue);
       <% if profileSome() then
       <<
       SIM_PROF_TICK_EQ(modelInfoGetEquation(&data->modelData.modelDataXml,<%at.index%>).profileBlockIndex);
@@ -4716,22 +4715,18 @@ template equationWhen(SimEqSystem eq, Context context, Text &varDecls, Text &aux
  "Generates a when equation."
 ::=
   match eq
-    case SES_WHEN(left=left, right=right, conditions=conditions, elseWhen=NONE()) then
+    case SES_WHEN(whenStmtLst = whenStmtLst, conditions=conditions, elseWhen=NONE()) then
       let helpIf = if intGt(listLength(conditions), 0) then (conditions |> e => '(<%cref(e)%> && !$P$PRE<%cref(e)%> /* edge */)';separator=" || ") else '0'
-      let assign = whenAssign(left,typeof(right),right,context, &varDecls, auxFunction)
+      let assign = whenOperators(whenStmtLst, context, &varDecls, auxFunction)
       <<
       if(<%helpIf%>)
       {
         <%assign%>
       }
-      else
-      {
-        <%cref(left)%> = $P$PRE<%cref(left)%>;
-      }
       >>
-    case SES_WHEN(left=left, right=right, conditions=conditions, elseWhen=SOME(elseWhenEq)) then
+    case SES_WHEN(whenStmtLst = whenStmtLst, conditions=conditions, elseWhen=SOME(elseWhenEq)) then
       let helpIf = if intGt(listLength(conditions), 0) then (conditions |> e => '(<%cref(e)%> && !$P$PRE<%cref(e)%> /* edge */)';separator=" || ") else '0'
-      let assign = whenAssign(left,typeof(right),right,context, &varDecls, &auxFunction)
+      let assign = whenOperators(whenStmtLst, context, &varDecls, auxFunction)
       let elseWhen = equationElseWhen(elseWhenEq,context,varDecls,&auxFunction)
       <<
       if(<%helpIf%>)
@@ -4739,10 +4734,6 @@ template equationWhen(SimEqSystem eq, Context context, Text &varDecls, Text &aux
         <%assign%>
       }
       <%elseWhen%>
-      else
-      {
-        <%cref(left)%> = $P$PRE<%cref(left)%>;
-      }
       >>
 end equationWhen;
 
@@ -4750,9 +4741,9 @@ template equationElseWhen(SimEqSystem eq, Context context, Text &varDecls, Text 
  "Generates a else when equation."
 ::=
 match eq
-case SES_WHEN(left=left, right=right, conditions=conditions, elseWhen=NONE()) then
+case SES_WHEN(whenStmtLst = whenStmtLst, conditions=conditions, elseWhen=NONE()) then
   let helpIf = (conditions |> e => '(<%cref(e)%> && !$P$PRE<%cref(e)%> /* edge */)';separator=" || ")
-  let assign = whenAssign(left, typeof(right), right, context, &varDecls, &auxFunction)
+  let assign = whenOperators(whenStmtLst, context, &varDecls, auxFunction)
 
   if intGt(listLength(conditions), 0) then
     <<
@@ -4761,9 +4752,9 @@ case SES_WHEN(left=left, right=right, conditions=conditions, elseWhen=NONE()) th
       <%assign%>
     }
     >>
-case SES_WHEN(left=left, right=right, conditions=conditions, elseWhen=SOME(elseWhenEq)) then
+case SES_WHEN(whenStmtLst = whenStmtLst, conditions=conditions, elseWhen=SOME(elseWhenEq)) then
   let helpIf = (conditions |> e => '(<%cref(e)%> && !$P$PRE<%cref(e)%> /* edge */)';separator=" || ")
-  let assign = whenAssign(left, typeof(right), right, context, &varDecls, &auxFunction)
+  let assign = whenOperators(whenStmtLst, context, &varDecls, auxFunction)
   let elseWhen = equationElseWhen(elseWhenEq, context, varDecls, auxFunction)
   let body = if intGt(listLength(conditions), 0) then
     <<
@@ -4778,6 +4769,49 @@ case SES_WHEN(left=left, right=right, conditions=conditions, elseWhen=SOME(elseW
   <%elseWhen%>
   >>
 end equationElseWhen;
+
+template whenOperators(list<WhenOperator> whenOps, Context context, Text &varDecls, Text &auxFunction)
+  "Generates body statements for when equation."
+::=
+  let body = (whenOps |> whenOp =>
+    match whenOp
+    case ASSIGN(__) then whenAssign(left, typeof(right), right, context, &varDecls, &auxFunction)
+    case REINIT(__) then
+      let &preExp = buffer ""
+      let val = daeExp(value, contextSimulationDiscrete, &preExp, &varDecls, &auxFunction)
+      let lhs = match crefTypeConsiderSubs(stateVar)
+         case DAE.T_ARRAY(__) then
+           'copy_real_array_data_mem(<%val%>, &<%cref(stateVar)%>);'
+         else
+           '<%cref(stateVar)%> = <%val%>;'
+      <<
+      <%preExp%>
+      <%lhs%>
+      infoStreamPrint(LOG_EVENTS, 0, "reinit <%cref(stateVar)%> = <%crefToPrintfArg(stateVar)%>", <%cref(stateVar)%>);
+      data->simulationInfo.needToIterate = 1;
+      >>
+    case TERMINATE(__) then
+      let &preExp = buffer ""
+      let msgVar = daeExp(message, contextSimulationDiscrete, &preExp, &varDecls, &auxFunction)
+      <<
+      <%preExp%>
+      FILE_INFO info = {<%infoArgs(getElementSourceFileInfo(source))%>};
+      omc_terminate(info, MMC_STRINGDATA(<%msgVar%>));
+      >>
+    case ASSERT(source=SOURCE(info=info)) then
+      assertCommon(condition, List.fill(message,1), level, contextSimulationDiscrete, &varDecls, &auxFunction, info)
+    case NORETCALL(__) then
+      let &preExp = buffer ""
+      let expPart = daeExp(exp, contextSimulationDiscrete, &preExp, &varDecls, &auxFunction)
+      <<
+      <%preExp%>
+      <% if isCIdentifier(expPart) then "" else '<%expPart%>;' %>
+      >>
+  ;separator="\n")
+  <<
+  <%body%>
+  >>
+end whenOperators;
 
 template whenAssign(ComponentRef left, Type ty, Exp right, Context context, Text &varDecls, Text &auxFunction)
  "Generates assignment for when."
@@ -4818,7 +4852,6 @@ match ty
     <%cref(left)%> = <%exp%>;
    >>
 end whenAssign;
-
 
 template equationIfEquationAssign(SimEqSystem eq, Context context, Text &varDecls, Text &eqnsDecls, String modelNamePrefixStr)
  "Generates a if equation."

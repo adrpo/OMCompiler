@@ -261,6 +261,8 @@ algorithm
                                 classAttrs=classAttributes,
                                 symjacs=symJacs,
                                 eventInfo=eventInfo) := dlow.shared;
+
+
     removedEqs := BackendDAEUtil.collapseRemovedEqs(dlow);
 
  // created event suff e.g. zeroCrossings, samples, ...
@@ -327,7 +329,7 @@ algorithm
     extObjInfo := createExtObjInfo(shared);
 
     // update index of zero-Crossings after equations are created
-    zeroCrossings := updateZeroCrossEqnIndex(zeroCrossings, eqBackendSimCodeMapping, BackendDAEUtil.daeSize(dlow));
+    zeroCrossings := updateZeroCrossEqnIndex(zeroCrossings, eqBackendSimCodeMapping, BackendDAEUtil.equationArraySizeBDAE(dlow));
 
     // update indexNonLinear in SES_NONLINEAR and count
     SymbolicJacsNLS := {};
@@ -1819,6 +1821,7 @@ algorithm
       DAE.ComponentRef left, varOutput;
       DAE.Exp e1, e2, varexp, exp_, right, cond, prevarexp;
       BackendDAE.WhenEquation whenEquation, elseWhen;
+      Option<BackendDAE.WhenEquation> oelseWhen;
       String algStr, message, eqStr;
       DAE.ElementSource source;
       list<DAE.Statement> asserts;
@@ -1831,6 +1834,8 @@ algorithm
       DAE.FunctionTree funcs;
       list<BackendDAE.Equation> solveEqns;
       list<SimCode.SimEqSystem> eqSystlst;
+      list<BackendDAE.WhenOperator> whenStmtLst;
+      Option<SimCode.SimEqSystem> oelseWhenSimEq;
 
     /*
     // solve always a linear equations
@@ -1856,24 +1861,21 @@ algorithm
       then
         ({SimCode.SES_SIMPLE_ASSIGN(iuniqueEqIndex, cr, e2, source)}, iuniqueEqIndex+1, itempvars);
 
-    // when eq without else
+    // when eq
     case (_, _,  BackendDAE.EQSYSTEM(orderedEqs=eqns), BackendDAE.SHARED(), _, _, _)
       equation
         BackendDAE.WHEN_EQUATION(whenEquation=whenEquation, source=source) = BackendEquation.equationNth1(eqns, eqNum);
-        BackendDAE.WHEN_EQ(cond, left, right, NONE()) = whenEquation;
+        BackendDAE.WHEN_STMTS(cond, whenStmtLst, oelseWhen) = whenEquation;
+        if isSome(oelseWhen) then
+          SOME(elseWhen) = oelseWhen;
+          elseWhenEquation = createElseWhenEquation(elseWhen, source);
+          oelseWhenSimEq = SOME(elseWhenEquation);
+        else
+          oelseWhenSimEq = NONE();
+        end if;
         (conditions, initialCall) = BackendDAEUtil.getConditionList(cond);
       then
-        ({SimCode.SES_WHEN(iuniqueEqIndex, conditions, initialCall, left, right, NONE(), source)}, iuniqueEqIndex+1, itempvars);
-
-    // when eq with else
-    case (_, _, BackendDAE.EQSYSTEM(orderedEqs=eqns), BackendDAE.SHARED(eventInfo=BackendDAE.EVENT_INFO(whenClauseLst=wcl)), _, _, _)
-      equation
-        BackendDAE.WHEN_EQUATION(whenEquation=whenEquation, source=source) = BackendEquation.equationNth1(eqns, eqNum);
-        BackendDAE.WHEN_EQ(cond, left, right, SOME(elseWhen)) = whenEquation;
-        elseWhenEquation = createElseWhenEquation(elseWhen, wcl, source);
-        (conditions, initialCall) = BackendDAEUtil.getConditionList(cond);
-      then
-        ({SimCode.SES_WHEN(iuniqueEqIndex, conditions, initialCall, left, right, SOME(elseWhenEquation), source)}, iuniqueEqIndex+1, itempvars);
+        ({SimCode.SES_WHEN(iuniqueEqIndex, conditions, initialCall, whenStmtLst, oelseWhenSimEq, source)}, iuniqueEqIndex+1, itempvars);
 
     // single equation
     case (_, _, BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqns), _, _, _, _)
@@ -4482,7 +4484,6 @@ algorithm
       list<DAE.ComponentRef> crefs;
       BackendDAE.WhenEquation elseWhen;
       list<DAE.ComponentRef> conditions;
-      list<BackendDAE.WhenClause> wcl;
       SimCode.SimEqSystem elseWhenEquation;
       Boolean initialCall;
 
@@ -4492,16 +4493,16 @@ algorithm
         crefs = List.map(inVars, BackendVariable.varCref);
         List.map1rAllValue(crefs, ComponentReference.crefPrefixOf, true, left);
         (conditions, initialCall) = BackendDAEUtil.getConditionList(cond);
-      then ({SimCode.SES_WHEN(iuniqueEqIndex, conditions, initialCall, left, right, NONE(), source)}, iuniqueEqIndex+1, itempvars);
+      then ({SimCode.SES_WHEN(iuniqueEqIndex, conditions, initialCall, {BackendDAE.ASSIGN(left, right, source)}, NONE(), source)}, iuniqueEqIndex+1, itempvars);
 
     // when eq with else
-    case (BackendDAE.WHEN_EQUATION(whenEquation=BackendDAE.WHEN_EQ(cond, left, right, SOME(elseWhen)), source=source), _, BackendDAE.SHARED(eventInfo=BackendDAE.EVENT_INFO(whenClauseLst=wcl)), _, _)
+    case (BackendDAE.WHEN_EQUATION(whenEquation=BackendDAE.WHEN_EQ(cond, left, right, SOME(elseWhen)), source=source), _, _, _, _)
       equation
         crefs = List.map(inVars, BackendVariable.varCref);
         List.map1rAllValue(crefs, ComponentReference.crefPrefixOf, true, left);
-        elseWhenEquation = createElseWhenEquation(elseWhen, wcl, source);
+        elseWhenEquation = createElseWhenEquation(elseWhen, source);
         (conditions, initialCall) = BackendDAEUtil.getConditionList(cond);
-      then ({SimCode.SES_WHEN(iuniqueEqIndex, conditions, initialCall, left, right, SOME(elseWhenEquation), source)}, iuniqueEqIndex+1, itempvars);
+      then ({SimCode.SES_WHEN(iuniqueEqIndex, conditions, initialCall, {BackendDAE.ASSIGN(left, right, source)}, SOME(elseWhenEquation), source)}, iuniqueEqIndex+1, itempvars);
 
     // failure
     else
@@ -4513,29 +4514,44 @@ end createSingleWhenEqnCode;
 
 protected function createElseWhenEquation
   input BackendDAE.WhenEquation inElseWhenEquation;
-  input list<BackendDAE.WhenClause> inWhenClause;
   input DAE.ElementSource inElementSource;
   output SimCode.SimEqSystem outSimEqSystem;
 algorithm
-  outSimEqSystem := match (inElseWhenEquation, inWhenClause, inElementSource)
+  outSimEqSystem := match (inElseWhenEquation, inElementSource)
     local
       DAE.ComponentRef left;
       DAE.Exp right, cond;
       BackendDAE.WhenEquation elseWhenEquation;
+      Option<BackendDAE.WhenEquation> oelseWhenEquation;
       SimCode.SimEqSystem simElseWhenEq;
+      Option<SimCode.SimEqSystem> osimElseWhenEq;
       list<DAE.ComponentRef> conditions;
       Boolean initialCall;
+      list<BackendDAE.WhenOperator> whenStmtLst;
 
-    // when eq without else
-    case (BackendDAE.WHEN_EQ(condition=cond, left=left, right=right, elsewhenPart= NONE()), _, _) equation
+    // when eq
+    case (BackendDAE.WHEN_EQ(condition=cond, left=left, right=right, elsewhenPart = oelseWhenEquation), _) equation
+      if isSome(oelseWhenEquation) then
+        SOME(elseWhenEquation) = oelseWhenEquation;
+        simElseWhenEq = createElseWhenEquation(elseWhenEquation, inElementSource);
+        osimElseWhenEq = SOME(simElseWhenEq);
+      else
+        osimElseWhenEq = NONE();
+      end if;
       (conditions, initialCall) = BackendDAEUtil.getConditionList(cond);
-    then SimCode.SES_WHEN(0, conditions, initialCall, left, right, NONE(), inElementSource);
+    then SimCode.SES_WHEN(0, conditions, initialCall, {BackendDAE.ASSIGN(left, right, inElementSource)}, osimElseWhenEq, inElementSource);
 
     // when eq with else
-    case (BackendDAE.WHEN_EQ(condition=cond, left=left, right=right, elsewhenPart = SOME(elseWhenEquation)), _, _) equation
-      simElseWhenEq = createElseWhenEquation(elseWhenEquation, inWhenClause, inElementSource);
+    case (BackendDAE.WHEN_STMTS(condition=cond, whenStmtLst=whenStmtLst, elsewhenPart = oelseWhenEquation), _) equation
+      if isSome(oelseWhenEquation) then
+        SOME(elseWhenEquation) = oelseWhenEquation;
+        simElseWhenEq = createElseWhenEquation(elseWhenEquation, inElementSource);
+        osimElseWhenEq = SOME(simElseWhenEq);
+      else
+        osimElseWhenEq = NONE();
+      end if;
       (conditions, initialCall) = BackendDAEUtil.getConditionList(cond);
-    then SimCode.SES_WHEN(0, conditions, initialCall, left, right, SOME(simElseWhenEq), inElementSource);
+    then SimCode.SES_WHEN(0, conditions, initialCall, whenStmtLst, osimElseWhenEq, inElementSource);
   end match;
 end createElseWhenEquation;
 
@@ -5255,10 +5271,17 @@ algorithm
   (outEquation, ouniqueEqIndex) := match (inEquation)
     local
       DAE.ComponentRef cr;
-      DAE.Exp exp_;
+      DAE.Exp exp_, cond;
       DAE.Algorithm alg;
       list<DAE.Statement> algStatements;
       DAE.ElementSource source;
+      BackendDAE.WhenEquation whenEquation, elseWhen;
+      list<BackendDAE.WhenOperator> whenStmtLst;
+      Option<BackendDAE.WhenEquation> oelseWhen;
+      list<DAE.ComponentRef> conditions;
+      Boolean initialCall;
+      SimCode.SimEqSystem elseWhenEquation;
+      Option<SimCode.SimEqSystem> oelseWhenSimEq;
 
     case BackendDAE.SOLVED_EQUATION(componentRef=cr, exp=exp_, source=source)
     then (SimCode.SES_SIMPLE_ASSIGN(iuniqueEqIndex, cr, exp_, source), iuniqueEqIndex+1);
@@ -5269,6 +5292,26 @@ algorithm
     case BackendDAE.ALGORITHM(alg=alg) equation
       DAE.ALGORITHM_STMTS(algStatements) = BackendDAEUtil.collateAlgorithm(alg, NONE());
     then (SimCode.SES_ALGORITHM(iuniqueEqIndex, algStatements), iuniqueEqIndex+1);
+
+    // when eq
+    case BackendDAE.WHEN_EQUATION(whenEquation=whenEquation, source=source) equation
+      BackendDAE.WHEN_STMTS(cond, whenStmtLst, oelseWhen) = whenEquation;
+      if isSome(oelseWhen) then
+        SOME(elseWhen) = oelseWhen;
+        elseWhenEquation  = createElseWhenEquation(elseWhen, source);
+        oelseWhenSimEq = SOME(elseWhenEquation);
+      else
+        oelseWhenSimEq = NONE();
+      end if;
+      (conditions, initialCall) = BackendDAEUtil.getConditionList(cond);
+    then
+      (SimCode.SES_WHEN(iuniqueEqIndex, conditions, initialCall, whenStmtLst, oelseWhenSimEq, source), iuniqueEqIndex+1);
+
+    else equation
+      if Flags.isSet(Flags.FAILTRACE) then
+        Error.addInternalError("function dlowEqToSimEqSystem failed.", sourceInfo());
+      end if;
+    then fail();
   end match;
 end dlowEqToSimEqSystem;
 
@@ -6502,6 +6545,7 @@ algorithm
       list<tuple<Integer, Integer, SimCode.SimEqSystem>> simJac,simJac2;
       Option<SimCode.JacobianMatrix> jac,jac2;
       Option<SimCode.SimEqSystem> elseWhen;
+      list<BackendDAE.WhenOperator> whenStmtLst;
 
     case(SimCode.SES_RESIDUAL(index=idx,exp=exp))
       equation
@@ -6591,12 +6635,12 @@ algorithm
         s = s+"\tdiscEqs:\n\t"+stringDelimitList(List.map(eqs,dumpSimEqSystem),"\t\n");
     then s;
 
-    case(SimCode.SES_WHEN(index=idx, conditions=crefs, left=left, right=right, elseWhen=elseWhen))
+    case(SimCode.SES_WHEN(index=idx, conditions=crefs, whenStmtLst = whenStmtLst, elseWhen=elseWhen))
       equation
         s = intString(idx) +": "+ " WHEN:( ";
         s = s + stringDelimitList(List.map(crefs,ComponentReference.debugPrintComponentRefTypeStr),", ") + " ) then: ";
-        s = s + ComponentReference.debugPrintComponentRefTypeStr(left) + " = " + ExpressionDump.printExpStr(right) + "["+ DAEDump.daeTypeStr(Expression.typeof(right)) + "]";
-        if Util.isSome(elseWhen) then
+        s = s + dumpWhenOps(whenStmtLst);
+        if isSome(elseWhen) then
           s = s + " ELSEWHEN: " + dumpSimEqSystem(Util.getOption(elseWhen));
         end if;
       then s;
@@ -6612,6 +6656,29 @@ algorithm
     then "SOMETHING DIFFERENT\n";
   end matchcontinue;
 end dumpSimEqSystem;
+
+protected function dumpWhenOps
+  input list<BackendDAE.WhenOperator> whenStmtLst;
+  output String res;
+protected
+  BackendDAE.WhenOperator e;
+algorithm
+  res := "";
+  for whenOps in whenStmtLst loop
+    res := match whenOps
+      case e as BackendDAE.ASSIGN()
+      then res + ComponentReference.debugPrintComponentRefTypeStr(e.left) + " = " + ExpressionDump.printExpStr(e.right) + "["+ DAEDump.daeTypeStr(Expression.typeof(e.right)) + "]";
+      case e as BackendDAE.REINIT()
+      then res + "reinit(" + ComponentReference.debugPrintComponentRefTypeStr(e.stateVar) + ", " + ExpressionDump.printExpStr(e.value) + ") ["+ DAEDump.daeTypeStr(Expression.typeof(e.value)) + "]";
+      case e as BackendDAE.ASSERT()
+      then res + "assert(" + ExpressionDump.printExpStr(e.condition) +  ExpressionDump.printExpStr(e.message) + ExpressionDump.printExpStr(e.level) + ")";
+      case e as BackendDAE.TERMINATE()
+      then res + "terminate(" + ExpressionDump.printExpStr(e.message) + ")";
+      case e as BackendDAE.NORETCALL()
+      then res + ExpressionDump.printExpStr(e.exp) + " ["+ DAEDump.daeTypeStr(Expression.typeof(e.exp)) + "]";
+    end match;
+  end for;
+end dumpWhenOps;
 
 protected function dumpJacobianMatrixLst
   "Takes a list and a function which does not return a value. The function is
@@ -7662,6 +7729,9 @@ algorithm
       list<DAE.ElementSource> sources,sources1;
       Boolean homotopySupport, homotopySupport1;
       Boolean mixedSystem, mixedSystem1;
+      list<BackendDAE.WhenOperator> whenStmtLst, whenOps;
+      BackendDAE.WhenOperator whenOpNew;
+      Option<SimCode.SimEqSystem> oelsewe;
 
     case SimCode.SES_RESIDUAL(index= index, exp = e, source = source)
       equation
@@ -7726,18 +7796,25 @@ algorithm
       then
         SimCode.SES_MIXED(index, cont1, vars, discEqs1, indexSys);
 
-    case SimCode.SES_WHEN(index=index, conditions=conditions, initialCall=initialCall, left=cr, right=e, elseWhen= NONE(), source=source)
-      equation
-        e = addDivExpErrorMsgtoExp(e, source);
+    case SimCode.SES_WHEN(index=index, conditions=conditions, initialCall=initialCall, whenStmtLst=whenStmtLst, elseWhen=oelsewe, source=source)
+      algorithm
+        whenOps := {};
+        for whenOp in whenStmtLst loop
+          whenOpNew := match whenOp
+            case BackendDAE.ASSIGN(cr, e, source) then  BackendDAE.ASSIGN(cr, addDivExpErrorMsgtoExp(e, source), source);
+            else whenOp;
+          end match;
+          whenOps := whenOpNew::whenOps;
+        end for;
+        if isSome(oelsewe) then
+          SOME(elseWhen) := oelsewe;
+          elseWhenEq := addDivExpErrorMsgtoSimEqSystem(elseWhen);
+          oelsewe := SOME(elseWhenEq);
+        else
+          oelsewe := NONE();
+        end if;
       then
-        SimCode.SES_WHEN(index, conditions, initialCall, cr, e, NONE(), source);
-
-    case SimCode.SES_WHEN(index=index, conditions=conditions, initialCall=initialCall, left=cr, right=e, elseWhen= SOME(elseWhen), source=source)
-      equation
-        e = addDivExpErrorMsgtoExp(e, source);
-        elseWhenEq = addDivExpErrorMsgtoSimEqSystem(elseWhen);
-      then
-        SimCode.SES_WHEN(index, conditions, initialCall, cr, e, SOME(elseWhenEq), source);
+        SimCode.SES_WHEN(index, conditions, initialCall, whenOps, oelsewe, source);
     else inSES;
   end matchcontinue;
 end addDivExpErrorMsgtoSimEqSystem;
@@ -8118,7 +8195,7 @@ algorithm oeqns := matchcontinue(eqns, dlow)
       rec = List.unionElt(eq, rec);
       then
         rec;
-     case( (eq as BackendDAE.WHEN_EQUATION(whenEquation = BackendDAE.WHEN_EQ())) ::rest , _)
+     case( (eq as BackendDAE.WHEN_EQUATION()) ::rest , _)
      equation
        str = BackendDump.equationString(eq);
        if Flags.isSet(Flags.FAILTRACE) then
@@ -9434,6 +9511,7 @@ algorithm
       list<SimCodeVar.SimVar> vars, discVars;
       list<tuple<DAE.Exp, list<SimCode.SimEqSystem>>> ifbranches;
       list<tuple<Integer, Integer, SimCode.SimEqSystem>> simJac;
+      list<BackendDAE.WhenOperator> whenStmtLst;
 
     case (SimCode.SES_RESIDUAL(index, exp, source), _, a) equation
       (exp, a) = func(exp, a);
@@ -9472,9 +9550,9 @@ algorithm
       /* TODO: Me */
     then (SimCode.SES_MIXED(index, cont, discVars, discEqs, indexSys), a);
 
-    case (SimCode.SES_WHEN(index, conditions, initialCall, left, right, elseWhen, source), _, a)
+    case (SimCode.SES_WHEN(index, conditions, initialCall, whenStmtLst, elseWhen, source), _, a)
       /* TODO: Me */
-    then (SimCode.SES_WHEN(index, conditions, initialCall, left, right, elseWhen, source), a);
+    then (SimCode.SES_WHEN(index, conditions, initialCall, whenStmtLst, elseWhen, source), a);
 
     case (SimCode.SES_FOR_LOOP(), _, a)
       /* TODO: Me */
@@ -10778,7 +10856,7 @@ algorithm
       equation
         crefs = list(SimCodeFunctionUtil.varName(v) for v in simVars);
       then crefs;
-    case(SimCode.SES_WHEN(left=cref))
+    case(SimCode.SES_WHEN(whenStmtLst={BackendDAE.ASSIGN(left=cref)}))
       equation
     then {cref};
   end match;
@@ -10884,6 +10962,7 @@ algorithm
       Option<SimCode.SimEqSystem> elseWhen;
       Boolean homotopySupport;
       Boolean mixedSystem;
+      list<BackendDAE.WhenOperator> whenStmtLst;
     case(SimCode.SES_RESIDUAL(exp=exp,source=source),_)
       equation
         simEqSys = SimCode.SES_RESIDUAL(idx,exp,source);
@@ -10918,9 +10997,9 @@ algorithm
       equation
         simEqSys = SimCode.SES_MIXED(idx,simEqSys,simVars,simEqSysLst,idxMX);
     then simEqSys;
-    case(SimCode.SES_WHEN(conditions=crefs,initialCall=ic,left=cref,right=exp,elseWhen=elseWhen,source=source),_)
+    case(SimCode.SES_WHEN(conditions=crefs,initialCall=ic,whenStmtLst=whenStmtLst,elseWhen=elseWhen,source=source),_)
       equation
-        simEqSys = SimCode.SES_WHEN(idx,crefs,ic,cref,exp,elseWhen,source);
+        simEqSys = SimCode.SES_WHEN(idx,crefs,ic,whenStmtLst,elseWhen,source);
     then simEqSys;
   end match;
 end replaceSimEqSysIndex;
