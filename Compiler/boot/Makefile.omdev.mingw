@@ -6,7 +6,7 @@ endif
 
 CC=gcc
 CXX=g++
-CFLAGS=-g -faling-functions #-march=native -fno-tree-ch -fno-tree-vrp -fno-tree-pre -fno-tree-builtin-call-dce -fno-tree-switch-conversion -fno-tree-tail-merge -fno-caller-saves -fno-crossjumping -fno-cse-follow-jumps -fno-cse-skip-blocks -fno-optimize-sibling-calls -fno-hoist-adjacent-loads  -fno-inline-small-functions -fno-indirect-inlining -fno-ipa-cp -fno-ipa-cp-alignment -fno-ipa-sra -fno-ipa-icf  -fno-isolate-erroneous-paths-dereference -fno-lra-remat  -fno-optimize-sibling-calls -fno-optimize-strlen -fno-partial-inlining -fno-peephole2 -fno-reorder-blocks -fno-reorder-blocks-and-partition -fno-reorder-functions
+CFLAGS =-g -O2 -falign-functions -fno-ipa-pure-const
 TOP_DIR=../../
 OMHOME=$(OMBUILDDIR)
 LDFLAGS=-L./ -lomparse -lomcruntime -L"$(OMHOME)/lib/omc" \
