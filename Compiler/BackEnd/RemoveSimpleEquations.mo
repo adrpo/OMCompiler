@@ -3521,11 +3521,10 @@ algorithm
       list<BackendDAE.Var> varlst;
       Boolean b1;
       BackendDAE.Shared shared;
-      BackendDAE.EventInfo eventInfo;
 
     case (false, _) then inDAE;
     case (true, BackendDAE.DAE(systs, shared as BackendDAE.SHARED( knownVars=knvars, aliasVars=aliasVars, initialEqs=inieqns,
-                                                                   constraints=constraintsLst, classAttrs=clsAttrsLst, eventInfo=eventInfo )))
+                                                                   constraints=constraintsLst, classAttrs=clsAttrsLst )))
       equation
         if Flags.isSet(Flags.DUMP_REPL) then
           BackendVarTransform.dumpReplacements(repl);
@@ -3545,10 +3544,6 @@ algorithm
         ((_, eqnslst, _)) = BackendEquation.traverseEquationArray(shared.removedEqs, replaceEquationTraverser, (repl, {}, false));
         eqnslst = List.select(eqnslst, BackendEquation.assertWithCondTrue);
         shared.removedEqs = BackendEquation.listEquation(eqnslst);
-
-        (eventInfo.whenClauseLst, _) =
-            BackendVarTransform.replaceWhenClauses(eventInfo.whenClauseLst, repl, SOME(BackendVarTransform.skipPreChangeEdgeOperator));
-        shared.eventInfo = eventInfo;
 
         (constraintsLst, clsAttrsLst) = replaceOptimicaExps(constraintsLst, clsAttrsLst, repl);
         shared.constraints = constraintsLst;
@@ -4160,18 +4155,6 @@ algorithm
       list<BackendDAE.WhenOperator> whenStmtLst;
       Option<BackendDAE.WhenEquation> oweqn;
 
-    case (BackendDAE.WHEN_EQ(left=left, elsewhenPart=NONE()), _)
-      equation
-        left = ComponentReference.crefStripLastSubs(left);
-        hs = BaseHashSet.add(left, iHs);
-      then
-        hs;
-    case (BackendDAE.WHEN_EQ(left=left, elsewhenPart=SOME(weqn)), _)
-      equation
-        left = ComponentReference.crefStripLastSubs(left);
-        hs = BaseHashSet.add(left, iHs);
-      then
-        addUnreplaceableFromWhen(weqn, hs);
     case (BackendDAE.WHEN_STMTS(whenStmtLst=whenStmtLst,elsewhenPart=oweqn), _)
       equation
        hs = addUnreplaceableFromWhenOps(whenStmtLst, iHs);
@@ -4357,7 +4340,6 @@ algorithm
       DAE.FunctionTree funcTree;
       BackendDAE.ExternalObjectClasses eoc;
       BackendDAE.SymbolicJacobians symjacs;
-      list<BackendDAE.WhenClause> whenClauseLst, whenClauseLst1;
       BackendDAE.EqSystems systs, systs1;
       list<BackendDAE.Equation> eqnslst;
       list<BackendDAE.Var> varlst;
@@ -4366,7 +4348,7 @@ algorithm
 
     case ( syst as BackendDAE.EQSYSTEM(orderedVars=orderedVars, orderedEqs=orderedEqs, removedEqs=remeqns),
            shared as BackendDAE.SHARED( knownVars=knvars, aliasVars=aliasVars, initialEqs=inieqns,
-                                       eventInfo=eventInfo as BackendDAE.EVENT_INFO(whenClauseLst=whenClauseLst )) )
+                                       eventInfo=eventInfo) )
       equation
 
       // sizes of Hash tables are system dependent!!!!
@@ -4429,10 +4411,6 @@ algorithm
       (aliasVars, (_, varlst)) = BackendVariable.traverseBackendDAEVarsWithUpdate(aliasVars, replaceAliasVarTraverser, (repl, {}));
       aliasVars = List.fold(varlst, fixAliasConstBindings, aliasVars);
       (knvars, _) = BackendVariable.traverseBackendDAEVarsWithUpdate(knvars, replaceVarTraverser, repl);
-      // BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-      // BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-      // Update whenClauseLst !!!
-      (whenClauseLst, _) = BackendVarTransform.replaceWhenClauses(whenClauseLst, repl, SOME(BackendVarTransform.skipPreChangeEdgeOperator));
 
       // BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
       // BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
@@ -4457,7 +4435,6 @@ algorithm
       syst.orderedVars = orderedVars;
       syst.orderedEqs = orderedEqs;
 
-      eventInfo.whenClauseLst = whenClauseLst;
       shared.eventInfo = eventInfo;
       shared.knownVars = knvars;
       shared.aliasVars = aliasVars;
