@@ -22,8 +22,6 @@ MSGPACK_CFLAGS = -march=i686
 CMAKE = $(OMDEV)/bin/cmake/bin/cmake
 CMAKE_TARGET = "MSYS Makefiles"
 BOOST_PATH = $(OMDEV)/lib/3rdParty/boost-1_55/
-#PKG_CONFIG_PATH = $(OMDEV)/lib/gtk+-2.24.10/bin/
-OSG_PATH = $(OMDEV)/lib/openscenegraph-2.8.3-mingw/
 OPENCL = Yes
 LINK = cp -rl
 AR = ar
