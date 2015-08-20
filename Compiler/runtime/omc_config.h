@@ -33,6 +33,37 @@
 
 #if defined(__MINGW32__) || defined(_MSC_VER) /* Windows */
 
+#if defined(__MINGW64__)
+
+#define CONFIG_PLATFORM "WIN64"
+#define CONFIG_MODELICA_SPEC_PLATFORM "win64"
+#define CONFIG_OPENMODELICA_SPEC_PLATFORM "mingw64"
+#define DEFAULT_TRIPLE "i686-mingw64"
+
+#elif defined(__MINGW32__)
+
+#define CONFIG_PLATFORM "WIN32"
+#define CONFIG_MODELICA_SPEC_PLATFORM "win32"
+#define CONFIG_OPENMODELICA_SPEC_PLATFORM "mingw32"
+#define DEFAULT_TRIPLE "i686-mingw32"
+
+#elif defined(_MSV_VER) && defined(_M_IX86)
+
+#define CONFIG_PLATFORM "WIN32"
+#define CONFIG_MODELICA_SPEC_PLATFORM "win32"
+#define CONFIG_OPENMODELICA_SPEC_PLATFORM "msvc32"
+#define DEFAULT_TRIPLE "i686-msvc32"
+
+#elif defined(_MSV_VER) && defined(_M_X64)
+
+#define CONFIG_PLATFORM "WIN64"
+#define CONFIG_MODELICA_SPEC_PLATFORM "win64"
+#define CONFIG_OPENMODELICA_SPEC_PLATFORM "msvc64"
+#define DEFAULT_TRIPLE "i686-msvc64"
+
+#endif
+
+
 #define DEFAULT_CC "gcc"
 #define DEFAULT_CXX "g++"
 #define DEFAULT_OMPCC "gcc -fopenmp"
@@ -41,9 +72,6 @@
 /* adrpo: add -loleaut32 as is used by ExternalMedia */
 #define DEFAULT_LDFLAGS "-lregex -lexpat -lomcgc -lpthread -fopenmp -loleaut32"
 
-#define CONFIG_PLATFORM "WIN32"
-#define CONFIG_MODELICA_SPEC_PLATFORM "win32"
-#define CONFIG_OPENMODELICA_SPEC_PLATFORM "mingw32"
 #define CONFIG_USER_IS_ROOT 0
 #define CONFIG_WITH_OPENMP 1
 
@@ -83,7 +111,6 @@
 #else
   #define DEFAULT_LINKER "g++ -shared -Xlinker --export-all-symbols"
 #endif
-#define DEFAULT_TRIPLE ""
 
 #define CONFIG_PATH_DELIMITER "/"
 #define CONFIG_GROUP_DELIMITER ";"
