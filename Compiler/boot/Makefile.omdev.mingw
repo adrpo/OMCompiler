@@ -6,7 +6,7 @@ endif
 
 CC=gcc
 CXX=g++
-CFLAGS =-g -O2 -falign-functions -fno-ipa-pure-const
+override CFLAGS += -fno-ipa-pure-const
 TOP_DIR=../../
 OMHOME=$(OMBUILDDIR)
 LDFLAGS=-L./ -lomparse -lomcruntime -L"$(OMHOME)/lib/omc" \
