@@ -2693,8 +2693,8 @@ template calcHelperMainfile(SimCode simCode ,Text& extraFuncs,Text& extraFuncsDe
     #include <Core/Utils/extension/logger.hpp>
 
     #include "OMCpp<%fileNamePrefix%>Types.h"
-    #include "OMCpp<%fileNamePrefix%>.h"
     #include "OMCpp<%fileNamePrefix%>Functions.h"
+    #include "OMCpp<%fileNamePrefix%>.h"
     #include "OMCpp<%fileNamePrefix%>Jacobian.h"
     #include "OMCpp<%fileNamePrefix%>StateSelection.h"
     #include "OMCpp<%fileNamePrefix%>WriteOutput.h"
@@ -3566,8 +3566,10 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
     <%isConsistent(simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>
 
     <%generateStepCompleted(listAppend(allEquations,initialEquations),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
-
     <%generateStepStarted(listAppend(allEquations,initialEquations),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace,useFlatArrayNotation)%>
+
+    <%generateRestoreOldValues(listAppend(allEquations,initialEquations),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
+    <%generateRestoreNewValues(listAppend(allEquations,initialEquations),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
 
     <%generatehandleTimeEvent(timeEvents, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, boolNot(stringEq(getConfigString(PROFILING_LEVEL),"none")))%>
     <%generateDimTimeEvent(listAppend(allEquations,initialEquations),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>
@@ -4561,25 +4563,27 @@ match fn
 case FUNCTION(outVars={}) then
   let fname = underscorePath(name)
   <<
-        void <%fname%>(<%functionArguments |> var => funArgDefinition(var, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%>);
+  <%functionTemplates(functionArguments)%>
+  void <%fname%>(<%functionArguments |> var => funArgDefinition(var, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%>);
   >>
 case FUNCTION(outVars=_) then
   let fname = underscorePath(name)
   <<
-        /* functionHeaderRegularFunction2 */
-        void /*<%fname%>RetType*/ <%fname%>(<%functionArguments |> var => funArgDefinition(var,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%><%if functionArguments then "," else ""%> <%fname%>RetType& output);
+  /* functionHeaderRegularFunction2 */
+  <%functionTemplates(functionArguments)%>
+  void /*<%fname%>RetType*/ <%fname%>(<%functionArguments |> var => funArgDefinition(var,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%><%if functionArguments then "," else ""%> <%fname%>RetType& output);
   >>
 case EXTERNAL_FUNCTION(outVars=var::_) then
-let fname = underscorePath(name)
-   <<
-        /* functionHeaderRegularFunction2 */
-        void /*<%fname%>RetType*/ <%fname%>(<%funArgs |> var => funArgDefinition(var,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%><%if funArgs then "," else ""%> <%fname%>RetType& output);
-   >>
+  let fname = underscorePath(name)
+  <<
+  /* functionHeaderRegularFunction2 */
+  void /*<%fname%>RetType*/ <%fname%>(<%funArgs |> var => funArgDefinition(var,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%><%if funArgs then "," else ""%> <%fname%>RetType& output);
+  >>
 case EXTERNAL_FUNCTION(outVars={}) then
-let fname = underscorePath(name)
-   <<
-        void <%fname%>(<%funArgs |> var => funArgDefinition(var,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%>);
-   >>
+  let fname = underscorePath(name)
+  <<
+  void <%fname%>(<%funArgs |> var => funArgDefinition(var,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%>);
+  >>
 end functionHeaderRegularFunction2;
 
 template functionHeaderRegularFunction3(Function fn,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
@@ -4590,14 +4594,14 @@ case FUNCTION(outVars={}) then ""
 case FUNCTION(outVars=_) then
   let fname = underscorePath(name)
   <<
-        /* functionHeaderRegularFunction3 */
-        <%fname%>RetType _<%fname%>;
+  /* functionHeaderRegularFunction3 */
+  <%fname%>RetType _<%fname%>;
   >>
- case EXTERNAL_FUNCTION(outVars=var::_) then
- let fname = underscorePath(name)
- <<
-        /* functionHeaderRegularFunction3 */
-        <%fname%>RetType _<%fname%>;
+case EXTERNAL_FUNCTION(outVars=var::_) then
+  let fname = underscorePath(name)
+  <<
+  /* functionHeaderRegularFunction3 */
+  <%fname%>RetType _<%fname%>;
   >>
 end functionHeaderRegularFunction3;
 
@@ -4640,29 +4644,25 @@ case FUNCTION(__) then
   return <%if outVars then '<%outVarAssign%>' %>
 */
 
-
-
-
-
   //let boxedFn = if acceptMetaModelicaGrammar() then functionBodyBoxed(fn)
   <<
   //if outvars missing
+  <%functionTemplates(functionArguments)%>
   void /*<%retType%>*/ Functions::<%fname%>(<%functionArguments |> var => funArgDefinition(var,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%><%if functionArguments then if outVars then "," else ""%><%if outVars then '<%retType%>& output' %> )
   {
     //functionBodyRegularFunction
+    <%(functionArguments |> var => match var case FUNCTION_PTR(name=fnptrName) then 'typedef double <%fnptrName%>RetType;' ;separator="\n")%>
     <%varDecls%>
-  //outvars
+    //outvars
     <%outVarInits%>
-
-
-  <%varInits%>
+    <%varInits%>
     do
     {
-        <%bodyPart%>
+      <%bodyPart%>
     }
     while(false);
     <%outVarAssign%>
-  <%if outVars then '/*output = _<%fname%>;*/' %>
+    <%if outVars then '/*output = _<%fname%>;*/' %>
   }
 
   <% if inFunc then
@@ -4793,6 +4793,14 @@ case efn as EXTERNAL_FUNCTION(extArgs=extArgs) then
 
   >>
 end functionBodyExternalFunction;
+
+template functionTemplates(list<Variable> functionArguments)
+  "Generates template prefix for functions with function arguments"
+::=
+  // TODO: generate specific names if type of modelica_fnptr known
+  let funcPtrs = (functionArguments |> var => match var case FUNCTION_PTR(__) then 'modelica_fnptr' ;separator=", ")
+  '<%if funcPtrs then 'template <class modelica_fnptr>'%>'
+end functionTemplates;
 
 template funArgName(Variable var)
 ::=
@@ -7290,6 +7298,7 @@ int  <%modelname%>Algloop<%ls.index%>::getDimReal() const
     return(AlgLoopDefaultImplementation::getDimReal());
 };
 
+
 /// Provide number (dimension) of residuals according to data type
 int  <%modelname%>Algloop<%ls.index%>::getDimRHS() const
 {
@@ -7333,6 +7342,7 @@ int  <%modelname%>Algloop<%nls.index%>::getDimReal() const
 {
     return(AlgLoopDefaultImplementation::getDimReal());
 };
+
 
 /// Provide number (dimension) of residuals according to data type
 int  <%modelname%>Algloop<%nls.index%>::getDimRHS() const
@@ -7446,6 +7456,8 @@ case SIMCODE(modelInfo = MODELINFO(vars = vars as SIMVARS(__))) then
     // System is able to provide the Jacobian symbolically
     virtual bool provideSymbolicJacobian();
 
+    virtual void restoreOldValues();
+    virtual void restoreNewValues();
     virtual bool stepCompleted(double time);
     virtual bool stepStarted(double time);
 
@@ -9809,6 +9821,139 @@ let store_delay_expr = functionStoreDelay(delayedExps, simCode ,&extraFuncs ,&ex
 
 end generateStepCompleted;
 
+
+
+template generateRestoreOldValues(list<SimEqSystem> allEquations,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
+::=
+  let &varDecls = buffer "" /*BUFD*/
+  let algloopsolver =   generateRestoreOldValues2(allEquations,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)
+  match simCode
+  case SIMCODE(modelInfo = MODELINFO(__))
+  then
+  <<
+  void <%lastIdentOfPath(modelInfo.name)%>::restoreOldValues()
+  {
+    <%algloopsolver%>
+  }
+  >>
+
+end generateRestoreOldValues;
+
+
+template generateRestoreOldValues2(list<SimEqSystem> allEquations,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
+::=
+  let &varDecls = buffer "" /*BUFD*/
+  let algloopsolver = (allEquations |> eqs => (eqs |> eq =>
+      generateRestoreOldValues3(eq, contextOther, &varDecls /*BUFC*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
+    ;separator="\n")
+
+  <<
+  <%algloopsolver%>
+  >>
+
+end generateRestoreOldValues2;
+
+
+template generateRestoreOldValues3(SimEqSystem eq, Context context, Text &varDecls, SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
+ "Generates an equation.
+  This template should not be used for a SES_RESIDUAL.
+  Residual equations are handled differently."
+::=
+  match eq
+  case SES_LINEAR(lSystem = ls as LINEARSYSTEM(__))
+    then
+      let num = ls.index
+      match simCode
+      case SIMCODE(modelInfo = MODELINFO(__)) then
+       <<
+        _algLoopSolver<%num%>->restoreOldValues();
+       >>
+       end match
+  case e as SES_NONLINEAR(nlSystem = nls as NONLINEARSYSTEM(__))
+    then
+      let num = nls.index
+      match simCode
+      case SIMCODE(modelInfo = MODELINFO(__)) then
+       <<
+        _algLoopSolver<%num%>->restoreOldValues();
+       >>
+       end match
+  case e as SES_MIXED(cont = eq_sys)
+      then
+       <<
+       <%generateRestoreOldValues3(eq_sys,context,varDecls,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>
+       >>
+  else
+    ""
+ end generateRestoreOldValues3;
+
+
+template generateRestoreNewValues(list<SimEqSystem> allEquations,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
+::=
+  let &varDecls = buffer "" /*BUFD*/
+  let algloopsolver =   generateRestoreOldValues2(allEquations,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)
+  match simCode
+  case SIMCODE(modelInfo = MODELINFO(__))
+  then
+  <<
+  void <%lastIdentOfPath(modelInfo.name)%>::restoreNewValues()
+  {
+    <%algloopsolver%>
+  }
+  >>
+
+end generateRestoreNewValues;
+
+
+template generateRestoreNewValues2(list<SimEqSystem> allEquations,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
+::=
+  let &varDecls = buffer "" /*BUFD*/
+  let algloopsolver = (allEquations |> eqs => (eqs |> eq =>
+      generateRestoreNewValues3(eq, contextOther, &varDecls /*BUFC*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
+    ;separator="\n")
+
+  <<
+  <%algloopsolver%>
+  >>
+
+end generateRestoreNewValues2;
+
+
+template generateRestoreNewValues3(SimEqSystem eq, Context context, Text &varDecls, SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
+ "Generates an equation.
+  This template should not be used for a SES_RESIDUAL.
+  Residual equations are handled differently."
+::=
+  match eq
+  case SES_LINEAR(lSystem = ls as LINEARSYSTEM(__))
+    then
+      let num = ls.index
+      match simCode
+      case SIMCODE(modelInfo = MODELINFO(__)) then
+       <<
+        _algLoopSolver<%num%>->restoreNewValues();
+       >>
+       end match
+  case e as SES_NONLINEAR(nlSystem = nls as NONLINEARSYSTEM(__))
+    then
+      let num = nls.index
+      match simCode
+      case SIMCODE(modelInfo = MODELINFO(__)) then
+       <<
+        _algLoopSolver<%num%>->restoreNewValues();
+       >>
+       end match
+  case e as SES_MIXED(cont = eq_sys)
+      then
+       <<
+       <%generateRestoreNewValues3(eq_sys,context,varDecls,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>
+       >>
+  else
+    ""
+ end generateRestoreNewValues3;
+
+
+
 template generateStepStarted(list<SimEqSystem> allEquations,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Boolean useFlatArrayNotation)
 ::=
   let &varDecls = buffer "" /*BUFD*/
@@ -11508,6 +11653,10 @@ template literalExpConst(Exp lit, Integer index) "These should all be declared s
     <<
      StatArrayDim<%listLength(ty.dims)%><<%expTypeShort(ty)%>,<%(ty.dims |> dim as DIM_INTEGER(integer=i)  =>  '<%i%>';separator=",")%> > <%name%>;
     >>
+  case BOX(exp=exp as RCONST(__)) then
+    <<
+    double <%name%>;
+    >>
   else error(sourceInfo(), 'literalExpConst failed: <%printExpStr(lit)%>')
 end literalExpConst;
 
@@ -11521,9 +11670,6 @@ template literalExpConstArrayVal(Exp lit)
   case lit as SHARED_LITERAL(__) then '_OMC_LIT<%lit.index%>'
   else error(sourceInfo(), 'literalExpConstArrayVal failed: <%printExpStr(lit)%>')
 end literalExpConstArrayVal;
-
-
-
 
 template literalExpConstImpl(Exp lit, Integer index) "These should all be declared static X const"
 ::=
@@ -11561,15 +11707,12 @@ template literalExpConstImpl(Exp lit, Integer index) "These should all be declar
     <%arrayTypeStr%> <%name%>_data[] = {<%data%>};
     assignRowMajorData(<%name%>_data, <%name%>);
     >>
-
+  case BOX(exp=exp as RCONST(__)) then
+    <<
+    <%name%> = <%exp.real%>;
+    >>
   else error(sourceInfo(), 'literalExpConst failed: <%printExpStr(lit)%>')
 end literalExpConstImpl;
-
-
-
-
-
-
 
 template handleEvent(SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
 ::=
@@ -12260,9 +12403,9 @@ template initialAnalyticJacobians(Integer indexJacobian, list<JacobianColumn> ja
           let type = getConfigString(MATRIX_FORMAT)
           let matrixinit =  match type
           case ("dense") then
-            'ublas::zero_matrix<double> (<%index_%>,<%indexColumn%>)'
+            'ublas::zero_matrix<double> (<%indexColumn%>,<%index_%>)'
           case ("sparse") then
-            '<%index_%>,<%indexColumn%>,<%sp_size_index%>'
+            '<%indexColumn%>,<%index_%>,<%sp_size_index%>'
           else "A matrix type is not supported"
           end match
           <<
