@@ -718,7 +718,7 @@ public function setWindowsPaths
 algorithm
   _ := matchcontinue(inOMHome)
     local
-      String oldPath,newPath,omHome,omdevPath;
+      String oldPath,newPath,omHome,omdevPath,mingwDir, binDir, libBinDir;
 
     // check if we have OMDEV set
     case (omHome)
@@ -727,15 +727,17 @@ algorithm
         omdevPath = Util.makeValueOrDefault(System.readEnv,"OMDEV","");
         // we have something!
         false = stringEq(omdevPath, "");
-        // do we have bin?
-        true = System.directoryExists(omdevPath + "\\tools\\mingw\\bin");
-        // do we have the correct libexec stuff?
-        true = System.directoryExists(omdevPath + "\\tools\\mingw\\libexec\\gcc\\mingw32\\4.4.0");
+        mingwDir = System.openModelicaPlatform();
+        // do we have bin and lib bin?
+        binDir = omdevPath + "\\tools\\msys\\" + mingwDir + "\\bin";
+        libBinDir = omdevPath + "\\tools\\msys\\" + mingwDir + "\\lib\\gcc\\" + System.gccDumpMachine() + "\\" + System.gccVersion();
+        true = System.directoryExists(binDir);
+        true = System.directoryExists(libBinDir);
         oldPath = System.readEnv("PATH");
         newPath = stringAppendList({omHome,"\\bin;",
                                     omHome,"\\lib;",
-                                    omdevPath,"\\tools\\mingw\\bin;",
-                                    omdevPath,"\\tools\\mingw\\libexec\\gcc\\mingw32\\4.4.0\\;",
+                                    binDir + ";",
+                                    libBinDir + ";",
                                     oldPath});
         _ = System.setEnv("PATH",newPath,true);
       then
@@ -745,14 +747,16 @@ algorithm
       equation
         _ = System.setEnv("OPENMODELICAHOME",omHome,true);
         oldPath = System.readEnv("PATH");
+        mingwDir = System.openModelicaPlatform();
+        binDir = omHome + "\\tools\\msys\\" + mingwDir + "\\bin";
+        libBinDir = omHome + "\\tools\\msys\\" + mingwDir + "\\lib\\gcc\\" + System.gccDumpMachine() + "\\" + System.gccVersion();
         // do we have bin?
-        true = System.directoryExists(omHome + "\\mingw\\bin");
-        // do we have the correct libexec stuff?
-        true = System.directoryExists(omHome + "\\mingw\\libexec\\gcc\\mingw32\\4.4.0");
+        true = System.directoryExists(binDir);
+        true = System.directoryExists(libBinDir);
         newPath = stringAppendList({omHome,"\\bin;",
                                     omHome,"\\lib;",
-                                    omHome,"\\mingw\\bin;",
-                                    omHome,"\\mingw\\libexec\\gcc\\mingw32\\4.4.0\\;",
+                                    binDir + ";",
+                                    libBinDir + ";",
                                     oldPath});
         _ = System.setEnv("PATH",newPath,true);
       then
@@ -768,8 +772,9 @@ algorithm
     else
       equation
         print("We could not find any of:\n");
-        print("\t$OPENMODELICAHOME/MinGW/bin and $OPENMODELICAHOME/MinGW/libexec/gcc/mingw32/4.4.0\n");
-        print("\t$OMDEV/tools/MinGW/bin and $OMDEV/tools/MinGW/libexec/gcc/mingw32/4.4.0\n");
+        mingwDir = System.openModelicaPlatform();
+        print("\t$OPENMODELICAHOME/tools/msys/" + mingwDir + "/bin" + "\n");
+        print("\t$OMDEV/tools/msys/" + mingwDir + "/bin" + "\n");
       then
         ();
 
