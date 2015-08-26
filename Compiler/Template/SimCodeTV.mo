@@ -417,12 +417,6 @@ package SimCode
     end FUNCTION_PTR;
   end Variable;
 
-  uniontype Statement
-    record ALGORITHM
-       list<DAE.Statement> statementLst;
-    end ALGORITHM;
-  end Statement;
-
   uniontype ExtObjInfo
     record EXTOBJINFO
       list<SimCodeVar.SimVar> vars;
@@ -603,7 +597,7 @@ package SimCode
       list<Variable> outVars;
       list<Variable> functionArguments;
       list<Variable> variableDeclarations;
-      list<Statement> body;
+      list<DAE.Statement> body;
       SCode.Visibility visibility;
       builtin.SourceInfo info;
     end FUNCTION;
@@ -612,7 +606,7 @@ package SimCode
       list<Variable> outVars;
       list<Variable> functionArguments;
       list<Variable> variableDeclarations;
-      list<Statement> body;
+      list<DAE.Statement> body;
       builtin.SourceInfo info;
     end PARALLEL_FUNCTION;
     record KERNEL_FUNCTION
@@ -620,7 +614,7 @@ package SimCode
       list<Variable> outVars;
       list<Variable> functionArguments;
       list<Variable> variableDeclarations;
-      list<Statement> body;
+      list<DAE.Statement> body;
       builtin.SourceInfo info;
     end KERNEL_FUNCTION;
     record EXTERNAL_FUNCTION
@@ -3074,6 +3068,12 @@ package Expression
   output list<Integer> outValues;
   end dimensionsList;
 
+  function expDimensionsList
+  input list<DAE.Exp> inDims;
+  output list<Integer> outValues;
+  end expDimensionsList;
+
+
   function isMetaArray
     input DAE.Exp inExp;
     output Boolean outB;
@@ -3253,6 +3253,17 @@ package DAEUtil
     input DAE.ElementSource source;
     output builtin.SourceInfo info;
   end getElementSourceFileInfo;
+
+  function statementsContainReturn
+    input list<DAE.Statement> stmts;
+    output Boolean b;
+  end statementsContainReturn;
+
+  function statementsContainTryBlock
+    input list<DAE.Statement> stmts;
+    output Boolean b;
+  end statementsContainTryBlock;
+
 end DAEUtil;
 
 package Types
