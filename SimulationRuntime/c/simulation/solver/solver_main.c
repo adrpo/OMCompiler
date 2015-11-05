@@ -156,6 +156,7 @@ int solver_main_step(DATA* data, threadData_t *threadData, SOLVER_INFO* solverIn
  */
 int initializeSolverData(DATA* data, threadData_t *threadData, SOLVER_INFO* solverInfo)
 {
+  TRACE_PUSH
   int retValue = 0;
   int i;
 
@@ -173,6 +174,8 @@ int initializeSolverData(DATA* data, threadData_t *threadData, SOLVER_INFO* solv
   solverInfo->currentStepSize = simInfo->stepSize;
   solverInfo->laststep = 0;
   solverInfo->solverRootFinding = 0;
+  solverInfo->solverNoEquidistantGrid = 0;
+  solverInfo->lastdesiredStep = solverInfo->currentTime + solverInfo->currentStepSize;
   solverInfo->eventLst = allocList(sizeof(long));
   solverInfo->didEventStep = 0;
   solverInfo->stateEvents = 0;
@@ -279,6 +282,7 @@ int initializeSolverData(DATA* data, threadData_t *threadData, SOLVER_INFO* solv
 #endif
   default:
     errorStreamPrint(LOG_SOLVER, 0, "Solver %s disabled on this configuration", SOLVER_METHOD_NAME[solverInfo->solverMethod]);
+    TRACE_POP
     return 1;
   }
 
@@ -290,6 +294,7 @@ int initializeSolverData(DATA* data, threadData_t *threadData, SOLVER_INFO* solv
     rt_tick(SIM_TIMER_TOTAL);
   }
 
+  TRACE_POP
   return retValue;
 }
 
@@ -388,8 +393,8 @@ int freeSolverData(DATA* data, SOLVER_INFO* solverInfo)
  */
 int initializeModel(DATA* data, threadData_t *threadData, const char* init_initMethod,
     const char* init_file, double init_time, int lambda_steps)
-
 {
+  TRACE_PUSH
   int retValue = 0;
 
   SIMULATION_INFO *simInfo = &(data->simulationInfo);
@@ -397,12 +402,10 @@ int initializeModel(DATA* data, threadData_t *threadData, const char* init_initM
   copyStartValuestoInitValues(data);
 
   /* read input vars */
+  data->callback->input_function_init(data, threadData);
   externalInputUpdate(data);
+  data->callback->input_function_updateStartValues(data, threadData);
   data->callback->input_function(data, threadData);
-  /* update start values for inputs if input is set */
-  if(data->simulationInfo.external_input.active){
-    data->callback->input_function_init(data, threadData);
-  }
 
   data->localData[0]->timeValue = simInfo->startTime;
 
@@ -442,6 +445,7 @@ int initializeModel(DATA* data, threadData_t *threadData, const char* init_initM
     rt_accumulate( SIM_TIMER_INIT);
   }
 
+  TRACE_POP
   return retValue;
 }
 
@@ -464,9 +468,7 @@ int finishSimulation(DATA* data, threadData_t *threadData, SOLVER_INFO* solverIn
   SIMULATION_INFO *simInfo = &(data->simulationInfo);
 
   /* Last step with terminal()=true */
-  if(solverInfo->currentTime >= simInfo->stopTime && solverInfo->solverMethod != S_OPTIMIZATION)
-  {
-
+  if(solverInfo->currentTime >= simInfo->stopTime && solverInfo->solverMethod != S_OPTIMIZATION) {
     infoStreamPrint(LOG_EVENTS_V, 0, "terminal event at stop time %g", solverInfo->currentTime);
     data->simulationInfo.terminal = 1;
     updateDiscreteSystem(data, threadData);
@@ -478,8 +480,7 @@ int finishSimulation(DATA* data, threadData_t *threadData, SOLVER_INFO* solverIn
     data->simulationInfo.terminal = 0;
   }
 
-  if(0 != strcmp("ia", MMC_STRINGDATA(data->simulationInfo.outputFormat)))
-  {
+  if (0 != strcmp("ia", data->simulationInfo.outputFormat)) {
     communicateStatus("Finished", 1);
   }
 

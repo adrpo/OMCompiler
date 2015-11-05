@@ -63,6 +63,7 @@ protected import DAEUtil;
 protected import Debug;
 protected import Error;
 protected import Expression;
+protected import ExpressionDump;
 protected import ExpressionSimplify;
 protected import Flags;
 protected import List;
@@ -901,8 +902,8 @@ protected
 algorithm
   // Send true as last argument to setTrieGet, so that it also matches any
   // prefix of the cref in case the cref is a subcomponent of a deleted component.
-  cr := ComponentReference.crefStripSubs(inComponent);
-  Connect.SET_TRIE_DELETED() := setTrieGet(cr, inSets, true);
+  //cr := ComponentReference.crefStripSubs(inComponent);
+  Connect.SET_TRIE_DELETED() := setTrieGet(inComponent, inSets, true);
 end isDeletedComponent;
 
 public function connectionContainsDeletedComponents
@@ -1784,38 +1785,39 @@ protected function setTrieGet
   input SetTrie inTrie;
   input Boolean inMatchPrefix;
   output SetTrieNode outLeaf;
+protected
+  list<SetTrieNode> nodes;
+  String subs_str, id_subs, id_nosubs;
+  SetTrieNode node;
 algorithm
-  outLeaf := matchcontinue(inCref, inTrie, inMatchPrefix)
-    local
-      String id;
-      DAE.ComponentRef rest_cref;
-      list<SetTrieNode> nodes;
-      SetTrieNode node;
-      list<DAE.Subscript> subs;
+  Connect.SET_TRIE_NODE(nodes = nodes) := inTrie;
 
-    case (DAE.CREF_QUAL(ident = id, subscriptLst = subs, componentRef = rest_cref),
-        Connect.SET_TRIE_NODE(nodes = nodes), _)
-      equation
-        id = ComponentReference.printComponentRef2Str(id, subs);
-        node = setTrieGetNode(id, nodes);
-      then
-        setTrieGet(rest_cref, node, inMatchPrefix);
+  id_nosubs := ComponentReference.crefFirstIdent(inCref);
+  subs_str := List.toString(ComponentReference.crefFirstSubs(inCref),
+    ExpressionDump.printSubscriptStr, "", "[", ",", "]", false);
+  id_subs := id_nosubs + subs_str;
 
-    case (DAE.CREF_IDENT(ident = id, subscriptLst = subs),
-        Connect.SET_TRIE_NODE(nodes = nodes), _)
-      equation
-        id = ComponentReference.printComponentRef2Str(id, subs);
-      then
-        setTrieGetNode(id, nodes);
+  try
+    // Try to look up the identifier with subscripts, in case single array
+    // elements have been added to the trie.
+    outLeaf := setTrieGetNode(id_subs, nodes);
+  else
+    // If the above fails, try again without the subscripts in case a whole
+    // array has been added to the trie.
+    outLeaf := setTrieGetNode(id_nosubs, nodes);
+  end try;
 
-    case (DAE.CREF_QUAL(ident = id, subscriptLst = subs),
-        Connect.SET_TRIE_NODE(nodes = nodes), true)
-      equation
-        id = ComponentReference.printComponentRef2Str(id, subs);
-      then
-        setTrieGetLeaf(id, nodes);
-
-  end matchcontinue;
+  // If the cref is qualified, continue to look up the rest of the cref in node
+  // we just found.
+  if not ComponentReference.crefIsIdent(inCref) then
+    try
+      outLeaf := setTrieGet(ComponentReference.crefRest(inCref), outLeaf, inMatchPrefix);
+    else
+      // Look up failed, return the previously found node if prefix matching is
+      // turned on and the node we found is a leaf.
+      true := inMatchPrefix and not setTrieIsNode(outLeaf);
+    end try;
+  end if;
 end setTrieGet;
 
 protected function setTrieGetNode
@@ -1882,6 +1884,16 @@ algorithm
     else false;
   end match;
 end setTrieLeafNamed;
+
+protected function setTrieIsNode
+  input SetTrieNode inNode;
+  output Boolean outIsNode;
+algorithm
+  outIsNode := match inNode
+    case Connect.SET_TRIE_NODE() then true;
+    else false;
+  end match;
+end setTrieIsNode;
 
 public function equations
   "Generates equations from a connection set and evaluates stream operators if
@@ -2781,6 +2793,42 @@ algorithm
   end match;
 end isOutsideStream;
 
+protected function isZeroFlowMinMax
+  "Returns true if the given flow attribute of a connector is zero."
+  input DAE.ComponentRef inStreamCref;
+  input ConnectorElement inElement;
+  output Boolean isZero;
+algorithm
+  if compareCrefStreamSet(inStreamCref, inElement) then
+    isZero := false;
+  elseif isOutsideStream(inElement) then
+    isZero := isZeroFlow(inElement, "max");
+  else
+    isZero := isZeroFlow(inElement, "min");
+  end if;
+end isZeroFlowMinMax;
+
+protected function isZeroFlow
+  "Returns true if the given flow attribute of a connector is zero."
+  input ConnectorElement inElement;
+  input String attr;
+  output Boolean isZero;
+protected
+  DAE.Type ty;
+  Option<DAE.Exp> attr_oexp;
+  DAE.Exp flow_exp, attr_exp;
+algorithm
+  flow_exp := flowExp(inElement);
+  ty := Expression.typeof(flow_exp);
+  attr_oexp := Types.lookupAttributeExp(Types.getAttributes(ty), attr);
+  if isSome(attr_oexp) then
+    SOME(attr_exp) := attr_oexp;
+    isZero := Expression.isZero(attr_exp);
+  else
+    isZero := false;
+  end if;
+end isZeroFlow;
+
 protected function streamEquationGeneral
   "Generates an equation for an outside stream connector element."
   input list<ConnectorElement> inOutsideElements;
@@ -3178,8 +3226,11 @@ protected function generateInStreamExp
   input array<Set> inSetArray;
   input Real inFlowThreshold;
   output DAE.Exp outExp;
+protected
+  list<ConnectorElement> reducedStreams;
 algorithm
-  outExp := match inStreams
+  reducedStreams := List.filterOnFalse(inStreams, function isZeroFlowMinMax(inStreamCref = inStreamCref));
+  outExp := match reducedStreams
     local
       DAE.ComponentRef c;
       Connect.Face f1, f2;
@@ -3198,7 +3249,7 @@ algorithm
           Connect.CONNECTOR_ELEMENT(face = Connect.INSIDE())}
       algorithm
         {Connect.CONNECTOR_ELEMENT(name = c)} :=
-          removeStreamSetElement(inStreamCref, inStreams);
+          removeStreamSetElement(inStreamCref, reducedStreams);
         e := Expression.crefExp(c);
       then
         e;
@@ -3210,7 +3261,7 @@ algorithm
       algorithm
         false := faceEqual(f1, f2);
         {Connect.CONNECTOR_ELEMENT(name = c)} :=
-          removeStreamSetElement(inStreamCref, inStreams);
+          removeStreamSetElement(inStreamCref, reducedStreams);
         e := evaluateInStream(c, inSets, inSetArray, inFlowThreshold);
       then
         e;
@@ -3218,7 +3269,7 @@ algorithm
     // The general case:
     else
       algorithm
-        (outside, inside) := List.splitOnTrue(inStreams, isOutsideStream);
+        (outside, inside) := List.splitOnTrue(reducedStreams, isOutsideStream);
         inside := removeStreamSetElement(inStreamCref, inside);
         e := streamSumEquationExp(outside, inside, inFlowThreshold);
         // Evaluate any inStream calls that were generated.
@@ -3523,7 +3574,7 @@ algorithm
     case (_, _, _, _, _)
       equation
         true = intEq(inPotentialVars, inFlowVars) or
-          Config.languageStandardAtMost(Config.MODELICA_2_X());
+          Config.languageStandardAtMost(Config.LanguageStandard.'2.x');
         true = if intEq(inStreamVars, 0) then true else intEq(inFlowVars, 1);
       then
         true;

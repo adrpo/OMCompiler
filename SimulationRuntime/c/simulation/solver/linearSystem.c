@@ -34,15 +34,16 @@
 #include <math.h>
 #include <string.h>
 
-#include "omc_config.h"
 #include "util/omc_error.h"
 #include "util/rtclock.h"
 #include "linearSystem.h"
 #include "linearSolverLapack.h"
+#if !defined(OMC_MINIMAL_RUNTIME)
 #include "linearSolverLis.h"
 #include "linearSolverUmfpack.h"
+#endif
 #include "linearSolverTotalPivot.h"
-#include "simulation/simulation_info_xml.h"
+#include "simulation/simulation_info_json.h"
 
 static void setAElement(int row, int col, double value, int nth, void *data, threadData_t *);
 static void setAElementLis(int row, int col, double value, int nth, void *data, threadData_t *);

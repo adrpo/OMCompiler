@@ -964,16 +964,21 @@ constant Integer RT_CLOCK_UNCERTAINTIES = 18;
 constant Integer RT_CLOCK_USER_RESERVED = 19;
 
 function readableTime
+"returns time in format AhBmTs [X.YYYY]"
   input Real sec;
   output String str;
 protected
   Integer tmp,min,hr;
 algorithm
+  /*
   tmp := mod(integer(sec),60);
   min := div(integer(sec),60);
   hr := div(min,60);
   min := mod(min,60);
   str := (if hr>0 then String(hr) + "h" else "") + (if min>0 then String(min) + "m" else "") + String(tmp) + "s";
+  str := str + " [" + String(sec, significantDigits=4) + "]";
+  */
+  str := String(sec, significantDigits=4);
 end readableTime;
 
 function timerTick
@@ -1637,7 +1642,7 @@ annotation(preferredView="text");
 end getMessagesString;
 
 record SourceInfo
-  String filename;
+  String fileName;
   Boolean readonly;
   Integer lineStart;
   Integer columnStart;
@@ -2329,7 +2334,7 @@ The only required argument is the className, while all others have some default 
   translateModelFMU(className, version=\"2.0\");"
   input TypeName className "the class that should translated";
   input String version = "1.0" "FMU version, 1.0 or 2.0.";
-  input String fmuType = "me" "FMU type, me (model exchange), cs (co-simulation).";
+  input String fmuType = "me" "FMU type, me (model exchange), cs (co-simulation), me_cs (both model exchange and co-simulation)";
   input String fileNamePrefix = "<default>" "fileNamePrefix. <default> = \"className\"";
   output String generatedFileName "Returns the full path of the generated FMU.";
 external "builtin";
@@ -2801,6 +2806,30 @@ annotation(
 </html>"),
   preferredView="text");
 end getComponentModifierNames;
+
+function removeComponentModifiers
+  input TypeName class_;
+  input String componentName;
+  output Boolean success;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Removes the component modifiers.
+</html>"),
+  preferredView="text");
+end removeComponentModifiers;
+
+function removeExtendsModifiers
+  input TypeName className;
+  input TypeName baseClassName;
+  output Boolean success;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Removes the extends modifiers of a class.
+</html>"),
+  preferredView="text");
+end removeExtendsModifiers;
 
 function getAlgorithmCount "Counts the number of Algorithm sections in a class."
   input TypeName class_;
@@ -3274,6 +3303,17 @@ algorithm
   success := 0 == system(command);
 annotation(preferredView="text");
 end ngspicetoModelica;
+
+function getInheritedClasses
+  input TypeName name;
+  output TypeName inheritedClasses[:];
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Returns the list of inherited classes.
+</html>"),
+  preferredView="text");
+end getInheritedClasses;
 
 function getComponentsTest
   input TypeName name;
@@ -3977,12 +4017,18 @@ package '1.9.2' "Version 1.9.2 (2015-03-17)"
   <body>Redirecting to the <a href=\"https://trac.openmodelica.org/OpenModelica/wiki/ReleaseNotes/1.9.2\">on-line release notes</a>.</body>
 </html>"));
 end '1.9.2';
-package '1.9.3' "Version 1.9.3 (2015-03-17)"
+package '1.9.3' "Version 1.9.3 (2015-09-08)"
   annotation(Documentation(info = "<html>
   <head><meta http-equiv=\"refresh\" content=\"0; url=https://trac.openmodelica.org/OpenModelica/wiki/ReleaseNotes/1.9.3\"></head>
   <body>Redirecting to the <a href=\"https://trac.openmodelica.org/OpenModelica/wiki/ReleaseNotes/1.9.3\">on-line release notes</a>.</body>
 </html>"));
 end '1.9.3';
+package '1.9.4' "Version 1.9.4 (2015-09-08)"
+  annotation(Documentation(info = "<html>
+  <head><meta http-equiv=\"refresh\" content=\"0; url=https://trac.openmodelica.org/OpenModelica/wiki/ReleaseNotes/1.9.4\"></head>
+  <body>Redirecting to the <a href=\"https://trac.openmodelica.org/OpenModelica/wiki/ReleaseNotes/1.9.4\">on-line release notes</a>.</body>
+</html>"));
+end '1.9.4';
 annotation(Documentation(info="<html>
 This section summarizes the major releases of OpenModelica and what changed between the major versions.
 Note that OpenModelica is developed rapidly.

@@ -2,17 +2,17 @@
 
 #include <Core/Modelica.h>
 
-//template class   boost::shared_ptr<IAlgLoopSolver>;
-//template class   boost::shared_ptr<IAlgLoop>;
-//template class   boost::shared_ptr<IAlgLoopSolverFactory>;
-//template class   boost::shared_ptr<ISimData>;
+//template class   shared_ptr<IAlgLoopSolver>;
+//template class   shared_ptr<IAlgLoop>;
+//template class   shared_ptr<IAlgLoopSolverFactory>;
+//template class   shared_ptr<ISimData>;
 template class   boost::multi_array<double,2>;
 template class   boost::multi_array<double,1>;
 template class   boost::multi_array<int,2>;
 template class   boost::multi_array<int,1>;
 template class   ublas::vector<double>;
 template class   ublas::vector<int>;
-template class   uBlas::compressed_matrix<double, uBlas::column_major, 0, uBlas::unbounded_array<int>, uBlas::unbounded_array<double> > ;
+template class   ublas::compressed_matrix<double, ublas::column_major, 0, ublas::unbounded_array<int>, ublas::unbounded_array<double> > ;
 template class   std::vector<int>;
 template class   std::vector<double>;
 template class   unordered_map<string,unsigned int>;

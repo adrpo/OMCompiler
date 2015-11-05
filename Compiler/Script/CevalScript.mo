@@ -94,6 +94,7 @@ import Parser;
 import Print;
 import SCodeDump;
 import SimCodeFunction;
+import StackOverflow;
 import System;
 import Static;
 import SCode;
@@ -217,16 +218,20 @@ end isCompleteFunction;
 public function compileModel "Compiles a model given a file-prefix, helper function to buildModel."
   input String fileprefix;
   input list<String> libs;
+  input String workingDir = "";
+  input list<String> makeVars = {};
 protected
   String omhome = Settings.getInstallationDirectoryPath(),omhome_1 = System.stringReplace(omhome, "\"", "");
   String pd = System.pathDelimiter();
-  String libsfilename,libs_str,s_call,filename,winCompileMode;
+  String cdWorkingDir,setMakeVars,libsfilename,libs_str,s_call,filename,winCompileMode;
   String fileDLL = fileprefix + System.getDllExt(),fileEXE = fileprefix + System.getExeExt(),fileLOG = fileprefix + ".log";
   Integer numParallel,res;
   Boolean isWindows = System.os() == "Windows_NT";
+  list<String> makeVarsNoBinding;
 algorithm
   libsfilename := fileprefix + ".libs";
   libs_str := stringDelimitList(libs, " ");
+  makeVarsNoBinding := makeVars; // OMC is stupid and wants to constant evaluate inputs with bindings for iterator variables...
 
   System.writeFile(libsfilename, libs_str);
   if isWindows then
@@ -237,11 +242,15 @@ algorithm
     //        set OPENMODELICAHOME=DIR && actually adds the space between the DIR and &&
     //        to the environment variable! Don't ask me why, ask Microsoft.
     omhome := "set OPENMODELICAHOME=\"" + System.stringReplace(omhome_1, "/", "\\") + "\"&& ";
+    setMakeVars := sum("set "+var+"&& " for var in makeVarsNoBinding);
+    cdWorkingDir := if stringLength(workingDir) == 0 then "" else ("cd \"" + workingDir + "\"&& ");
     winCompileMode := if Config.getRunningTestsuite() then "serial" else "parallel";
-    s_call := stringAppendList({omhome,"\"",omhome_1,pd,"share",pd,"omc",pd,"scripts",pd,"Compile","\""," ",fileprefix," ",Config.simulationCodeTarget()," ", winCompileMode});
+    s_call := stringAppendList({omhome,cdWorkingDir,setMakeVars,"\"",omhome_1,pd,"share",pd,"omc",pd,"scripts",pd,"Compile","\""," ",fileprefix," ",Config.simulationCodeTarget()," ", winCompileMode});
   else
     numParallel := if Config.getRunningTestsuite() then 1 else Config.noProc();
-    s_call := stringAppendList({System.getMakeCommand()," -j",intString(numParallel)," -f ",fileprefix,".makefile"});
+    cdWorkingDir := if stringLength(workingDir) == 0 then "" else (" -C \"" + workingDir + "\"");
+    setMakeVars := sum(" "+var for var in makeVarsNoBinding);
+    s_call := stringAppendList({System.getMakeCommand()," -j",intString(numParallel),cdWorkingDir," -f ",fileprefix,".makefile",setMakeVars});
   end if;
   if Flags.isSet(Flags.DYN_LOAD) then
     Debug.traceln("compileModel: running " + s_call);
@@ -333,6 +342,10 @@ algorithm
   end matchcontinue;
 end loadFile;
 
+
+protected type LoadModelFoldArg =
+  tuple<String /*modelicaPath*/, Boolean /*forceLoad*/, Boolean /*notifyLoad*/, Boolean /*checkUses*/, Boolean /*requireExactVersion*/>;
+
 public function loadModel
   input list<tuple<Absyn.Path,list<String>>> imodelsToLoad;
   input String modelicaPath;
@@ -343,43 +356,62 @@ public function loadModel
   input Boolean requireExactVersion;
   output Absyn.Program pnew;
   output Boolean success;
+protected
+  LoadModelFoldArg arg = (modelicaPath, forceLoad, notifyLoad, checkUses, requireExactVersion);
 algorithm
-  (pnew,success) := matchcontinue (imodelsToLoad,modelicaPath,ip,forceLoad,notifyLoad,checkUses)
-    local
-      Absyn.Path path;
-      String pathStr,versions,className,version;
-      list<String> strings;
-      Boolean b,b1,b2;
-      Absyn.Program p;
-      list<tuple<Absyn.Path,list<String>>> modelsToLoad;
-
-    case ({},_,p,_,_,_) then (p,true);
-    case ((path,strings)::modelsToLoad,_,p,_,_,_)
-      equation
-        b = checkModelLoaded((path,strings),p,forceLoad,NONE());
-        pnew = if not b then ClassLoader.loadClass(path, strings, modelicaPath, NONE(), requireExactVersion) else Absyn.PROGRAM({},Absyn.TOP());
-        className = Absyn.pathString(path);
-        version = if not b then getPackageVersion(path, pnew) else "";
-        Error.assertionOrAddSourceMessage(b or not notifyLoad or forceLoad,Error.NOTIFY_NOT_LOADED,{className,version},Absyn.dummyInfo);
-        p = Interactive.updateProgram(pnew, p);
-        (p,b1) = loadModel(if checkUses then Interactive.getUsesAnnotationOrDefault(pnew, requireExactVersion) else {}, modelicaPath, p, false, notifyLoad, checkUses, requireExactVersion);
-        (p,b2) = loadModel(modelsToLoad, modelicaPath, p, forceLoad, notifyLoad, checkUses, requireExactVersion);
-      then (p,b1 and b2);
-    case ((path,strings)::_,_,p,true,_,_)
-      equation
-        pathStr = Absyn.pathString(path);
-        versions = stringDelimitList(strings,",");
-        Error.addMessage(Error.LOAD_MODEL,{pathStr,versions,modelicaPath});
-      then (p,false);
-    case ((path,strings)::modelsToLoad,_,p,false,_,_)
-      equation
-        pathStr = Absyn.pathString(path);
-        versions = stringDelimitList(strings,",");
-        Error.addMessage(Error.NOTIFY_LOAD_MODEL_FAILED,{pathStr,versions,modelicaPath});
-        (p,b) = loadModel(modelsToLoad, modelicaPath, p, forceLoad, notifyLoad, checkUses, requireExactVersion);
-      then (p,b);
-  end matchcontinue;
+  (pnew, success) := List.fold1(imodelsToLoad, loadModel1, arg, (ip, true));
 end loadModel;
+
+protected function loadModel1
+  input tuple<Absyn.Path,list<String>> modelToLoad;
+  input LoadModelFoldArg inArg;
+  input tuple<Absyn.Program, Boolean> inTpl;
+  output tuple<Absyn.Program, Boolean> outTpl;
+protected
+  list<tuple<Absyn.Path,list<String>>> modelsToLoad;
+  Boolean b, b1, success, forceLoad, notifyLoad, checkUses, requireExactVersion;
+  Absyn.Path path;
+  list<String> versionsLst;
+  String pathStr, versions, className, version, modelicaPath;
+  Absyn.Program p, pnew;
+  Error.MessageTokens msgTokens;
+algorithm
+  (path, versionsLst) := modelToLoad;
+  (modelicaPath, forceLoad, notifyLoad, checkUses, requireExactVersion) := inArg;
+  try
+    (p, success) := inTpl;
+    if checkModelLoaded(modelToLoad, p, forceLoad, NONE()) then
+      pnew := Absyn.PROGRAM({}, Absyn.TOP());
+      version := "";
+    else
+      pnew := ClassLoader.loadClass(path, versionsLst, modelicaPath, NONE(), requireExactVersion);
+      version := getPackageVersion(path, pnew);
+      b := not notifyLoad or forceLoad;
+      msgTokens := {Absyn.pathString(path), version};
+      Error.assertionOrAddSourceMessage(b, Error.NOTIFY_NOT_LOADED, msgTokens, Absyn.dummyInfo);
+    end if;
+    p := Interactive.updateProgram(pnew, p);
+
+    b := true;
+    if checkUses then
+      modelsToLoad := Interactive.getUsesAnnotationOrDefault(pnew, requireExactVersion);
+      (p, b) := loadModel(modelsToLoad, modelicaPath, p, false, notifyLoad, checkUses, requireExactVersion);
+    end if;
+    outTpl := (p, success and b);
+  else
+    (p, _) := inTpl;
+    pathStr := Absyn.pathString(path);
+    versions := stringDelimitList(versionsLst, ",");
+    msgTokens := {pathStr, versions, modelicaPath};
+    if forceLoad then
+      Error.addMessage(Error.LOAD_MODEL, msgTokens);
+      outTpl := (p, false);
+    else
+      Error.addMessage(Error.NOTIFY_LOAD_MODEL_FAILED, msgTokens);
+      outTpl := inTpl;
+    end if;
+  end try;
+end loadModel1;
 
 protected function checkModelLoaded
   input tuple<Absyn.Path,list<String>> tpl;
@@ -1896,25 +1928,24 @@ end cevalGenerateFunction;
 
 protected function matchQualifiedCalls
 "Collects the packages used by the functions"
-  input DAE.Exp e;
-  input list<String> acc;
-  output DAE.Exp outExp;
+  input DAE.Exp inExp;
+  input list<String> inAcc;
+  output DAE.Exp outExp = inExp;
   output list<String> outAcc;
 algorithm
-  (outExp,outAcc) := match (e,acc)
+  outAcc := match inExp
     local
       String name;
-      DAE.ComponentRef cr;
-    case (DAE.CALL(path = Absyn.FULLYQUALIFIED(Absyn.QUALIFIED(name=name)), attr = DAE.CALL_ATTR(builtin = false)),_)
-      equation
-        outAcc = List.consOnTrue(not listMember(name,acc),name,acc);
-      then (e,outAcc);
-    case (DAE.CREF(componentRef=cr,ty=DAE.T_FUNCTION_REFERENCE_FUNC(builtin=false)),_)
-      equation
-        Absyn.QUALIFIED(name,Absyn.IDENT(_)) = ComponentReference.crefToPath(cr);
-        outAcc = List.consOnTrue(not listMember(name,acc),name,acc);
-      then (e,outAcc);
-    else (e,acc);
+
+    case DAE.CALL(path = Absyn.FULLYQUALIFIED(Absyn.QUALIFIED(name = name)),
+                  attr = DAE.CALL_ATTR(builtin = false))
+      then List.consOnTrue(not listMember(name, inAcc), name, inAcc);
+
+    case DAE.CREF(componentRef = DAE.CREF_QUAL(ident = name),
+                  ty = DAE.T_FUNCTION_REFERENCE_FUNC(builtin = false))
+      then List.consOnTrue(not listMember(name, inAcc), name, inAcc);
+
+    else inAcc;
   end match;
 end matchQualifiedCalls;
 
@@ -2191,6 +2222,47 @@ function cevalCallFunctionEvaluateOrGenerate
   output FCore.Cache outCache;
   output Values.Value outValue;
   output Option<GlobalScript.SymbolTable> outSymTab;
+protected
+  Integer numCheckpoints;
+algorithm
+  // Only add a stack overflow checkpoint for the top-most cevalCallFunctionEvaluateOrGenerate
+  if isNone(getGlobalRoot(Global.stackoverFlowIndex)) then
+    setGlobalRoot(Global.stackoverFlowIndex, SOME(1));
+    numCheckpoints:=ErrorExt.getNumCheckpoints();
+    try
+      StackOverflow.clearStacktraceMessages();
+      (outCache,outValue,outSymTab) := cevalCallFunctionEvaluateOrGenerate2(inCache,inEnv,inExp,inValuesValueLst,impl,inSymTab,inMsg,bIsCompleteFunction);
+    else
+      setGlobalRoot(Global.stackoverFlowIndex, NONE());
+      ErrorExt.rollbackNumCheckpoints(ErrorExt.getNumCheckpoints()-numCheckpoints);
+      Error.addInternalError("Stack overflow when evaluating function call: "+ExpressionDump.printExpStr(inExp)+"...\n"+stringDelimitList(StackOverflow.readableStacktraceMessages(), "\n"), match inMsg local SourceInfo info; case Absyn.MSG(info) then info; else sourceInfo(); end match);
+      /* Do not fail or we can loop too much */
+      StackOverflow.clearStacktraceMessages();
+      outCache := inCache;
+      outSymTab := inSymTab;
+      outValue := Values.META_FAIL();
+    end try annotation(__OpenModelica_stackOverflowCheckpoint=true);
+    setGlobalRoot(Global.stackoverFlowIndex, NONE());
+  else
+    (outCache,outValue,outSymTab) := cevalCallFunctionEvaluateOrGenerate2(inCache,inEnv,inExp,inValuesValueLst,impl,inSymTab,inMsg,bIsCompleteFunction);
+  end if;
+end cevalCallFunctionEvaluateOrGenerate;
+
+function cevalCallFunctionEvaluateOrGenerate2
+"This function evaluates CALL expressions, i.e. function calls.
+  They are currently evaluated by generating code for the function and
+  then dynamicly load the function and call it."
+  input FCore.Cache inCache;
+  input FCore.Graph inEnv;
+  input DAE.Exp inExp;
+  input list<Values.Value> inValuesValueLst;
+  input Boolean impl;
+  input Option<GlobalScript.SymbolTable> inSymTab;
+  input Absyn.Msg inMsg;
+  input Boolean bIsCompleteFunction;
+  output FCore.Cache outCache;
+  output Values.Value outValue;
+  output Option<GlobalScript.SymbolTable> outSymTab;
 algorithm
   (outCache,outValue,outSymTab) := matchcontinue (inCache,inEnv,inExp,inValuesValueLst,impl,inSymTab,inMsg,bIsCompleteFunction)
     local
@@ -2262,8 +2334,8 @@ algorithm
         true = bIsCompleteFunction;
         true = Flags.isSet(Flags.GEN);
         failure(cevalIsExternalObjectConstructor(cache,funcpath,env,msg));
-        if Flags.isSet(Flags.DYN_LOAD) then
-          Debug.traceln("[dynload]: [func from file] check if is in CF list: " + Absyn.pathString(funcpath));
+        if Flags.isSet(Flags.DYN_LOAD) and Flags.isSet(Flags.FAILTRACE) then
+          print("[dynload]: [func from file] check if is in CF list: " + Absyn.pathString(funcpath));
         end if;
 
         (true, funcHandle, buildTime, fOld) = Static.isFunctionInCflist(cflist, funcpath);
@@ -2272,13 +2344,15 @@ algorithm
         false = stringEq(fNew,""); // see if the WE have a file or not!
         false = Static.needToRebuild(fNew,fOld,buildTime); // we don't need to rebuild!
 
-        if Flags.isSet(Flags.DYN_LOAD) then
+        if Flags.isSet(Flags.DYN_LOAD) and Flags.isSet(Flags.FAILTRACE) then
           print("[dynload]: [func from file] About to execute function present in CF list: " + Absyn.pathString(funcpath) + "\n");
         end if;
 
         print_debug = Flags.isSet(Flags.DYN_LOAD);
         newval = DynLoad.executeFunction(funcHandle, vallst, print_debug);
-        //print("CALL: [func from file] CF LIST:\n\t" + stringDelimitList(List.map(cflist, Interactive.dumpCompiledFunction), "\n\t") + "\n");
+        if Flags.isSet(Flags.DYN_LOAD) and Flags.isSet(Flags.FAILTRACE) then
+          print("CALL: [func from file] CF LIST:\n\t" + stringDelimitList(List.map(cflist, Interactive.dumpCompiledFunction), "\n\t") + "\n");
+        end if;
       then
         (cache,newval,st);
 
@@ -2312,10 +2386,8 @@ algorithm
 
     // not in CF list, we have a symbol table, generate function and update symtab
     case (cache,env,(DAE.CALL(path = funcpath,attr = DAE.CALL_ATTR(builtin = false))),vallst,_,
-          SOME(syt as GlobalScript.SYMBOLTABLE(p as Absyn.PROGRAM(),a,b,c,cf,lf)), msg, _) // yeha! we have a symboltable!
-      equation
-        true = bIsCompleteFunction;
-        true = Flags.isSet(Flags.GEN);
+          SOME(syt as GlobalScript.SYMBOLTABLE(p as Absyn.PROGRAM(),a,b,c,cf,lf)), msg, _) guard (bIsCompleteFunction and Flags.isSet(Flags.GEN)) // yeha! we have a symboltable!
+      algorithm
         failure(cevalIsExternalObjectConstructor(cache,funcpath,env,msg));
 
         if Flags.isSet(Flags.DYN_LOAD) then
@@ -2324,9 +2396,9 @@ algorithm
 
         // remove it and all its dependencies as it might be there with an older build time.
         // get dependencies!
-        (_, functionDependencies, _) = getFunctionDependencies(cache, funcpath);
+        (_, functionDependencies, _) := getFunctionDependencies(cache, funcpath);
         //print("\nFunctions before:\n\t" + stringDelimitList(List.map(cf, Interactive.dumpCompiledFunction), "\n\t") + "\n");
-        newCF = Interactive.removeCfAndDependencies(cf, funcpath::functionDependencies);
+        newCF := Interactive.removeCfAndDependencies(cf, funcpath::functionDependencies);
         //print("\nFunctions after remove:\n\t" + stringDelimitList(List.map(newCF, Interactive.dumpCompiledFunction), "\n\t") + "\n");
 
         if Flags.isSet(Flags.DYN_LOAD) then
@@ -2336,28 +2408,29 @@ algorithm
         //print("\nfunctions in SYMTAB: " + Interactive.dumpCompiledFunctions(syt)
 
         // now is safe to generate code
-        (cache, funcstr, fileName) = cevalGenerateFunction(cache, env, p, funcpath);
-        print_debug = Flags.isSet(Flags.DYN_LOAD);
-        libHandle = System.loadLibrary(fileName, print_debug);
-        funcHandle = System.lookupFunction(libHandle, stringAppend("in_", funcstr));
-        newval = DynLoad.executeFunction(funcHandle, vallst, print_debug);
+        (cache, funcstr, fileName) := cevalGenerateFunction(cache, env, p, funcpath);
+        print_debug := Flags.isSet(Flags.DYN_LOAD);
+        libHandle := System.loadLibrary(fileName, print_debug);
+        funcHandle := System.lookupFunction(libHandle, stringAppend("in_", funcstr));
+        newval := DynLoad.executeFunction(funcHandle, vallst, print_debug);
+
         System.freeLibrary(libHandle, print_debug);
-        buildTime = System.getCurrentTime();
+        buildTime := System.getCurrentTime();
         // update the build time in the class!
-        Absyn.CLASS(_,_,_,_,Absyn.R_FUNCTION(_),_,info) = Interactive.getPathedClassInProgram(funcpath, p);
+        Absyn.CLASS(_,_,_,_,Absyn.R_FUNCTION(_),_,info) := Interactive.getPathedClassInProgram(funcpath, p);
 
         /* info = Absyn.setBuildTimeInInfo(buildTime,info);
         ts = Absyn.setTimeStampBuild(ts, buildTime); */
-        w = Interactive.buildWithin(funcpath);
+        w := Interactive.buildWithin(funcpath);
 
         if Flags.isSet(Flags.DYN_LOAD) then
           print("[dynload]: Updating build time for function path: " + Absyn.pathString(funcpath) + " within: " + Dump.unparseWithin(w) + "\n");
         end if;
 
         // p = Interactive.updateProgram(Absyn.PROGRAM({Absyn.CLASS(name,ppref,fpref,epref,Absyn.R_FUNCTION(funcRest),body,info)},w,ts), p);
-        f = Absyn.getFileNameFromInfo(info);
+        f := Absyn.getFileNameFromInfo(info);
 
-        syt = GlobalScript.SYMBOLTABLE(
+        syt := GlobalScript.SYMBOLTABLE(
                 p, a, b, c,
                 GlobalScript.CFunction(funcpath,DAE.T_UNKNOWN({funcpath}),funcHandle,buildTime,f)::newCF,
                 lf);
@@ -2371,12 +2444,9 @@ algorithm
         (cache,newval,SOME(syt));
 
     // no symtab, WE SHOULD NOT EVALUATE! but we do anyway with suppressed error messages!
-    case (cache,env,(DAE.CALL(path = funcpath,attr = DAE.CALL_ATTR(builtin = false))),vallst,_,NONE(), msg, _) // crap! we have no symboltable!
-      equation
-        true = bIsCompleteFunction;
-        true = Flags.isSet(Flags.GEN);
+    case (cache,env,(DAE.CALL(path = funcpath,attr = DAE.CALL_ATTR(builtin = false))),vallst,_,NONE(), msg, _) guard (bIsCompleteFunction and Flags.isSet(Flags.GEN)) // crap! we have no symboltable!
+      algorithm
         failure(cevalIsExternalObjectConstructor(cache,funcpath,env,msg));
-        ErrorExt.setCheckpoint("cevalCallFunctionEvaluateOrGenerate_NO_SYMTAB");
 
         if Flags.isSet(Flags.DYN_LOAD) then
           print("[dynload]: [NO SYMTAB] not in in CF list: " + Absyn.pathString(funcpath) + "\n");
@@ -2384,35 +2454,36 @@ algorithm
 
         // we might actually have a function loaded here already!
         // we need to unload all functions to not get conflicts!
-        p = FCore.getProgramFromCache(cache);
-        (cache,funcstr,fileName) = cevalGenerateFunction(cache, env, p, funcpath);
+        p := FCore.getProgramFromCache(cache);
+
+        ErrorExt.setCheckpoint("cevalCallFunctionEvaluateOrGenerate_NO_SYMTAB");
+
+        try
+          (cache,funcstr,fileName) := cevalGenerateFunction(cache, env, p, funcpath);
+          ErrorExt.rollBack("cevalCallFunctionEvaluateOrGenerate_NO_SYMTAB"); // Should be delete?
+        else
+          ErrorExt.rollBack("cevalCallFunctionEvaluateOrGenerate_NO_SYMTAB");
+          fail();
+        end try;
+
         // generate a uniquely named dll!
         if Flags.isSet(Flags.DYN_LOAD) then
           print("[dynload]: cevalCallFunction: about to execute " + funcstr + "\n");
         end if;
-        print_debug = Flags.isSet(Flags.DYN_LOAD);
-        libHandle = System.loadLibrary(fileName, print_debug);
-        funcHandle = System.lookupFunction(libHandle, stringAppend("in_", funcstr));
-        newval = DynLoad.executeFunction(funcHandle, vallst, print_debug);
+        print_debug := Flags.isSet(Flags.DYN_LOAD);
+        libHandle := System.loadLibrary(fileName, print_debug);
+        funcHandle := System.lookupFunction(libHandle, stringAppend("in_", funcstr));
+        newval := DynLoad.executeFunction(funcHandle, vallst, print_debug);
+
         System.freeFunction(funcHandle, print_debug);
         System.freeLibrary(libHandle, print_debug);
 
         if Flags.isSet(Flags.DYN_LOAD) then
-          Debug.traceln("CALL: [NO SYMTAB] not in in CF list [finished]: " + Absyn.pathString(funcpath));
+          print("CALL: [NO SYMTAB] not in in CF list [finished]: " + Absyn.pathString(funcpath));
         end if;
-        ErrorExt.rollBack("cevalCallFunctionEvaluateOrGenerate_NO_SYMTAB");
+
       then
         (cache,newval,NONE());
-
-    // cleanup the case below when we failed. we should delete generated files too
-    case (cache,env,(DAE.CALL(path = funcpath,attr = DAE.CALL_ATTR(builtin = false))),_,_,NONE(),msg, _) // crap! we have no symboltable!
-      equation
-        true = bIsCompleteFunction;
-        true = Flags.isSet(Flags.GEN);
-        failure(cevalIsExternalObjectConstructor(cache,funcpath,env,msg));
-        ErrorExt.rollBack("cevalCallFunctionEvaluateOrGenerate_NO_SYMTAB");
-      then
-        fail();
 
     case (_,_,(DAE.CALL(path = funcpath)),_,_,_, _, _)
       equation
@@ -2428,7 +2499,7 @@ algorithm
         fail();
 
   end matchcontinue;
-end cevalCallFunctionEvaluateOrGenerate;
+end cevalCallFunctionEvaluateOrGenerate2;
 
 function cevalIsExternalObjectConstructor
   input FCore.Cache cache;

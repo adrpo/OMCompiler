@@ -110,6 +110,7 @@ int (*functionDAE)(DATA *data, threadData_t*);
 /* functions for input and output */
 int (*input_function)(DATA*, threadData_t*);
 int (*input_function_init)(DATA*, threadData_t*);
+int (*input_function_updateStartValues)(DATA*, threadData_t*);
 int (*output_function)(DATA*, threadData_t*);
 
 /* function for storing value histories of delayed expressions
@@ -296,14 +297,26 @@ int (*symEulerUpdate)(DATA * data, modelica_real dt);
 void (*function_initSynchronous)(DATA * data, threadData_t *threadData);
 
 /*
- * Check if clock is fired. In that case function updates base clock's timepoint and interval in CLOCK_DATA struct.
+ * Update clock interval.
  */
-modelica_boolean (*function_updateSynchronous)(DATA *data, threadData_t *threadData, long i);
+void (*function_updateSynchronous)(DATA *data, threadData_t *threadData, long i);
 
 /*
  * Sub-partition's equations
  */
 int (*function_equationsSynchronous)(DATA *data, threadData_t *threadData, long i);
+
+/*
+ * FMU's do not need the XML-file; they use this callback instead.
+ */
+void (*read_input_fmu)(MODEL_DATA* modelData, SIMULATION_INFO* simulationData);
+
+#ifdef FMU_EXPERIMENTAL
+/* functionODEPartial contains those equations that are needed
+ * to calculate the state derivative i-th */
+void (*functionODEPartial)(DATA *data, threadData_t*, int i);
+void (*functionFMIJacobian)(DATA *data, threadData_t*, const unsigned *unknown, int nUnk, const unsigned *ders, int nKnown, double *dvKnown, double *out);
+#endif
 };
 
 #ifdef __cplusplus

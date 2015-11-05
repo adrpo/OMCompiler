@@ -56,6 +56,9 @@ template <typename T>
 void multiply_array(const BaseArray<T> &leftArray, const BaseArray<T> &rightArray, BaseArray<T> &resultArray);
 
 template <typename T>
+void multiply_array_elem_wise(const BaseArray<T> &leftArray, const BaseArray<T> &rightArray, BaseArray<T> &resultArray);
+
+template <typename T>
 void divide_array(const BaseArray<T>& inputArray, const T &b, BaseArray<T>& outputArray);
 
 template <typename T>
@@ -69,6 +72,9 @@ void pow_array_scalar(const BaseArray<double> &inputArray, T exponent, BaseArray
 
 template <typename T>
 void subtract_array(const BaseArray<T>& leftArray, const BaseArray<T>& rightArray, BaseArray<T>& resultArray);
+
+template <typename T>
+void subtract_array_scalar(const BaseArray<T>& inputArray, T b, BaseArray<T>& outputArray);
 
 template <typename T>
 void add_array(const BaseArray<T>& leftArray, const BaseArray<T>& rightArray, BaseArray<T>& resultArray);
@@ -96,8 +102,11 @@ cross product of two arrays (a,b type as template parameter)
 template <typename T>
 void cross_array(const BaseArray<T>& a, const BaseArray<T>& b, BaseArray<T>& res);
 
-void BOOST_EXTENSION_EXPORT_DECL convertBoolToInt(const BaseArray<bool>& a, BaseArray<int>& b);
-void BOOST_EXTENSION_EXPORT_DECL convertIntToBool(const BaseArray<int>& a, BaseArray<bool>& b);
+/**
+cast type of array elements
+*/
+template <typename S, typename T>
+void cast_array(const BaseArray<S> &a, BaseArray<T> &b);
 
 /**
  * Permutes dims between row and column major storage layout,

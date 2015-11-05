@@ -960,6 +960,14 @@ algorithm
   b := List.isMemberOnTrue(cref,lst,crefEqual);
 end crefInLst;
 
+public function crefNotInLst  "returns true if the cref is not in the list of crefs"
+  input DAE.ComponentRef cref;
+  input list<DAE.ComponentRef> lst;
+  output Boolean b;
+algorithm
+  b := not List.isMemberOnTrue(cref,lst,crefEqual);
+end crefNotInLst;
+
 public function crefEqualVerySlowStringCompareDoNotUse
 "Returns true if two component references are equal,
   comparing strings if no other solution is found"
@@ -1637,8 +1645,88 @@ algorithm
   end match;
 end crefLastCref;
 
+public function crefRest
+  input DAE.ComponentRef inCref;
+  output DAE.ComponentRef outCref;
+algorithm
+  DAE.CREF_QUAL(componentRef = outCref) := inCref;
+end crefRest;
+
+public function crefTypeFull2
+  "Helper function to crefTypeFull."
+  input DAE.ComponentRef inCref;
+  output DAE.Type outType;
+  output list<DAE.Dimension> outDims;
+algorithm
+  (outType, outDims) := match(inCref)
+    local
+      DAE.ComponentRef cr;
+      DAE.Type ty, basety;
+      list<DAE.Dimension> dims, restdims;
+      list<DAE.Subscript> subs;
+
+    case DAE.CREF_IDENT(identType = ty, subscriptLst = subs)
+      equation
+        (ty,dims) = Types.flattenArrayType(ty);
+        dims = List.stripN(dims,listLength(subs));
+      then (ty,dims);
+
+    case DAE.CREF_QUAL(identType = ty, subscriptLst = subs, componentRef = cr)
+      equation
+        (ty,dims) = Types.flattenArrayType(ty);
+        dims = List.stripN(dims,listLength(subs));
+
+        (basety, restdims) = crefTypeFull2(cr);
+        dims = listAppend(dims, restdims);
+      then (basety, dims);
+
+    else
+      equation
+        true = Flags.isSet(Flags.FAILTRACE);
+        Debug.trace("ComponentReference.crefTypeFull2 failed on cref: ");
+        Debug.traceln(printComponentRefStr(inCref));
+      then
+        fail();
+  end match;
+end crefTypeFull2;
+
+public function crefTypeFull
+  "mahge:
+   This function gives the type of a cref.
+   This is done by considering how many dimensions and subscripts
+   the cref has. It also takes in to consideration where the subscripts
+   are loacated in a qualifed cref. e.g. consider :
+    record R
+      Real [4]
+    end R;
+
+    R a[3][2];
+
+    if we have a cref a[1][1].b[1] --> Real
+                      a[1].b --> Real[2][4]
+                      a.b[1] --> Real[3][2]
+                      a[1][1].b --> Real[4]
+                      a[1].b[1] --> Real[2]
+
+   "
+  input DAE.ComponentRef inCref;
+  output DAE.Type outType;
+protected
+  DAE.Type ty;
+  list<DAE.Dimension> dims;
+algorithm
+  (ty,dims) := crefTypeFull2(inCref);
+  if listEmpty(dims) then
+    outType := ty;
+  else
+    outType := DAE.T_ARRAY(ty, dims, Types.getTypeSource(ty));
+  end if;
+end crefTypeFull;
+
 public function crefType
-  "Function for extracting the type of the first identifier of a cref."
+  " ***deprecated. Use crefTypeFull unless you really specifically want the type of the first cref.
+  Function for extracting the type of the first identifier of a cref.
+  "
   input DAE.ComponentRef inCref;
   output DAE.Type outType;
 algorithm
@@ -1660,7 +1748,12 @@ algorithm
   end match;
 end crefType;
 
-public function crefLastType "returns the 'last' type of a cref.
+public function crefLastType
+" ***deprecated.
+  mahge: Use crefTypeFull unless you really specifically want the type of the last cref.
+  Remember the type of a cref is not the same as the type of the last cref!!.
+
+returns the 'last' type of a cref.
 For instance, for the cref 'a.b' it returns the type in identifier 'b'
 adrpo:
   NOTE THAT THIS WILL BE AN ARRAY TYPE IF THE LAST CREF IS AN ARRAY TYPE
@@ -1726,6 +1819,17 @@ algorithm
   end match;
 end crefSubs;
 
+public function crefFirstSubs
+  input DAE.ComponentRef inCref;
+  output list<DAE.Subscript> outSubscripts;
+algorithm
+  outSubscripts := match inCref
+    case DAE.CREF_IDENT() then inCref.subscriptLst;
+    case DAE.CREF_QUAL() then inCref.subscriptLst;
+    else {};
+  end match;
+end crefFirstSubs;
+
 public function crefLastSubs "Return the last subscripts of a ComponentRef"
   input DAE.ComponentRef inComponentRef;
   output list<DAE.Subscript> outSubscriptLst;
@@ -1761,7 +1865,12 @@ algorithm
   end match;
 end crefFirstCref;
 
-public function crefTypeConsiderSubs "Function: crefTypeConsiderSubs
+public function crefTypeConsiderSubs
+" ***deprecated.
+  mahge: use crefTypeFull(). This is not what you want. We need to consider not just the last subs but all subs.
+  We can have slices.
+
+Function: crefTypeConsiderSubs
 Author: PA
 Function for extracting the type out of a componentReference and consider the influence of the last subscript list.
 For exampel. If the last cref type is Real[3,3] and the last subscript list is {Expression.INDEX(1)}, the type becomes Real[3], i.e
@@ -1900,6 +2009,14 @@ public function crefPrefixPre "public function crefPrefixPre
 algorithm
   outCref := makeCrefQual(DAE.preNamePrefix, DAE.T_UNKNOWN_DEFAULT, {}, inCref);
 end crefPrefixPre;
+
+public function crefPrefixPrevious "public function crefPrefixPrevious
+  Appends $CLKPRE to a cref, so a => $CLKPRE.a"
+  input DAE.ComponentRef inCref;
+  output DAE.ComponentRef outCref;
+algorithm
+  outCref := makeCrefQual(DAE.previousNamePrefix, DAE.T_UNKNOWN_DEFAULT, {}, inCref);
+end crefPrefixPrevious;
 
 public function crefPrefixStart "public function crefPrefixStart
   Appends $START to a cref, so a => $START.a"
@@ -2959,7 +3076,7 @@ algorithm
     case (DAE.CREF_IDENT(id, ty as DAE.T_ARRAY(source=source), {}),true)
       equation
         // Flatten T_ARRAY(T_ARRAY(T_COMPLEX(), dim2,src), dim1,src) types to one level T_ARRAY(simpletype, alldims, src)
-        (basety as DAE.T_COMPLEX(varLst=varLst,complexClassType=ClassInf.RECORD(_)), dims) = Types.flattenArrayTypeOpt(ty);
+        (basety as DAE.T_COMPLEX(varLst=varLst,complexClassType=ClassInf.RECORD(_)), dims) = Types.flattenArrayType(ty);
         correctTy = DAE.T_ARRAY(basety,dims,source);
         // Create a list of : subscripts to generate all elements.
         subs = List.fill(DAE.WHOLEDIM(), listLength(dims));
@@ -2971,7 +3088,7 @@ algorithm
     case (DAE.CREF_IDENT(id, ty as DAE.T_ARRAY(source=source), {}),_)
       equation
         // Flatten T_ARRAY(T_ARRAY(T_..., dim2,src), dim1,src) types to one level T_ARRAY(simpletype, alldims, src)
-        (basety, dims) = Types.flattenArrayTypeOpt(ty);
+        (basety, dims) = Types.flattenArrayType(ty);
         correctTy = DAE.T_ARRAY(basety,dims,source);
         // Create a list of : subscripts to generate all elements.
         subs = List.fill(DAE.WHOLEDIM(), listLength(dims));
@@ -2982,7 +3099,7 @@ algorithm
     case (DAE.CREF_IDENT(id, ty as DAE.T_ARRAY(source=source), subs),true)
       equation
         // Flatten T_ARRAY(T_ARRAY(T_COMPLEX(), dim2,src), dim1,src) types to one level T_ARRAY(simpletype, alldims, src)
-        (basety as DAE.T_COMPLEX(varLst=varLst,complexClassType=ClassInf.RECORD(_)), dims) = Types.flattenArrayTypeOpt(ty);
+        (basety as DAE.T_COMPLEX(varLst=varLst,complexClassType=ClassInf.RECORD(_)), dims) = Types.flattenArrayType(ty);
         correctTy = DAE.T_ARRAY(basety,dims,source);
         // Use the subscripts to generate only the wanted elements.
          crefs = expandCref2(id, correctTy, subs, dims);
@@ -2993,7 +3110,7 @@ algorithm
     case (DAE.CREF_IDENT(id, ty as DAE.T_ARRAY(source=source), subs),_)
       equation
         // Flatten T_ARRAY(T_ARRAY(T_..., dim2,src), dim1,src) types to one level T_ARRAY(simpletype, alldims, src)
-        (basety, dims) = Types.flattenArrayTypeOpt(ty);
+        (basety, dims) = Types.flattenArrayType(ty);
         correctTy = DAE.T_ARRAY(basety,dims,source);
         // Use the subscripts to generate only the wanted elements.
       then
@@ -3006,7 +3123,7 @@ algorithm
         // Expand the rest of the cref.
         crefs = expandCref_impl(cref,expandRecord);
         // Flatten T_ARRAY(T_ARRAY(T_..., dim2,src), dim1,src) types to one level T_ARRAY(simpletype, alldims, src)
-        (basety, dims) = Types.flattenArrayTypeOpt(ty);
+        (basety, dims) = Types.flattenArrayType(ty);
         correctTy = DAE.T_ARRAY(basety,dims,source);
         // Create a simple identifier for the head of the cref and expand it.
         cref = DAE.CREF_IDENT(id, correctTy, subs);

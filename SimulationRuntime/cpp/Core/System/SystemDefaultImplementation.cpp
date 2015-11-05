@@ -6,15 +6,20 @@
 #include <Core/Modelica.h>
 
 #include <Core/System/FactoryExport.h>
+#include <Core/Utils/extension/logger.hpp>
 #include <Core/System/EventHandling.h>
 #include <Core/System/SystemDefaultImplementation.h>
 #include <Core/System/AlgLoopSolverFactory.h>
 
 
 template <class T>
-void InitVars<T>::setStartValue(T& variable,T val)
+void InitVars<T>::setStartValue(T& variable,T val,bool overwriteOldValue)
 {
-  _start_values[&variable] = val;
+  //only add a start value if it was not already defined
+  if(!_start_values.count(&variable) || overwriteOldValue)
+    _start_values[&variable] = val;
+  else
+    LOGGER_WRITE("SystemDefaultImplementation: start value for variable is already defined",LC_INIT,LL_DEBUG);
 };
 
 template <class T>
@@ -29,10 +34,11 @@ bool greaterTime( pair<unsigned int,double> t1, double t2)
   return t1.second > t2;
 }
 
-SystemDefaultImplementation::SystemDefaultImplementation(IGlobalSettings *globalSettings,boost::shared_ptr<ISimData> sim_data, boost::shared_ptr<ISimVars> sim_vars)
+SystemDefaultImplementation::SystemDefaultImplementation(IGlobalSettings *globalSettings,shared_ptr<ISimData> sim_data, shared_ptr<ISimVars> sim_vars,shared_ptr<ISimObjects> sim_objects)
   : _simTime        (0.0)
   ,_sim_data(sim_data)
   , _sim_vars(sim_vars)
+  ,_sim_objects(sim_objects)
   , __z          (sim_vars->getStateVector())
   , __zDot        (sim_vars->getDerStateVector())
   , _conditions      (NULL)
@@ -45,8 +51,13 @@ SystemDefaultImplementation::SystemDefaultImplementation(IGlobalSettings *global
   , _dimString      (0)
   , _dimZeroFunc      (0)
   , _dimTimeEvent      (0)
+  , _dimClock        (0)
   , _dimAE        (0)
   , _time_event_counter  (NULL)
+  , _clockInterval  (NULL)
+  , _clockShift     (NULL)
+  , _clockTime      (NULL)
+  , _outputStream(NULL)
   , _callType        (IContinuous::UNDEF_UPDATE)
   , _initial        (false)
   , _delay_max      (0.0)
@@ -54,6 +65,8 @@ SystemDefaultImplementation::SystemDefaultImplementation(IGlobalSettings *global
   , _terminal        (false)
   , _terminate      (false)
   , _global_settings    (globalSettings)
+  ,_conditions0(NULL)
+  ,_event_system(NULL)
 {
 }
 
@@ -71,8 +84,13 @@ SystemDefaultImplementation::SystemDefaultImplementation(SystemDefaultImplementa
   , _dimString      (0)
   , _dimZeroFunc      (0)
   , _dimTimeEvent      (0)
+  , _dimClock        (0)
   , _dimAE        (0)
   , _time_event_counter  (NULL)
+  , _clockInterval  (NULL)
+  , _clockShift     (NULL)
+  , _clockTime      (NULL)
+  , _outputStream(NULL)
   , _callType        (IContinuous::UNDEF_UPDATE)
   , _initial        (false)
   , _delay_max      (0.0)
@@ -109,6 +127,10 @@ SystemDefaultImplementation::~SystemDefaultImplementation()
   if(_conditions) delete [] _conditions ;
   if(_time_conditions) delete [] _time_conditions ;
   if(_time_event_counter) delete [] _time_event_counter;
+  if(_conditions0) delete [] _conditions0;
+  if(_clockInterval) delete [] _clockInterval;
+  if(_clockShift) delete [] _clockShift;
+  if(_clockTime) delete [] _clockTime;
 }
 
 void SystemDefaultImplementation::Assert(bool cond,const string& msg)
@@ -149,6 +171,11 @@ int SystemDefaultImplementation::getDimString() const
   return _dimString;
 }
 
+int SystemDefaultImplementation::getDimClock() const
+{
+  return _dimClock;
+}
+
 /// Provide number (dimension) of right hand sides (equations and/or residuals) according to the index
 int SystemDefaultImplementation::getDimRHS() const
 {
@@ -179,11 +206,12 @@ void SystemDefaultImplementation::initialize()
   if(_dimZeroFunc > 0)
   {
     if(_conditions) delete [] _conditions ;
-
+    if(_conditions0) delete [] _conditions0 ;
     _conditions = new bool[_dimZeroFunc];
+    _conditions0= new bool[_dimZeroFunc];
 
     memset(_conditions,false,(_dimZeroFunc)*sizeof(bool));
-
+	_event_system = dynamic_cast<IEvent*>(this);
   }
   if(_dimTimeEvent > 0)
   {
@@ -197,9 +225,20 @@ void SystemDefaultImplementation::initialize()
     memset(_time_conditions,false,(_dimTimeEvent)*sizeof(bool));
     memset(_time_event_counter,0,(_dimTimeEvent)*sizeof(int));
   }
+  if (_dimClock > 0)
+  {
+    if (_clockInterval) delete [] _clockInterval;
+    _clockInterval = new double [_dimClock];
+    if (_clockShift) delete [] _clockShift;
+    _clockShift = new double [_dimClock];
+    if (_clockTime) delete [] _clockTime;
+    _clockTime = new double [_dimClock];
+  }
   _start_time = 0.0;
   _terminal = false;
   _terminate = false;
+
+
 };
 
 
@@ -248,6 +287,23 @@ void SystemDefaultImplementation::getString(string* z)
 
 };
 
+void SystemDefaultImplementation::getClock(bool* z)
+{
+  for(int i = _dimTimeEvent - _dimClock; i < _dimTimeEvent; i++) {
+    z[i] = _time_conditions[i];
+  }
+}
+
+double *SystemDefaultImplementation::clockInterval()
+{
+  return _clockInterval;
+}
+
+double *SystemDefaultImplementation::clockShift()
+{
+  return _clockShift;
+}
+
 void SystemDefaultImplementation::getContinuousStates(double* z)
 {
   std::copy(__z ,__z + _dimContinuousStates, z);
@@ -263,36 +319,30 @@ IGlobalSettings* SystemDefaultImplementation::getGlobalSettings()
     return _global_settings;
 }
 
-boost::shared_ptr<ISimVars> SystemDefaultImplementation::getSimVars()
+shared_ptr<ISimVars> SystemDefaultImplementation::getSimVars()
 {
   return _sim_vars;
 }
 
-boost::shared_ptr<ISimData> SystemDefaultImplementation::getSimData()
+shared_ptr<ISimData> SystemDefaultImplementation::getSimData()
 {
   return _sim_data;
 }
 
 bool SystemDefaultImplementation::isConsistent()
 {
-  if(IEvent* system = dynamic_cast<IEvent*>(this))
+  if(_dimZeroFunc > 0)
   {
-    unsigned int dim = system->getDimZeroFunc();
-    bool* conditions0 = new bool[dim];
-    bool* conditions1 = new bool[dim];
-    getConditions(conditions0);
+     getConditions(_conditions0);
     IContinuous::UPDATETYPE pre_call_type=_callType;
     _callType = IContinuous::DISCRETE;
-    for(int i=0;i<dim;i++)
+    for(int i=0;i<_dimZeroFunc;i++)
     {
-      system->getCondition(i);
+      _event_system->getCondition(i);
     }
-    getConditions(conditions1);
-    bool isConsistent =  std::equal (conditions1, conditions1+_dimZeroFunc,conditions0);
+    bool isConsistent =  std::equal (_conditions, _conditions+_dimZeroFunc,_conditions0);
     _callType = pre_call_type;
-    setConditions(conditions0);
-    delete[] conditions0;
-    delete[] conditions1;
+    setConditions(_conditions0);
     return isConsistent;
   }
   else
@@ -347,6 +397,13 @@ void SystemDefaultImplementation::setReal(const double* z)
   }
 };
 
+void SystemDefaultImplementation::setClock(const bool* z)
+{
+  for(int i = _dimTimeEvent - _dimClock; i < _dimTimeEvent; i++) {
+    _time_conditions[i] = z[i];
+  }
+}
+
 void SystemDefaultImplementation::setContinuousStates(const double* z)
 {
   std::copy(z ,z + _dimContinuousStates,__z);
@@ -370,18 +427,16 @@ void SystemDefaultImplementation::setRHS(const double* f)
 /// Provide the right hand side (according to the index)
 void SystemDefaultImplementation::getRHS(double* f)
 {
-std:copy(__zDot, __zDot+_dimRHS, f);
+  std::copy(__zDot, __zDot+_dimRHS, f);
   //     for(int i=0; i<_dimRHS; ++i)
   //      f[i] = __zDot[i];
 };
 
 void  SystemDefaultImplementation::intDelay(vector<unsigned int> expr, vector<double> delay_max)
 {
-  _time_buffer.set_capacity(1024);
-  unsigned int expr_id;
-  BOOST_FOREACH(expr_id,expr)
+  FOREACH(unsigned int expr_id, expr)
   {
-    buffer_type delay_buffer(1024);
+    buffer_type delay_buffer;
     _delay_buffer[expr_id]=delay_buffer;
   }
   vector<double>::iterator iter = std::max_element(delay_max.begin(),delay_max.end());
@@ -391,18 +446,8 @@ void  SystemDefaultImplementation::intDelay(vector<unsigned int> expr, vector<do
 void SystemDefaultImplementation::storeDelay(unsigned int expr_id, double expr_value, double time)
 {
   map<unsigned int,buffer_type>::iterator iter;
-  if((iter = _delay_buffer.find(expr_id))!=_delay_buffer.end())
-  {
-
+  if ((iter = _delay_buffer.find(expr_id)) != _delay_buffer.end()) {
     iter->second.push_back(expr_value);
-    //buffer_type::iterator pos = find_if(_time_buffer.begin(),_time_buffer.end(),bind2nd(std::greater<double>(),time-(_delay_max+UROUND)));
-    //if(pos!=_time_buffer.end())
-    //{
-    //   buffer_type::iterator first = _time_buffer.begin(); // first time entry
-    //   unsigned int n = std::distance(first,pos);
-    //   iter->second.erase_begin(n-1);
-    //}
-
   }
   else
     throw ModelicaSimulationError(MODEL_EQ_SYSTEM,"invalid delay expression id");
@@ -410,15 +455,22 @@ void SystemDefaultImplementation::storeDelay(unsigned int expr_id, double expr_v
 
 void SystemDefaultImplementation::storeTime(double time)
 {
-
+  // delete up to last value < time - _delay_max
+  buffer_type::iterator first = _time_buffer.begin();
+  buffer_type::iterator pos = find_if(first, _time_buffer.end(),
+                                      bind2nd(std::greater_equal<double>(),
+                                              time - _delay_max));
+  if (pos != first && --pos != first) {
+    difference_type n = std::distance(first, pos);
+    _time_buffer.erase(first, first + n);
+    map<unsigned int, buffer_type>::iterator iter;
+    for (iter = _delay_buffer.begin(); iter != _delay_buffer.end(); iter++) {
+      first = iter->second.begin();
+      iter->second.erase(first, first + n);
+    }
+  }
+  // store new value
   _time_buffer.push_back(time);
-  // buffer_type::iterator pos = find_if(_time_buffer.begin(),_time_buffer.end(),bind2nd(std::greater<double>(),time-(_delay_max+UROUND)));
-  //if(pos!=_time_buffer.end())
-  //{
-  //  buffer_type::iterator first = _time_buffer.begin(); // first time entry
-  //  unsigned int n = std::distance(first,pos);
-  //   _time_buffer.erase_begin(n-1);
-  //}
 }
 
 double SystemDefaultImplementation::delay(unsigned int expr_id,double expr_value,double delayTime, double delayMax)
@@ -468,7 +520,7 @@ double SystemDefaultImplementation::delay(unsigned int expr_id,double expr_value
         if(pos!=_time_buffer.end())
         {
           buffer_type::iterator first = _time_buffer.begin(); // first time entry
-          std::iterator_traits<buffer_type::iterator>::difference_type index = std::distance(first,pos); //index of found time
+          difference_type index = std::distance(first, pos); //index of found time
           t1 = *pos;
           res1 = iter->second[index];
           if(index == 0)
@@ -517,27 +569,49 @@ string& SystemDefaultImplementation::getStringStartValue(string& var)
 {
   return _string_start_values.getGetStartValue(var);
 }
+
 void SystemDefaultImplementation::setRealStartValue(double& var,double val)
 {
+  setRealStartValue(var,val,false);
+}
+
+void SystemDefaultImplementation::setRealStartValue(double& var,double val,bool overwriteOldValue)
+{
   var=val;
-  _real_start_values.setStartValue(var,val);
+  _real_start_values.setStartValue(var,val,overwriteOldValue);
 }
 
 void SystemDefaultImplementation::setBoolStartValue(bool& var,bool val)
 {
+  setBoolStartValue(var,val,false);
+}
+
+void SystemDefaultImplementation::setBoolStartValue(bool& var,bool val,bool overwriteOldValue)
+{
   var=val;
-  _bool_start_values.setStartValue(var,val);
+  _bool_start_values.setStartValue(var,val,overwriteOldValue);
 }
 
 void SystemDefaultImplementation::setIntStartValue(int& var,int val)
 {
-  var=val;
-  _int_start_values.setStartValue(var,val);
+  setIntStartValue(var,val,false);
 }
-void SystemDefaultImplementation::setStringStartValue(string& var,string val)
+
+void SystemDefaultImplementation::setIntStartValue(int& var,int val,bool overwriteOldValue)
 {
   var=val;
-  _string_start_values.setStartValue(var,val);
+  _int_start_values.setStartValue(var,val,overwriteOldValue);
+}
+
+void SystemDefaultImplementation::setStringStartValue(string& var,string val)
+{
+  setStringStartValue(var,val,false);
+}
+
+void SystemDefaultImplementation::setStringStartValue(string& var,string val,bool overwriteOldValue)
+{
+  var=val;
+  _string_start_values.setStartValue(var,val,overwriteOldValue);
 }
 /** @} */ // end of coreSystem
 

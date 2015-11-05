@@ -60,6 +60,7 @@ protected import DynamicOptimization;
 protected import Error;
 protected import Expression;
 protected import ExpressionDump;
+protected import ExpressionSolve;
 protected import Flags;
 protected import Global;
 protected import HashTableExpToExp;
@@ -122,7 +123,8 @@ algorithm
   extVars := BackendVariable.listVar(extvarlst);
   aliasVars := BackendVariable.emptyVars();
   if Flags.isSet(Flags.VECTORIZE) then
-    (vars,eqns) := Vectorization.buildForLoops(vars,eqns);
+    (varlst,eqns) := Vectorization.collectForLoops(varlst,eqns);
+    vars := BackendVariable.listVar(varlst);
   end if;
   // handle alias equations
   (vars, knvars, extVars, aliasVars, eqns, reqns, ieqns) := handleAliasEquations(aliaseqns, vars, knvars, extVars, aliasVars, eqns, reqns, ieqns);
@@ -148,7 +150,7 @@ algorithm
                                                     extObjCls,
                                                     BackendDAE.SIMULATION(),
                                                     symjacs,inExtraInfo,
-                                                    BackendDAE.PARTITIONS_INFO(BackendDAEUtil.emptyClocks())));
+                                                    BackendDAEUtil.emptyPartitionsInfo()));
   BackendDAEUtil.checkBackendDAEWithErrorMsg(outBackendDAE);
   neqStr := intString(BackendDAEUtil.equationSize(eqnarr));
   nvarStr := intString(BackendVariable.varsSize(vars_1));
@@ -275,29 +277,20 @@ algorithm
           ();
 
       // when equations
-      case DAE.WHEN_EQUATION(condition = e, equations = dae_elts, source = src)
+      case DAE.WHEN_EQUATION(condition = e, equations = dae_elts)
         algorithm
-          if intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33)
-                and Types.isClockOrSubTypeClock(Expression.typeof(e)) then
-            cr := DAE.CREF_IDENT(BackendDAE.WHENCLK_PRREFIX + intString(whenClkCnt), DAE.T_CLOCK_DEFAULT, {});
-            outVars := BackendDAE.VAR (
-                  varName = cr, varKind = BackendDAE.VARIABLE(),
-                  varDirection = DAE.BIDIR(), varParallelism = DAE.NON_PARALLEL(),
-                  varType = DAE.T_CLOCK_DEFAULT, bindExp = NONE(),
-                  bindValue = NONE(), arryDim = {}, source = DAE.emptyElementSource,
-                  values = NONE(), tearingSelectOption = SOME(BackendDAE.DEFAULT()),
-                  comment = NONE(), connectorType = DAE.NON_CONNECTOR(),
-                  innerOuter = DAE.NOT_INNER_OUTER(), unreplaceable = true ) :: outVars;
-            outEqns := BackendDAE.EQUATION( exp = DAE.CREF(componentRef = cr, ty = DAE.T_CLOCK_DEFAULT),
-                                           scalar = e,  source = DAE.emptyElementSource,
-                                           attr = BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC ) :: outEqns;
-            eq_attrs := BackendDAE.EQUATION_ATTRIBUTES(false, BackendDAE.CLOCKED_EQUATION(whenClkCnt), BackendDAE.NO_LOOP());
-            ( outVars, outKnVars, outExVars, eqns, outREqns, outIEqns, outConstraints, outClassAttributes,
-              outExtObjClasses, outAliasEqns, outInlineHT ) :=
-                  lower2( dae_elts, inFunctions, outInlineHT, outVars, outKnVars, outExVars, {}, outREqns, outIEqns,
-                          outConstraints, outClassAttributes,outExtObjClasses, outAliasEqns );
-            outEqns := listAppend(List.map1(eqns, BackendEquation.setEquationAttributes, eq_attrs), outEqns);
+          if intGe(Flags.getConfigEnum(Flags.LANGUAGE_STANDARD), 33) and Types.isClockOrSubTypeClock(Expression.typeof(e)) then
+
+            (outEqns, outVars, eq_attrs) := createWhenClock(whenClkCnt, e, outEqns, outVars);
             whenClkCnt := whenClkCnt + 1;
+
+            ( outVars, outKnVars, outExVars, eqns, reqns, outIEqns, outConstraints, outClassAttributes,
+              outExtObjClasses, outAliasEqns, outInlineHT ) :=
+                  lower2( dae_elts, inFunctions, outInlineHT, outVars, outKnVars, outExVars, {}, {}, outIEqns,
+                          outConstraints, outClassAttributes, outExtObjClasses, outAliasEqns );
+
+            outEqns := listAppend(List.map1(eqns, BackendEquation.setEquationAttributes, eq_attrs), outEqns);
+            outREqns := listAppend(List.map1(reqns, BackendEquation.setEquationAttributes, eq_attrs), outREqns);
           else
             (eqns, reqns) := lowerWhenEqn(el, inFunctions, {}, {});
             outEqns := listAppend(outEqns, eqns);
@@ -551,7 +544,7 @@ algorithm
         outVars := lowerDynamicVar(inElement, inFunctions) :: outVars;
         (e2, src) := Inline.inlineExp(e2, (SOME(inFunctions), {DAE.NORM_INLINE()}), src);
         e1 := Expression.crefExp(cr);
-        attr := BackendDAE.EQUATION_ATTRIBUTES(false, BackendDAE.BINDING_EQUATION(), BackendDAE.NO_LOOP());
+        attr := BackendDAE.EQUATION_ATTRIBUTES(false, BackendDAE.BINDING_EQUATION());
         outEqns := BackendDAE.EQUATION(e1, e2, src, attr) :: outEqns;
       then
         ();
@@ -924,7 +917,7 @@ algorithm
 
     else
       algorithm
-        false := BackendVariable.topLevelInput(inComponentRef, inVarDirection, inConnectorType);
+        false := DAEUtil.topLevelInput(inComponentRef, inVarDirection, inConnectorType);
       then
         match (inVarKind, inType)
           case (DAE.VARIABLE(), DAE.T_BOOL()) then BackendDAE.DISCRETE();
@@ -951,7 +944,7 @@ algorithm
     case (DAE.CONST(), _, _, _) then BackendDAE.CONST();
     case (DAE.VARIABLE(), _, _, _)
       equation
-        true = BackendVariable.topLevelInput(inComponentRef, inVarDirection, inConnectorType);
+        true = DAEUtil.topLevelInput(inComponentRef, inVarDirection, inConnectorType);
       then
         BackendDAE.VARIABLE();
     // adrpo: topLevelInput might fail!
@@ -1568,7 +1561,7 @@ algorithm
         true = DAEUtil.expTypeComplex(tp);
         size = Expression.sizeOf(tp);
       then
-        BackendDAE.COMPLEX_EQUATION(size, inExp1, inExp2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind, BackendDAE.NO_LOOP()))::inEqns;
+        BackendDAE.COMPLEX_EQUATION(size, inExp1, inExp2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind))::inEqns;
 
     // array types to array equations
     case (_, _, _, _, _, _)
@@ -1586,7 +1579,7 @@ algorithm
         true = Types.isTuple(tp);
         size = Expression.sizeOf(tp);
       then
-        BackendDAE.COMPLEX_EQUATION(size, inExp1, inExp2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind, BackendDAE.NO_LOOP()))::inEqns;
+        BackendDAE.COMPLEX_EQUATION(size, inExp1, inExp2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind))::inEqns;
 
     // other types
     case (_, _, _, _, _, _)
@@ -1598,7 +1591,7 @@ algorithm
         false = b1 or b2 or b3;
         //Error.assertionOrAddSourceMessage(not b1, Error.INTERNAL_ERROR, {str}, Absyn.dummyInfo);
       then
-        BackendDAE.EQUATION(inExp1, inExp2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind, BackendDAE.NO_LOOP()))::inEqns;
+        BackendDAE.EQUATION(inExp1, inExp2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind))::inEqns;
     else
       equation
         // show only on failtrace!
@@ -1644,12 +1637,12 @@ algorithm
         ds = List.map1(ds, intMul, i);
         //For COMPLEX_EQUATION
         //i = List.fold(ds, intMul, 1);
-      then BackendDAE.ARRAY_EQUATION(ds, e1, e2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind, BackendDAE.NO_LOOP()))::iAcc;
+      then BackendDAE.ARRAY_EQUATION(ds, e1, e2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind))::iAcc;
 
     case (_, _, _, _, _, _)
       equation
         ds = Expression.dimensionsSizes(dims);
-      then BackendDAE.ARRAY_EQUATION(ds, e1, e2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind, BackendDAE.NO_LOOP()))::iAcc;
+      then BackendDAE.ARRAY_EQUATION(ds, e1, e2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind))::iAcc;
   end matchcontinue;
 end lowerArrayEqn;
 
@@ -1667,9 +1660,38 @@ algorithm
       list<DAE.Exp> e1lst, e2lst;
     case ({}, {}, _, _, _) then iAcc;
     case (e1::e1lst, e2::e2lst, _, _, _)
-      then generateEquations(e1lst, e2lst, source, inEqKind, BackendDAE.EQUATION(e1, e2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind, BackendDAE.NO_LOOP()))::iAcc);
+      then generateEquations(e1lst, e2lst, source, inEqKind, BackendDAE.EQUATION(e1, e2, source, BackendDAE.EQUATION_ATTRIBUTES(false, inEqKind))::iAcc);
   end match;
 end generateEquations;
+
+protected function createWhenClock
+  input Integer whenClkCnt;
+  input DAE.Exp e;
+  input list<BackendDAE.Equation> inEqs;
+  input list<BackendDAE.Var> inVars;
+  output list<BackendDAE.Equation> outEqs;
+  output list<BackendDAE.Var> outVars;
+  output BackendDAE.EquationAttributes outEqAttrs;
+protected
+  BackendDAE.EquationAttributes eqAttrs;
+  DAE.ComponentRef cr;
+  BackendDAE.Equation eq;
+  BackendDAE.Var var;
+algorithm
+  cr := DAE.CREF_IDENT(BackendDAE.WHENCLK_PRREFIX + intString(whenClkCnt), DAE.T_CLOCK_DEFAULT, {});
+  outVars := BackendDAE.VAR (
+                  varName = cr, varKind = BackendDAE.VARIABLE(),
+                  varDirection = DAE.BIDIR(), varParallelism = DAE.NON_PARALLEL(),
+                  varType = DAE.T_CLOCK_DEFAULT, bindExp = NONE(),
+                  bindValue = NONE(), arryDim = {}, source = DAE.emptyElementSource,
+                  values = NONE(), tearingSelectOption = SOME(BackendDAE.DEFAULT()),
+                  comment = NONE(), connectorType = DAE.NON_CONNECTOR(),
+                  innerOuter = DAE.NOT_INNER_OUTER(), unreplaceable = true ) :: inVars;
+  outEqs := BackendDAE.EQUATION( exp = DAE.CREF(componentRef = cr, ty = DAE.T_CLOCK_DEFAULT),
+                                scalar = e,  source = DAE.emptyElementSource,
+                                attr = BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC ) :: inEqs;
+  outEqAttrs := BackendDAE.EQUATION_ATTRIBUTES(false, BackendDAE.CLOCKED_EQUATION(whenClkCnt));
+end createWhenClock;
 
 
 protected function lowerWhenEqn
@@ -1740,8 +1762,7 @@ protected function lowerWhenEqn2
 protected
   Inline.Functiontuple fns = (SOME(functionTree), {DAE.NORM_INLINE()});
 algorithm
-  (outEquationLst, outREquationLst):=
-  matchcontinue inDAEElementLst
+  (outEquationLst, outREquationLst) := matchcontinue inDAEElementLst
     local
       Integer size;
       list<BackendDAE.Equation> eqnl;
@@ -1775,6 +1796,7 @@ algorithm
 
     case DAE.DEFINE(componentRef = cr, exp = e, source = source)::xs
       equation
+        (e, _) = ExpressionSolve.solve(Expression.crefExp(cr), e, Expression.crefExp(cr));
         (DAE.PARTIAL_EQUATION(e), source) = Inline.simplifyAndInlineEquationExp(DAE.PARTIAL_EQUATION(e), fns, source);
         whenOp = BackendDAE.ASSIGN(cr, e, source);
         whenEq = BackendDAE.WHEN_STMTS(inCond, {whenOp}, NONE());
@@ -1791,15 +1813,19 @@ algorithm
       then
         (eqnl, reqnl);
 
-    case DAE.EQUATION(exp = (cre as DAE.CREF(componentRef = cr)), scalar = e, source = source)::xs
-      equation
-        (DAE.EQUALITY_EXPS(_,e), source) = Inline.simplifyAndInlineEquationExp(DAE.EQUALITY_EXPS(cre,e), fns, source);
-        whenOp = BackendDAE.ASSIGN(cr, e, source);
-        whenEq = BackendDAE.WHEN_STMTS(inCond, {whenOp}, NONE());
-        eq = BackendDAE.WHEN_EQUATION(1, whenEq, source, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
-        (eqnl, reqnl) = lowerWhenEqn2(xs, inCond, functionTree, eq::iEquationLst, iREquationLst);
-      then
-        (eqnl, reqnl);
+    case (el as DAE.EQUATION(exp = (cre as DAE.CREF(componentRef = cr)), scalar = e, source = source))::xs algorithm
+      try
+        e := ExpressionSolve.solve(cre, e, cre);
+      else
+        Error.addCompilerError("Failed to solve " + DAEDump.dumpElementsStr({el}));
+        fail();
+      end try;
+      (DAE.EQUALITY_EXPS(_,e), source) := Inline.simplifyAndInlineEquationExp(DAE.EQUALITY_EXPS(cre,e), fns, source);
+      whenOp := BackendDAE.ASSIGN(cr, e, source);
+      whenEq := BackendDAE.WHEN_STMTS(inCond, {whenOp}, NONE());
+      eq := BackendDAE.WHEN_EQUATION(1, whenEq, source, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
+      (eqnl, reqnl) := lowerWhenEqn2(xs, inCond, functionTree, eq::iEquationLst, iREquationLst);
+    then (eqnl, reqnl);
 
     case DAE.COMPLEX_EQUATION(lhs = (cre as DAE.CREF(componentRef = cr)), rhs = e, source = source)::xs
       equation
@@ -1820,7 +1846,7 @@ algorithm
       then
         (eqnl, reqnl);
 
-    case (DAE.IF_EQUATION(condition1=expl, equations2=eqnslst, equations3=eqns, source = source))::xs
+    case DAE.IF_EQUATION(condition1=expl, equations2=eqnslst, equations3=eqns, source = source)::xs
       equation
         (expl, source, _) = Inline.inlineExps(expl, fns, source);
         // transform if eqution

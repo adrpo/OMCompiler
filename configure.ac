@@ -30,6 +30,7 @@ AC_SUBST(RT_LDFLAGS_SIM)
 AC_SUBST(RT_LDFLAGS_SIM_OPTIONAL)
 AC_SUBST(RT_LDFLAGS_GENERATED_CODE)
 AC_SUBST(RT_LDFLAGS_GENERATED_CODE_SIM)
+AC_SUBST(RT_LDFLAGS_GENERATED_CODE_SOURCE_FMU)
 AC_SUBST(SUNDIALS_LDFLAGS)
 AC_SUBST(IPOPT_LDFLAGS)
 AC_SUBST(IPOPT_CFLAGS)
@@ -44,7 +45,6 @@ AC_SUBST(OMPCC)
 AC_SUBST(RUNTIMECC)
 AC_SUBST(RUNTIMECFLAGS)
 AC_SUBST(MAKE)
-AC_SUBST(LIBREADLINE)
 AC_SUBST(LD_LAPACK)
 AC_SUBST(NO_LAPACK)
 AC_SUBST(WITH_SUNDIALS)
@@ -147,6 +147,13 @@ AC_MSG_CHECKING([looking for -march=native])
 AC_TRY_LINK([void abc() {}], [abc();], [AC_MSG_RESULT([yes])], [AC_MSG_RESULT([no]);CFLAGS="-O3"])
 fi
 fi
+
+dnl Disables the default CFLAGS="-g -O2"
+LDFLAGS_BEFORE="$LDFLAGS"
+LDFLAGS="$LDFLAGS -Wl,--no-undefined"
+AC_MSG_CHECKING([looking for --no-undefined])
+AC_TRY_LINK([void abc() {}], [abc();], [AC_MSG_RESULT([yes]);LD_NOUNDEFINED=" -Wl,--no-undefined"], [AC_MSG_RESULT([no])])
+LDFLAGS="$LDFLAGS_BEFORE"
 
 TRY_FLAGS="-fno-stack-protector"
 
@@ -291,38 +298,6 @@ if java -cp "$OMBUILDDIR/share/omc/java/antlr-3.2.jar" antlr.Tool $$grammar.g ; 
 else
   rm -f $$grammar.g
   AC_MSG_ERROR([no antlr.Tool support (JRE not working)])
-fi
-
-AC_MSG_CHECKING([if the user wants to compile OMShell-terminal])
-OMSHELL_TERMINAL="mosh"
-AC_ARG_ENABLE(omshell-terminal, [  --disable-omshell-terminal    Disables compilation of OMShell-terminal (enabled by default)],[test "xno" = x"$enableval" && OMSHELL_TERMINAL=""])
-if test -z "$OMSHELL_TERMINAL" ; then
-  AC_MSG_RESULT([no])
-else
-  AC_MSG_RESULT([yes])
-  AC_CHECK_HEADER(readline/readline.h,,AC_MSG_ERROR([readline missing]))
-  AC_CHECK_HEADER(readline/history.h,,AC_MSG_ERROR([readline missing]))
-
-  AC_ARG_WITH(static-readline,  [  --with-static-readline=DIR       (default to dynamic linking; searches /usr if no other directory is provided)],[WANT_STATIC_READLINE="$withval"],[WANT_STATIC_READLINE="no"])
-
-  if test "$WANT_STATIC_READLINE" = "no"; then
-    LIBS=""
-    AC_SEARCH_LIBS(readline,readline,,[AC_MSG_ERROR([readline missing])])
-    LIBREADLINE=$LIBS
-    LIBS=""
-  else
-    if test "$WANT_STATIC_READLINE" = "yes"; then
-      READLINELIB=/usr/lib;
-    else
-      READLINELIB=$WANT_STATIC_READLINE/lib
-    fi
-    test -f $READLINELIB/*/libreadline.a && READLINELIB=`dirname $READLINELIB/*/libreadline.a`
-    LIBS="-lncurses $READLINELIB/libreadline.a -ltermcap"
-    AC_MSG_CHECKING([for static readline $LIBS])
-    AC_LINK_IFELSE([AC_LANG_CALL([], [rl_message])], [LIBREADLINE=$LIBS], [AC_MSG_ERROR([failed])])
-    AC_MSG_RESULT([ok])
-    LIBS=""
-  fi
 fi
 
 dnl Misc. headers
@@ -643,6 +618,7 @@ if test "$DARWIN" = "1"; then
   # All libraries are dynamically linked; we don't need anything else
   RT_LDFLAGS_GENERATED_CODE="$LDFLAGS -lOpenModelicaRuntimeC $LD_LAPACK -lm"
   RT_LDFLAGS_GENERATED_CODE_SIM="$LDFLAGS -lSimulationRuntimeC $LD_LAPACK -lm -lomcgc"
+  RT_LDFLAGS_GENERATED_CODE_SOURCE_FMU="$LDFLAGS $LD_LAPACK -lm$LD_NOUNDEFINED"
   LINK="cp -fr"
   RPATH="-Wl,-rpath,'@loader_path/../lib/$host_short/omc/'"
   RPATH_QMAKE="-Wl,-rpath,'@loader_path/../../../../lib/$host_short/omc',-rpath,'@loader_path/../../../../lib/',-rpath,'$PREFIX/lib/$host_short/omc',-rpath,'$PREFIX/lib/'"
@@ -672,6 +648,7 @@ elif test "$host" = "i586-pc-mingw32msvc"; then
   RT_LDFLAGS_OPTIONAL="$RT_LDFLAGS_OPTIONAL"
   RT_LDFLAGS_GENERATED_CODE="$LDFLAGS -lOpenModelicaRuntimeC $RT_LDFLAGS"
   RT_LDFLAGS_GENERATED_CODE_SIM="$LDFLAGS -lSimulationRuntimeC -lcdaskr $RT_LDFLAGS_SIM"
+  RT_LDFLAGS_GENERATED_CODE_SOURCE_FMU="$LDFLAGS $LD_LAPACK -lm$LD_NOUNDEFINED"
   LINK="cp -frl"
   RPATH="-Wl,-z,origin -Wl,-rpath,'\$\$ORIGIN/../lib/$host_short/omc' -Wl,-rpath,'\$\$ORIGIN'"
   RPATH_QMAKE="-Wl,-z,origin -Wl,-rpath,\\'\\\$\$ORIGIN/../lib/$host_short/omc\\' -Wl,-rpath,\\'\\\$\$ORIGIN\\'"
@@ -698,8 +675,9 @@ else
   RT_LDFLAGS="$LDFLAGS $RT_LDFLAGS -lomcgc $LIBRT -lpthread -lm $LIBDL -lstdc++ -rdynamic"
   RT_LDFLAGS_OPTIONAL="$RT_LDFLAGS_OPTIONAL"
   # All libraries are dynamically linked; we don't need anything else
-  RT_LDFLAGS_GENERATED_CODE="$LDFLAGS -lOpenModelicaRuntimeC $LD_LAPACK -lm -lpthread -rdynamic"
-  RT_LDFLAGS_GENERATED_CODE_SIM="$LDFLAGS -lSimulationRuntimeC $LD_LAPACK -lm -lomcgc -lpthread -rdynamic"
+  RT_LDFLAGS_GENERATED_CODE="$LDFLAGS -lOpenModelicaRuntimeC $LD_LAPACK -lm -lomcgc -lpthread -rdynamic" # Some of our tests refer to the testsuite itself
+  RT_LDFLAGS_GENERATED_CODE_SIM="$LDFLAGS -lSimulationRuntimeC $LD_LAPACK -lm -lomcgc -lpthread -rdynamic$LD_NOUNDEFINED"
+  RT_LDFLAGS_GENERATED_CODE_SOURCE_FMU="$LDFLAGS $LD_LAPACK -lm -lpthread -rdynamic$LD_NOUNDEFINED"
   LINK="cp -frl"
   RPATH="-Wl,-z,origin -Wl,-rpath,'\$\$ORIGIN/../lib/$host_short/omc' -Wl,-rpath,'\$\$ORIGIN'"
   RPATH_QMAKE="-Wl,-z,origin -Wl,-rpath,\\'\\\$\$ORIGIN/../lib/$host_short/omc\\' -Wl,-rpath,\\'\\\$\$ORIGIN\\'"
@@ -801,7 +779,7 @@ Compiler/runtime/config.unix.h \
 Parser/Makefile \
 SimulationRuntime/cpp/Makefile.env \
 SimulationRuntime/c/Makefile \
-SimulationRuntime/c/util/java_interface/Makefile \
+SimulationRuntime/java_interface/Makefile \
 SimulationRuntime/ParModelica/Makefile \
 SimulationRuntime/ParModelica/auto/Makefile \
 SimulationRuntime/ParModelica/explicit/openclrt/Makefile \

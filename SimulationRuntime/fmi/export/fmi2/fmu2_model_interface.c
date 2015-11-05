@@ -35,7 +35,7 @@
 #include "simulation/solver/linearSystem.h"
 #include "simulation/solver/mixedSystem.h"
 #include "simulation/solver/delay.h"
-#include "simulation/simulation_info_xml.h"
+#include "simulation/simulation_info_json.h"
 #include "simulation/simulation_input_xml.h"
 /*
 DLLExport pthread_key_t fmu2_thread_data_key;
@@ -61,6 +61,19 @@ fmi2ValueReference vrStatesDerivatives[NUMBER_OF_STATES] = STATESDERIVATIVES;
 // ---------------------------------------------------------------------------
 // Private helpers used below to validate function arguments
 // ---------------------------------------------------------------------------
+const char* stateToString(ModelInstance *comp) {
+  switch (comp->state) {
+    case modelInstantiated: return "Instantiated";
+    case modelInitializationMode: return "Initialization Mode";
+    case modelEventMode: return "Event Mode";
+    case modelContinuousTimeMode: return "Continuous-Time Mode";
+    case modelTerminated: return "Terminated";
+    case modelError: return "Error";
+    default: break;
+  }
+  return "Unknown";
+}
+
 static fmi2Boolean invalidNumber(ModelInstance *comp, const char *f, const char *arg, int n, int nExpected) {
   if (n != nExpected) {
     comp->state = modelError;
@@ -74,8 +87,8 @@ static fmi2Boolean invalidState(ModelInstance *comp, const char *f, int statesEx
   if (!comp)
     return fmi2True;
   if (!(comp->state & statesExpected)) {
+    FILTERED_LOG(comp, fmi2Error, LOG_STATUSERROR, "%s: Illegal call sequence. %s is not allowed in %s state.", f, f, stateToString(comp))
     comp->state = modelError;
-    FILTERED_LOG(comp, fmi2Error, LOG_STATUSERROR, "%s: Illegal call sequence.", f)
     return fmi2True;
   }
   return fmi2False;
@@ -222,6 +235,20 @@ fmi2Status fmi2EventUpdate(fmi2Component c, fmi2EventInfo* eventInfo)
   return fmi2Error;
 }
 
+
+fmi2Status fmi2EventIteration(fmi2Component c, fmi2EventInfo *eventInfo)
+{
+  fmi2Status status = fmi2OK;
+  eventInfo->newDiscreteStatesNeeded = fmi2True;
+  eventInfo->terminateSimulation     = fmi2False;
+  while (eventInfo->newDiscreteStatesNeeded && !eventInfo->terminateSimulation) {
+    status = fmi2NewDiscreteStates(c, eventInfo);
+  }
+  return status;
+}
+
+
+
 /***************************************************
 Common Functions
 ****************************************************/
@@ -288,8 +315,7 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
 
     comp->instanceName = (fmi2String)functions->allocateMemory(1 + strlen(instanceName), sizeof(char));
     comp->GUID = (fmi2String)functions->allocateMemory(1 + strlen(fmuGUID), sizeof(char));
-    /* Cannot use functions->allocateMemory */
-    fmudata = (DATA *)GC_malloc_uncollectable(sizeof(DATA));
+    DATA* fmudata = (DATA *)functions->allocateMemory(1, sizeof(DATA));
 
     threadData = (threadData_t *)functions->allocateMemory(1, sizeof(threadData_t));
     memset(threadData, 0, sizeof(threadData_t));
@@ -329,7 +355,7 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
   setDefaultStartValues(comp);
   setAllVarsToStart(comp->fmuData);
   setAllParamsToStart(comp->fmuData);
-  read_input_xml(&(comp->fmuData->modelData), &(comp->fmuData->simulationInfo));
+  comp->fmuData->callback->read_input_fmu(&(comp->fmuData->modelData), &(comp->fmuData->simulationInfo));
   modelInfoInit(&(comp->fmuData->modelData.modelDataXml));
 
   /* read input vars */
@@ -345,6 +371,11 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
   /* allocate memory for state selection */
   initializeStateSetJacobians(comp->fmuData, comp->threadData);
 
+#ifdef FMU_EXPERIMENTAL
+  /* allocate memory for Jacobian */
+  comp->_has_jacobian = !comp->fmuData->callback->initialAnalyticJacobianA(comp->fmuData, comp->threadData);
+#endif
+
   FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2Instantiate: GUID=%s", fmuGUID)
   return comp;
 }
@@ -358,7 +389,7 @@ void fmi2FreeInstance(fmi2Component c) {
 
   /* free fmuData */
   comp->functions->freeMemory(comp->threadData);
-  GC_free(comp->fmuData);
+  comp->functions->freeMemory(comp->fmuData);
   /* free instanceName & GUID */
   if (comp->instanceName) comp->functions->freeMemory((void*)comp->instanceName);
   if (comp->GUID) comp->functions->freeMemory((void*)comp->GUID);
@@ -686,7 +717,40 @@ fmi2Status fmi2DeSerializeFMUstate(fmi2Component c, const fmi2Byte serializedSta
 
 fmi2Status fmi2GetDirectionalDerivative(fmi2Component c, const fmi2ValueReference vUnknown_ref[], size_t nUnknown, const fmi2ValueReference vKnown_ref[] , size_t nKnown,
     const fmi2Real dvKnown[], fmi2Real dvUnknown[]) {
+#ifndef FMU_EXPERIMENTAL
   return unsupportedFunction(c, "fmi2GetDirectionalDerivative", modelInitializationMode|modelEventMode|modelContinuousTimeMode|modelTerminated|modelError);
+#else
+  int i,j;
+  ModelInstance *comp = (ModelInstance *)c;
+  if (invalidState(comp, "fmi2GetDirectionalDerivative", modelInstantiated|modelEventMode|modelContinuousTimeMode))
+    return fmi2Error;
+  FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2GetDirectionalDerivative")
+  if (!comp->_has_jacobian)
+    return unsupportedFunction(c, "fmi2GetDirectionalDerivative", modelInitializationMode|modelEventMode|modelContinuousTimeMode|modelTerminated|modelError);
+  /***************************************/
+#if NUMBER_OF_STATES>0
+  // This code assumes that the FMU variables are always sorted,
+  // states first and then derivatives.
+  // This is true for the actual OMC FMUs.
+  // Anyway we'll check that the references are in the valid range
+  for (i = 0; i < nUnknown; i++) {
+    if (vUnknown_ref[i]>=NUMBER_OF_STATES)
+        // We are only computing the A part of the Jacobian for now
+        // so unknowns can only be states
+        return fmi2Error;
+  }
+  for (i = 0; i < nKnown; i++) {
+    if (vKnown_ref[i]>=2*NUMBER_OF_STATES) {
+        // We are only computing the A part of the Jacobian for now
+        // so knowns can only be states derivatives
+        return fmi2Error;
+    }
+  }
+  comp->fmuData->callback->functionFMIJacobian(comp->fmuData, comp->threadData, vUnknown_ref, nUnknown, vKnown_ref, nKnown, (double*)dvKnown, dvUnknown);
+#endif
+  /***************************************/
+  return fmi2OK;
+#endif
 }
 
 /***************************************************
@@ -798,9 +862,9 @@ fmi2Status fmi2SetContinuousStates(fmi2Component c, const fmi2Real x[], size_t n
   for (i = 0; i < nx; i++) {
     fmi2ValueReference vr = vrStates[i];
     FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2SetContinuousStates: #r%d# = %.16g", vr, x[i])
-    assert(vr >= 0 && vr < NUMBER_OF_REALS);
-    if (setReal(comp, vr, x[i]) != fmi2OK) // to be implemented by the includer of this file
+    if (vr < 0 || vr >= NUMBER_OF_REALS|| setReal(comp, vr, x[i]) != fmi2OK) { // to be implemented by the includer of this file
       return fmi2Error;
+    }
   }
 #endif
   comp->_need_update = 1;
@@ -929,7 +993,165 @@ fmi2Status fmi2GetRealOutputDerivatives (fmi2Component c, const fmi2ValueReferen
 }
 
 fmi2Status fmi2DoStep(fmi2Component c, fmi2Real currentCommunicationPoint, fmi2Real communicationStepSize, fmi2Boolean noSetFMUStatePriorToCurrentPoint) {
-  // TODO Write code here
+  ModelInstance *comp = (ModelInstance *)c;
+  fmi2CallbackFunctions* functions = (fmi2CallbackFunctions*)comp->functions;
+  int i, zc_event = 0, time_event = 0;
+  fmi2Status status = fmi2OK;
+  fmi2Real* states = (fmi2Real*)functions->allocateMemory(NUMBER_OF_STATES, sizeof(fmi2Real));
+  fmi2Real* states_der = (fmi2Real*)functions->allocateMemory(NUMBER_OF_STATES, sizeof(fmi2Real));
+  fmi2Real* event_indicators = (fmi2Real*)functions->allocateMemory(NUMBER_OF_EVENT_INDICATORS, sizeof(fmi2Real));
+  fmi2Real* event_indicators_prev = (fmi2Real*)functions->allocateMemory(NUMBER_OF_EVENT_INDICATORS, sizeof(fmi2Real));
+  fmi2Real t = comp->fmuData->localData[0]->timeValue;
+  fmi2Real tNext, tEnd;
+  fmi2Boolean enterEventMode = fmi2False, terminateSimulation = fmi2False;
+  fmi2EventInfo eventInfo;
+  eventInfo.newDiscreteStatesNeeded           = fmi2False;
+  eventInfo.terminateSimulation               = fmi2False;
+  eventInfo.nominalsOfContinuousStatesChanged = fmi2False;
+  eventInfo.valuesOfContinuousStatesChanged   = fmi2True;
+  eventInfo.nextEventTimeDefined              = fmi2False;
+  eventInfo.nextEventTime                     = -0.0;
+
+  /* fprintf(stderr, "DoStep %g + %g State: %d\n", currentCommunicationPoint, communicationStepSize, comp->state); */
+
+  fmi2EnterEventMode(c);
+  fmi2EventIteration(c, &eventInfo);
+  fmi2EnterContinuousTimeMode(c);
+
+  if (NUMBER_OF_STATES > 0)
+  {
+    status = fmi2GetDerivatives(c, states_der, NUMBER_OF_STATES);
+    if (status != fmi2OK)
+    {
+      functions->freeMemory(states);
+      functions->freeMemory(states_der);
+      functions->freeMemory(event_indicators);
+      functions->freeMemory(event_indicators_prev);
+      return fmi2Error;
+    }
+
+    status = fmi2GetContinuousStates(c, states, NUMBER_OF_STATES);
+    if (status != fmi2OK)
+    {
+      functions->freeMemory(states);
+      functions->freeMemory(states_der);
+      functions->freeMemory(event_indicators);
+      functions->freeMemory(event_indicators_prev);
+      return fmi2Error;
+    }
+  }
+
+  if (NUMBER_OF_EVENT_INDICATORS > 0)
+  {
+    status = fmi2GetEventIndicators(c, event_indicators_prev, NUMBER_OF_EVENT_INDICATORS);
+    if (status != fmi2OK)
+    {
+      functions->freeMemory(states);
+      functions->freeMemory(states_der);
+      functions->freeMemory(event_indicators);
+      functions->freeMemory(event_indicators_prev);
+      return fmi2Error;
+    }
+  }
+
+  tNext = currentCommunicationPoint + communicationStepSize;
+
+  /* adjust tNext step to get tEnd exactly */
+  if (comp->stopTimeDefined)
+  {
+    tEnd = comp->stopTime;
+  }
+  else
+  {
+    tEnd = currentCommunicationPoint + 2*communicationStepSize + 1;
+  }
+  if(tNext > tEnd - communicationStepSize/1e16) {
+    tNext = tEnd;
+  }
+
+  /* adjust for time events */
+  if (eventInfo.nextEventTimeDefined && (tNext >= eventInfo.nextEventTime)) {
+    tNext = eventInfo.nextEventTime;
+    time_event = 1;
+  }
+
+  fmi2SetTime(c, tNext);
+
+  /* integrate */
+  for (i = 0; i < NUMBER_OF_STATES; i++) {
+    states[i] = states[i] + communicationStepSize * states_der[i];
+  }
+
+  /* set the continuous states */
+  if (NUMBER_OF_STATES > 0)
+  {
+    status = fmi2SetContinuousStates(c, states, NUMBER_OF_STATES);
+    if (status != fmi2OK)
+    {
+      functions->freeMemory(states);
+      functions->freeMemory(states_der);
+      functions->freeMemory(event_indicators);
+      functions->freeMemory(event_indicators_prev);
+      return fmi2Error;
+    }
+  }
+
+  /* signal completed integrator step */
+  status = fmi2CompletedIntegratorStep(c, fmi2True, &enterEventMode, &terminateSimulation);
+  if (status != fmi2OK)
+  {
+    functions->freeMemory(states);
+    functions->freeMemory(states_der);
+    functions->freeMemory(event_indicators);
+    functions->freeMemory(event_indicators_prev);
+    return fmi2Error;
+  }
+
+  /* check for events */
+  if (NUMBER_OF_EVENT_INDICATORS > 0)
+  {
+    status = fmi2GetEventIndicators(c, event_indicators, NUMBER_OF_EVENT_INDICATORS);
+    if (status != fmi2OK)
+    {
+      functions->freeMemory(states);
+      functions->freeMemory(states_der);
+      functions->freeMemory(event_indicators);
+      functions->freeMemory(event_indicators_prev);
+      return fmi2Error;
+    }
+
+    for (i = 0; i < NUMBER_OF_EVENT_INDICATORS; i++)
+    {
+      if (event_indicators[i]*event_indicators_prev[i] < 0) {
+        zc_event = 1;
+        break;
+      }
+    }
+
+    /* fprintf(stderr, "enterEventMode = %d, zc_event = %d, time_event = %d\n", enterEventMode, zc_event, time_event); */
+
+    if (enterEventMode || zc_event || time_event) {
+      fmi2EnterEventMode(c);
+
+      fmi2EventIteration(c, &eventInfo);
+
+      if(eventInfo.valuesOfContinuousStatesChanged)
+         fmi2GetContinuousStates(c, states, NUMBER_OF_STATES);
+
+      if( eventInfo.nominalsOfContinuousStatesChanged)
+        fmi2GetNominalsOfContinuousStates(c, states, NUMBER_OF_STATES);
+
+      fmi2GetEventIndicators(c, event_indicators_prev, NUMBER_OF_EVENT_INDICATORS);
+
+      fmi2EnterContinuousTimeMode(c);
+    }
+  }
+
+  functions->freeMemory(states);
+  functions->freeMemory(states_der);
+  functions->freeMemory(event_indicators);
+  functions->freeMemory(event_indicators_prev);
+
   return fmi2OK;
 }
 
@@ -988,3 +1210,41 @@ fmi2Status fmi2SetExternalFunction(fmi2Component c, fmi2ValueReference vr[], siz
   }
   return fmi2OK;
 }
+
+#ifdef FMU_EXPERIMENTAL
+fmi2Status fmi2GetSpecificDerivatives(fmi2Component c, fmi2Real derivatives[], const fmi2ValueReference dr[], size_t nvr) {
+  int i,nx;
+  ModelInstance* comp = (ModelInstance *)c;
+  threadData_t *threadData = comp->threadData;
+  /* TODO
+  if (invalidState(comp, "fmi2GetSpecificDerivatives", modelEventMode|modelContinuousTimeMode|modelTerminated|modelError))
+    return fmi2Error;
+  if (invalidNumber(comp, "fmi2GetSpecificDerivatives", "nx", nx, NUMBER_OF_STATES))
+    return fmi2Error;
+  if (nullPointer(comp, "fmi2GetSpecificDerivatives", "derivatives[]", derivatives))
+    return fmi2Error;
+  */
+
+  /* try */
+  MMC_TRY_INTERNAL(simulationJumpBuffer)
+
+
+  #if NUMBER_OF_STATES>0
+  for (i = 0; i < nvr; i++) {
+    // This assumes that OMC layouts first the states then the derivatives
+    nx = dr[i]-NUMBER_OF_STATES;
+    comp->fmuData->callback->functionODEPartial(comp->fmuData, comp->threadData, nx);
+    derivatives[i] = getReal(comp, dr[i]); // to be implemented by the includer of this file
+    FILTERED_LOG(comp, fmi2OK, LOG_FMI2_CALL, "fmi2GetSpecificDerivatives: #r%d# = %.16g", dr[i], derivatives[i])
+  }
+  #endif
+
+  return fmi2OK;
+
+  /* catch */
+  MMC_CATCH_INTERNAL(simulationJumpBuffer)
+  FILTERED_LOG(comp, fmi2Error, LOG_FMI2_CALL, "fmi2GetSpecificDerivatives: terminated by an assertion.")
+  return fmi2Error;
+}
+#endif
+

@@ -4,8 +4,8 @@ project(${ModelicaName})
 
 #FIX RUNTIME_STATIC_LINKING
 add_library(${ModelicaName}_static STATIC Modelica.cpp )
-target_link_libraries (${ModelicaName}_static ${Boost_LIBRARIES})
-set_target_properties(${ModelicaName}_static PROPERTIES COMPILE_DEFINITIONS "RUNTIME_STATIC_LINKING")
+#target_link_libraries (${ModelicaName}_static ${Boost_LIBRARIES})
+#set_target_properties(${ModelicaName}_static PROPERTIES COMPILE_DEFINITIONS "RUNTIME_STATIC_LINKING")
 include_directories(${SUNDIALS_INCLUDE_DIR}/cvodes ${SUNDIALS_INCLUDE_DIR}/nvector  ${SUNDIALS_INCLUDE_DIR}/sundials ${SUNDIALS_INCLUDE_DIR})
 
 add_library(${ModelicaName} SHARED Modelica.cpp)
@@ -114,7 +114,7 @@ IF(WIN32)
 	SET(Boost_LIBS_ "$(OMHOME)/bin")
 	SET(Boost_INCLUDE_ "$(OMHOME)/include/omc/cpp")
 	SET(SUNDIALS_LIBS_ "$(OMHOME)/bin")
-	SET(SUNDIALS_INCLUDE_DIR_ "$(OMHOME)/include/omc/cpp")
+	SET(SUNDIALS_INCLUDE_DIR_ "$(OMHOME)/include/omc/cpp/sundials")
 	SET(LAPACK_LIBS_ "$(OMHOME)/bin")
 ELSE(WIN32)
 	IF("${Boost_LIBRARY_DIR}" STREQUAL "")
@@ -225,6 +225,14 @@ IF(MSVC)
   install (FILES
 				${PROJECT_BINARY_DIR}/ModelicaConfig_msvc.inc
 				DESTINATION include/omc/cpp)
+
+  configure_file (
+   "ModelicaLibraryConfig_msvc.inc.in"
+   "${PROJECT_BINARY_DIR}/ModelicaLibraryConfig_msvc.inc"
+   )
+  install (FILES
+  				${PROJECT_BINARY_DIR}/ModelicaLibraryConfig_msvc.inc
+  				DESTINATION include/omc/cpp)
 ENDIF(MSVC)
 
 IF("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel" OR "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
@@ -235,20 +243,20 @@ configure_file (
 install (FILES
 				${PROJECT_BINARY_DIR}/ModelicaConfig_gcc.inc
 				DESTINATION include/omc/cpp)  
-ENDIF("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel" OR "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
 
-configure_file (
- "ModelicaLibraryConfig.inc.in"
- "${PROJECT_BINARY_DIR}/ModelicaLibraryConfig.inc"
- )
-install (FILES
-				${PROJECT_BINARY_DIR}/ModelicaLibraryConfig.inc
-				DESTINATION include/omc/cpp)
+  configure_file (
+   "ModelicaLibraryConfig_gcc.inc.in"
+   "${PROJECT_BINARY_DIR}/ModelicaLibraryConfig_gcc.inc"
+   )
+  install (FILES
+  				${PROJECT_BINARY_DIR}/ModelicaLibraryConfig_gcc.inc
+  				DESTINATION include/omc/cpp)
+ENDIF("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel" OR "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
 
 
               
                 
-install (FILES  ${CMAKE_SOURCE_DIR}/Include/Core/HistoryImpl.h  ${CMAKE_SOURCE_DIR}/Include/Core/Modelica.h ${CMAKE_SOURCE_DIR}/Include/Core/ModelicaDefine.h DESTINATION include/omc/cpp/Core)
+install (FILES  ${CMAKE_SOURCE_DIR}/Include/Core/Modelica.h ${CMAKE_SOURCE_DIR}/Include/Core/ModelicaDefine.h DESTINATION include/omc/cpp/Core)
 install (FILES  ${CMAKE_SOURCE_DIR}/Include/Core/DataExchange/Policies/TextfileWriter.h DESTINATION include/omc/cpp/Core/DataExchange/Policies)
 install (FILES  ${CMAKE_SOURCE_DIR}/Include/Core/DataExchange/Policies/MatfileWriter.h DESTINATION include/omc/cpp/Core/DataExchange/Policies)
 install (FILES  ${CMAKE_SOURCE_DIR}/Include/Core/DataExchange/Policies/BufferReaderWriter.h DESTINATION include/omc/cpp/Core/DataExchange/Policies)

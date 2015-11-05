@@ -8,6 +8,7 @@
 *.la
 *.log
 *.stamp
+**/*.dylib.dSYM/
 
 # autoconf
 autom4te.cache/
@@ -77,18 +78,19 @@ build/
 .externalToolBuilders/OpenModelicaBuilder.launch
 .externalToolBuilders/OMDev-MINGW-OpenModelicaBuilder.launch
 .project
+.metadata
 revision.h
 SimulationRuntime/c/Makefile
 SimulationRuntime/c/util/java_interface/Makefile
-SimulationRuntime/c/util/java_interface/modelica_java.jar
-SimulationRuntime/c/util/java_interface/src/org/openmodelica/corba/parser/OMCorbaDefinitionsLexer.java
-SimulationRuntime/c/util/java_interface/src/org/openmodelica/corba/parser/OMCorbaDefinitionsParser.java
-SimulationRuntime/c/util/java_interface/src/org/openmodelica/corba/parser/OMCorbaDefinitions.tokens
+SimulationRuntime/java_interface/modelica_java.jar
+SimulationRuntime/java_interface/src/org/openmodelica/corba/parser/OMCorbaDefinitionsLexer.java
+SimulationRuntime/java_interface/src/org/openmodelica/corba/parser/OMCorbaDefinitionsParser.java
 SimulationRuntime/cpp/Makefile
 SimulationRuntime/cpp/Makefile.env
 SimulationRuntime/cpp/Build/
 SimulationRuntime/cpp/Debug/
 SimulationRuntime/cpp/.cproject
+SimulationRuntime/cpp/confdefs.h
 SimulationRuntime/ParModelica/Makefile
 SimulationRuntime/ParModelica/auto/Makefile
 SimulationRuntime/ParModelica/explicit/Makefile

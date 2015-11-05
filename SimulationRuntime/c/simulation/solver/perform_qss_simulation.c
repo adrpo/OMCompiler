@@ -280,7 +280,7 @@ int prefixedName_performQSSSimulation(DATA* data, threadData_t *threadData, SOLV
     tqp[ind] = tq[ind] + dTnextQ;
     nQh[ind] = nextQ;
 
-    if (0 != strcmp("ia", MMC_STRINGDATA(data->simulationInfo.outputFormat)))
+    if (0 != strcmp("ia", data->simulationInfo.outputFormat))
     {
       communicateStatus("Running", (solverInfo->currentTime-simInfo->startTime)/(simInfo->stopTime-simInfo->startTime));
     }

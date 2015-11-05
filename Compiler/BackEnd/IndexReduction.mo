@@ -88,7 +88,7 @@ protected import ValuesUtil;
 
 public function pantelidesIndexReduction "author: Frenkel TUD 2012-04
   Index Reduction algorithm to get a index 1 or 0 system."
-  input list<list<Integer>> inEqns;
+  input list<list<Integer>> inEqns; // the MSSS
   input Integer inActualEqn;
   input BackendDAE.EqSystem inSystem;
   input BackendDAE.Shared inShared;
@@ -114,6 +114,10 @@ algorithm
       BackendDAE.Shared shared;
 
     case _::_ equation
+      if Flags.isSet(Flags.OPT_DAE_DUMP) then
+        print("\n\nIndex reduction:\n");
+      end if;
+
       //  BackendDump.printEqSystem(inSystem);
       //  BackendDump.dumpMatching(inAssignments1);
       //  BackendDump.dumpMatching(inAssignments2);
@@ -137,15 +141,25 @@ algorithm
       changedeqns = if newsize>size then List.intRange2(size+1, newsize) else {};
       (changedeqns, contiEqn) = getChangedEqnsAndLowest(newsize, ass2, changedeqns, size);
       ErrorExt.delCheckpoint("Pantelides");
+
+      if Flags.isSet(Flags.OPT_DAE_DUMP) then
+        print("Index reduction done.\n");
+      end if;
     then (changedeqns, contiEqn, syst, shared, ass1, ass2, arg);
 
     case {} equation
       Error.addMessage(Error.INTERNAL_ERROR, {"- IndexReduction.pantelidesIndexReduction called with empty list of equations!"});
+      if Flags.isSet(Flags.OPT_DAE_DUMP) then
+        print("Index reduction done.\n");
+      end if;
     then fail();
 
     case _::_ equation
       ErrorExt.delCheckpoint("Pantelides");
       Error.addMessage(Error.INTERNAL_ERROR, {"- IndexReduction.pantelidesIndexReduction failed!"});
+            if Flags.isSet(Flags.OPT_DAE_DUMP) then
+        print("Index reduction done.\n");
+      end if;
     then fail();
   end matchcontinue;
 end pantelidesIndexReduction;
@@ -253,7 +267,7 @@ algorithm
   matchcontinue (unassignedStates,unassignedEqns,alleqns,eqns,actualEqn,inSystem,inShared,inAssignments1,inAssignments2,mark,markarr,inArg,iNotDiffableMSS)
     local
       list<Integer> eqns1;
-      BackendDAE.StateOrder so,so1;
+      BackendDAE.StateOrder so;
       BackendDAE.ConstraintEquations orgEqnsLst,orgEqnsLst1;
       BackendDAE.EqSystem syst;
       BackendDAE.Shared shared;
@@ -276,7 +290,7 @@ algorithm
         eqns1 = List.select1(eqns1,intLe,noofeqns);
         //ueqns1 = List.select1(ueqns1,intLe,noofeqns);
         if Flags.isSet(Flags.BLT_DUMP) then
-          print("marked equations: ");
+          print("Differentiate equations in MSSS("+stringDelimitList(List.map(eqns,intString),",")+"):");
           BackendDump.debuglst(eqns1,intString," ","\n");
         end if;
         // eqnstr = bcallret2(Flags.isSet(Flags.BLT_DUMP), BackendDump.dumpMarkedEqns, inSystem, ueqns1,"");
@@ -284,9 +298,9 @@ algorithm
         // remove allready diffed equations
         //_ = List.fold1r(ueqns1,arrayUpdate,mark,markarr);
         (eqnstpl, shared) = differentiateEqnsLst(eqns1,vars,eqnsarray,inShared,{});
-        (syst,shared,ass1,ass2,so1,orgEqnsLst1,mapEqnIncRow,mapIncRowEqn,notDiffableMSS) = differentiateEqns(eqnstpl,eqns1,unassignedStates,unassignedEqns,inSystem, shared,inAssignments1,inAssignments2,so,orgEqnsLst,mapEqnIncRow,mapIncRowEqn,iNotDiffableMSS);
+        (syst,shared,ass1,ass2,orgEqnsLst1,mapEqnIncRow,mapIncRowEqn,notDiffableMSS) = differentiateEqns(eqnstpl,eqns1,unassignedStates,unassignedEqns,inSystem, shared,inAssignments1,inAssignments2,orgEqnsLst,mapEqnIncRow,mapIncRowEqn,iNotDiffableMSS);
       then
-        (syst,shared,ass1,ass2,(so1,orgEqnsLst1,mapEqnIncRow,mapIncRowEqn,noofeqns),notDiffableMSS);
+        (syst,shared,ass1,ass2,(so,orgEqnsLst1,mapEqnIncRow,mapIncRowEqn,noofeqns),notDiffableMSS);
     else
       equation
         Error.addMessage(Error.INTERNAL_ERROR, {"- IndexReduction.pantelidesIndexReductionMSS failed! Use +d=bltdump to get more information."});
@@ -558,7 +572,6 @@ protected function differentiateEqns
   input BackendDAE.Shared inShared;
   input array<Integer> inAss1;
   input array<Integer> inAss2;
-  input BackendDAE.StateOrder inStateOrd;
   input BackendDAE.ConstraintEquations inOrgEqnsLst;
   input array<list<Integer>> imapEqnIncRow;
   input array<Integer> imapIncRowEqn;
@@ -567,18 +580,17 @@ protected function differentiateEqns
   output BackendDAE.Shared oshared;
   output array<Integer> outAss1;
   output array<Integer> outAss2;
-  output BackendDAE.StateOrder outStateOrd;
   output BackendDAE.ConstraintEquations outOrgEqnsLst;
   output array<list<Integer>> omapEqnIncRow;
   output array<Integer> omapIncRowEqn;
   output list<tuple<list<Integer>,list<Integer>,list<Integer>>> oNotDiffableMSS;
 algorithm
-  (osyst,oshared,outAss1,outAss2,outStateOrd,outOrgEqnsLst,omapEqnIncRow,omapIncRowEqn,oNotDiffableMSS) :=
+  (osyst,oshared,outAss1,outAss2,outOrgEqnsLst,omapEqnIncRow,omapIncRowEqn,oNotDiffableMSS) :=
   match (inEqnsTpl, inSystem)
     local
-      Integer eqnss,eqnss1;
+      Integer numEqs,numEqs1;
       BackendDAE.EquationArray eqns_1,eqns;
-      list<Integer> ilst,eqnslst,eqnslst1,ilst1;
+      list<Integer> changedVars,eqnslst,eqnslst1,assEqs;
       BackendDAE.Variables v,v1;
       BackendDAE.StateOrder so;
       BackendDAE.ConstraintEquations orgEqnsLst;
@@ -594,21 +606,21 @@ algorithm
     // all equations are differentiated
     case (_::_, syst as BackendDAE.EQSYSTEM(orderedVars=v, orderedEqs=eqns, m=SOME(m), mT=SOME(mt)))
       equation
-        eqnss = BackendDAEUtil.equationArraySize(eqns);
-        (v1,eqns_1,so,ilst,orgEqnsLst) = replaceDifferentiatedEqns(inEqnsTpl,v,eqns,inStateOrd,mt,imapIncRowEqn,{},inOrgEqnsLst);
-        eqnss1 = BackendDAEUtil.equationArraySize(eqns_1);
-        eqnslst = if intGt(eqnss1,eqnss) then List.intRange2(eqnss+1,eqnss1) else {};
-        // set equation assigned variable assignemts zero
-        ilst1 = List.map1r(ilst,arrayGet,inAss1);
-        ilst1 = List.select1(ilst1,intGt,0);
-        ass2 = List.fold1r(ilst1,arrayUpdate,-1,inAss2);
-        // set changed variables assignments to zero
-        ass1 = List.fold1r(ilst,arrayUpdate,-1,inAss1);
-        eqnslst1 = collectVarEqns(ilst,{},mt,arrayLength(mt),arrayLength(m));
+        numEqs = BackendDAEUtil.equationArraySize(eqns);
+        (v1,eqns_1,changedVars,orgEqnsLst) = replaceDifferentiatedEqns(inEqnsTpl,v,eqns,mt,imapIncRowEqn,{},inOrgEqnsLst);
+        numEqs1 = BackendDAEUtil.equationArraySize(eqns_1);
+        eqnslst = if intGt(numEqs1,numEqs) then List.intRange2(numEqs+1,numEqs1) else {};
+        // set the assignments for the changed vars and for the assigned equations to -1
+        assEqs = List.map1r(changedVars,arrayGet,inAss1);
+        assEqs = List.select1(assEqs,intGt,0);
+        ass2 = List.fold1r(assEqs,arrayUpdate,-1,inAss2);
+        ass1 = List.fold1r(changedVars,arrayUpdate,-1,inAss1);
+        //get adjacent equations for the changed vars
+        eqnslst1 = collectVarEqns(changedVars,{},mt,arrayLength(mt),arrayLength(m));
         syst.orderedVars = v1;
         syst.orderedEqs = eqns_1;
         eqnslst1 = List.map1r(eqnslst1,arrayGet,imapIncRowEqn);
-        eqnslst1 =  List.uniqueIntN(listAppend(inEqns,eqnslst1),eqnss1);
+        eqnslst1 =  List.uniqueIntN(listAppend(inEqns,eqnslst1),numEqs1);
         eqnslst1 = listAppend(eqnslst1,eqnslst);
         if Flags.isSet(Flags.BLT_DUMP) then
           print("Update Incidence Matrix: ");
@@ -618,11 +630,11 @@ algorithm
         (syst,mapEqnIncRow,mapIncRowEqn) =
             BackendDAEUtil.updateIncidenceMatrixScalar(syst, BackendDAE.SOLVABLE(), SOME(funcs), eqnslst1, imapEqnIncRow, imapIncRowEqn);
       then
-        (syst,inShared,ass1,ass2,so,orgEqnsLst,mapEqnIncRow,mapIncRowEqn,iNotDiffableMSS);
+        (syst,inShared,ass1,ass2,orgEqnsLst,mapEqnIncRow,mapIncRowEqn,iNotDiffableMSS);
     // not all equations are differentiated
     case ({},_)
       then
-        (inSystem,inShared,inAss1,inAss2,inStateOrd,inOrgEqnsLst,imapEqnIncRow,imapIncRowEqn,(inEqns,unassignedStates,unassignedEqns)::iNotDiffableMSS);
+        (inSystem,inShared,inAss1,inAss2,inOrgEqnsLst,imapEqnIncRow,imapIncRowEqn,(inEqns,unassignedStates,unassignedEqns)::iNotDiffableMSS);
   end match;
 end differentiateEqns;
 
@@ -692,7 +704,7 @@ protected function differentiateEqnsLst
   input BackendDAE.Variables vars;
   input BackendDAE.EquationArray eqns;
   input BackendDAE.Shared inShared;
-  input list<tuple<Integer,Option<BackendDAE.Equation>,BackendDAE.Equation>> inEqnTpl;
+  input list<tuple<Integer,Option<BackendDAE.Equation>,BackendDAE.Equation>> inEqnTpl; //<originalIdx, SOME<derivedEq>, OrigEq>
   output list<tuple<Integer,Option<BackendDAE.Equation>,BackendDAE.Equation>> outEqnTpl;
   output BackendDAE.Shared oshared;
 algorithm
@@ -717,9 +729,9 @@ algorithm
     case (e::es,_,_,_,_)
       equation
         eqn = BackendEquation.equationNth1(eqns, e);
-        // fcall(Flags.BLT_DUMP, print, "differentiate equation " + intString(e) + " " + BackendDump.equationString(eqn) + "\n");
+          //if Flags.isSet(Flags.BLT_DUMP) then print("differentiate equation " + intString(e) + " " + BackendDump.equationString(eqn) + "\n"); end if;
         (eqn_1, shared) = Differentiate.differentiateEquationTime(eqn, vars, inShared);
-        // fcall(Flags.BLT_DUMP, print, "differentiated equation " + intString(e) + " " + BackendDump.equationString(eqn_1) + "\n");
+          //if Flags.isSet(Flags.BLT_DUMP) then print("differentiated equation " + intString(e) + " " + BackendDump.equationString(eqn_1) + "\n"); end if;
         eqn = BackendEquation.markDifferentiated(eqn);
         (eqntpl, shared) = differentiateEqnsLst(es,vars,eqns,shared,(e,SOME(eqn_1),eqn)::inEqnTpl);
       then
@@ -730,60 +742,55 @@ end differentiateEqnsLst;
 
 protected function replaceDifferentiatedEqns
 "author: Frenkel TUD 2012-11
-  replace the original equations with the derived"
-  input list<tuple<Integer,Option<BackendDAE.Equation>,BackendDAE.Equation>> inEqnTplLst;
+  replace the original equations with the derived, updated var-types, stores all former equations in inOrgEqnsLst"
+  input list<tuple<Integer, Option<BackendDAE.Equation>, BackendDAE.Equation>> inEqnTplLst; //<origIdx, SOME<derivedEq>, original Eq>
   input BackendDAE.Variables vars;
   input BackendDAE.EquationArray eqns;
-  input BackendDAE.StateOrder inStateOrd;
   input BackendDAE.IncidenceMatrix mt;
   input array<Integer> imapIncRowEqn;
   input list<Integer> inChangedVars;
   input BackendDAE.ConstraintEquations inOrgEqnsLst;
   output BackendDAE.Variables outVars;
   output BackendDAE.EquationArray outEqns;
-  output BackendDAE.StateOrder outStateOrd;
   output list<Integer> outChangedVars;
   output BackendDAE.ConstraintEquations outOrgEqnsLst;
 algorithm
-  (outVars,outEqns,outStateOrd,outChangedVars,outOrgEqnsLst):=
-  matchcontinue (inEqnTplLst,vars,eqns,inStateOrd,mt,imapIncRowEqn,inChangedVars,inOrgEqnsLst)
+  (outVars, outEqns, outChangedVars, outOrgEqnsLst) := matchcontinue (inEqnTplLst)
     local
-      list<tuple<Integer,Option<BackendDAE.Equation>,BackendDAE.Equation>> rest;
+      list<tuple<Integer, Option<BackendDAE.Equation>,BackendDAE.Equation>> rest;
       Integer e;
       list<Integer> changedVars;
-      BackendDAE.Equation eqn,eqn_1;
+      BackendDAE.Equation eqn, eqn_1;
       BackendDAE.EquationArray eqns1;
       BackendDAE.Variables vars1;
-      BackendDAE.StateOrder so;
       BackendDAE.ConstraintEquations orgEqnsLst;
-    case ({},_,_,_,_,_,_,_) then (vars,eqns,inStateOrd,inChangedVars,inOrgEqnsLst);
-    case ((e,SOME(eqn_1),eqn)::rest,_,_,_,_,_,_,_)
-      equation
-        (eqn_1,_) = BackendDAETransform.traverseExpsOfEquation(eqn_1, replaceStateOrderExp, vars);
-        (eqn_1,(_,(vars1,eqns1,_,changedVars,_,_,_))) = BackendDAETransform.traverseExpsOfEquation(eqn_1,Expression.traverseSubexpressionsHelper,(changeDerVariablesToStatesFinder,(vars,eqns,inStateOrd,inChangedVars,e,imapIncRowEqn,mt)));
-        if Flags.isSet(Flags.BLT_DUMP) then
-          debugdifferentiateEqns((eqn,eqn_1));
-        end if;
-        eqns1 = BackendEquation.setAtIndex(eqns1, e, eqn_1);
-        orgEqnsLst = addOrgEqn(inOrgEqnsLst,e,eqn);
-        (outVars,outEqns,outStateOrd,outChangedVars,outOrgEqnsLst) =
-           replaceDifferentiatedEqns(rest,vars1,eqns1,inStateOrd,mt,imapIncRowEqn,changedVars,orgEqnsLst);
-      then
-        (outVars,outEqns,outStateOrd,outChangedVars,outOrgEqnsLst);
-    case ((_,NONE(),_)::rest,_,_,_,_,_,_,_)
-      equation
-        //orgEqnsLst = BackendDAETransform.addOrgEqn(inOrgEqnsLst,e,eqn);
-        orgEqnsLst = inOrgEqnsLst;
-        (outVars,outEqns,outStateOrd,outChangedVars,outOrgEqnsLst) =
-           replaceDifferentiatedEqns(rest,vars,eqns,inStateOrd,mt,imapIncRowEqn,inChangedVars,orgEqnsLst);
-      then
-        (outVars,outEqns,outStateOrd,outChangedVars,outOrgEqnsLst);
+    case {}
+    then (vars, eqns, inChangedVars, inOrgEqnsLst);
 
-    else
-      equation
-        Error.addMessage(Error.INTERNAL_ERROR, {"IndexReduction.replaceDifferentiatedEqns failed!"});
-      then
-        fail();
+    case (e, SOME(eqn_1), eqn)::rest equation
+      // replace der-calls with the derivatives
+      (eqn_1, _) = BackendEquation.traverseExpsOfEquation(eqn_1, replaceStateOrderExp, vars);
+      // change the variable types (algebraic -> state, 1.der -> 2.der, ...)
+      (eqn_1, (_, (vars1, eqns1, changedVars, _, _, _))) = BackendEquation.traverseExpsOfEquation(eqn_1, Expression.traverseSubexpressionsHelper, (changeDerVariablesToStatesFinder, (vars, eqns, inChangedVars, e, imapIncRowEqn, mt)));
+      if Flags.isSet(Flags.BLT_DUMP) then
+        print("replaced differentiated eqs:");
+        debugdifferentiateEqns((eqn, eqn_1));
+      end if;
+      eqns1 = BackendEquation.setAtIndex(eqns1, e, eqn_1);
+      //collect original equations
+      orgEqnsLst = addOrgEqn(inOrgEqnsLst, e, eqn);
+      (outVars, outEqns, outChangedVars, outOrgEqnsLst) = replaceDifferentiatedEqns(rest, vars1, eqns1, mt, imapIncRowEqn, changedVars, orgEqnsLst);
+    then (outVars, outEqns, outChangedVars, outOrgEqnsLst);
+
+    case (_, NONE(), _)::rest equation
+      //orgEqnsLst = BackendDAETransform.addOrgEqn(inOrgEqnsLst, e, eqn);
+      orgEqnsLst = inOrgEqnsLst;
+      (outVars, outEqns, outChangedVars, outOrgEqnsLst) = replaceDifferentiatedEqns(rest, vars, eqns, mt, imapIncRowEqn, inChangedVars, orgEqnsLst);
+    then (outVars, outEqns, outChangedVars, outOrgEqnsLst);
+
+    else equation
+      Error.addMessage(Error.INTERNAL_ERROR, {"IndexReduction.replaceDifferentiatedEqns failed!"});
+    then fail();
   end matchcontinue;
 end replaceDifferentiatedEqns;
 
@@ -793,7 +800,7 @@ protected function replaceStateOrderExp
   output DAE.Exp e;
   output BackendDAE.Variables vars;
 algorithm
-  (e,vars) := Expression.traverseExpTopDown(inExp,replaceStateOrderExpFinder,inVars);
+  (e, vars) := Expression.traverseExpTopDown(inExp, replaceStateOrderExpFinder, inVars);
 end replaceStateOrderExp;
 
 protected function replaceStateOrderExpFinder
@@ -811,6 +818,7 @@ algorithm
       DAE.ComponentRef dcr,cr;
       DAE.CallAttributes attr;
       Integer index;
+      //if der(x) = y, replace all der(x) with y
      case (DAE.CALL(path = Absyn.IDENT(name = "der"),expLst = {DAE.CREF(componentRef = cr)}),vars)
       equation
         ({BackendDAE.VAR(varKind=BackendDAE.STATE(derName=SOME(dcr)))},_) = BackendVariable.getVar(cr,vars);
@@ -1574,7 +1582,7 @@ protected
  list<BackendDAE.Var> setVars,aVars,varJ,otherVars,stateCandidates;
  list<DAE.ComponentRef> crstates,crset;
  DAE.ComponentRef crA,set,crJ;
- DAE.Type tp;
+ DAE.Type tp, tyExpCrStates;
  Integer rang,nStates,nStateCandidates,nUnassignedEquations,setIndex,level;
 
  DAE.Exp expcrA,mulAstates,mulAdstates,expset,expderset,expsetstart;
@@ -1605,10 +1613,11 @@ algorithm
      expcrdset := List.map(expcrset,makeder);
      expcrA := Expression.crefExp(crA);
      expcrA := DAE.CAST(tp,expcrA);
-     op := if b then DAE.MUL_MATRIX_PRODUCT(DAE.T_REAL_DEFAULT) else DAE.MUL_SCALAR_PRODUCT(DAE.T_REAL_DEFAULT);
-     mulAstates := DAE.BINARY(expcrA,op,DAE.ARRAY(DAE.T_ARRAY(DAE.T_REAL_DEFAULT,{DAE.DIM_INTEGER(nStateCandidates)},DAE.emptyTypeSource),true,expcrstates));
+     tyExpCrStates := DAE.T_ARRAY(DAE.T_REAL_DEFAULT,{DAE.DIM_INTEGER(nStateCandidates)},DAE.emptyTypeSource);
+     op := if b then DAE.MUL_MATRIX_PRODUCT(DAE.T_ARRAY(DAE.T_REAL_DEFAULT,{DAE.DIM_INTEGER(rang)}, DAE.emptyTypeSource)) else DAE.MUL_SCALAR_PRODUCT(DAE.T_REAL_DEFAULT);
+     mulAstates := DAE.BINARY(expcrA,op,DAE.ARRAY(tyExpCrStates,true,expcrstates));
      (mulAstates,_) := Expression.extendArrExp(mulAstates,false);
-     mulAdstates := DAE.BINARY(expcrA,op,DAE.ARRAY(DAE.T_ARRAY(DAE.T_REAL_DEFAULT,{DAE.DIM_INTEGER(nStateCandidates)},DAE.emptyTypeSource),true,expcrdstates));
+     mulAdstates := DAE.BINARY(expcrA,op,DAE.ARRAY(tyExpCrStates,true,expcrdstates));
     (mulAdstates,_) := Expression.extendArrExp(mulAdstates,false);
     expset := if b then DAE.ARRAY(DAE.T_ARRAY(DAE.T_REAL_DEFAULT,{DAE.DIM_INTEGER(rang)},DAE.emptyTypeSource),true,expcrset) else listHead(expcrset);
     expderset := if b then DAE.ARRAY(DAE.T_ARRAY(DAE.T_REAL_DEFAULT,{DAE.DIM_INTEGER(rang)},DAE.emptyTypeSource),true,expcrdset) else listHead(expcrdset);
@@ -1620,7 +1629,7 @@ algorithm
     deqn := if b then BackendDAE.ARRAY_EQUATION({rang},expderset,mulAdstates,DAE.emptyElementSource,BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC)
                                  else BackendDAE.EQUATION(expderset,mulAdstates,DAE.emptyElementSource,BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC);
     // start values for the set
-    expsetstart := DAE.BINARY(expcrA,op,DAE.ARRAY(DAE.T_ARRAY(DAE.T_REAL_DEFAULT,{DAE.DIM_INTEGER(nStateCandidates)},DAE.emptyTypeSource),true,expcrstatesstart));
+    expsetstart := DAE.BINARY(expcrA,op,DAE.ARRAY(tyExpCrStates,true,expcrstatesstart));
    (expsetstart,_) := Expression.extendArrExp(expsetstart,false);
    (setVars,_) := List.map2Fold(setVars,setStartExp,expsetstart,rang,1);
     // add set states
@@ -3930,9 +3939,9 @@ protected function changeDerVariablesToStatesFinder
 "author: Frenkel TUD 2011-05
   helper for changeDerVariablestoStates"
   input DAE.Exp inExp;
-  input tuple<BackendDAE.Variables,BackendDAE.EquationArray,BackendDAE.StateOrder,list<Integer>,Integer,array<Integer>,BackendDAE.IncidenceMatrix> inTpl;
+  input tuple<BackendDAE.Variables,BackendDAE.EquationArray,list<Integer>,Integer,array<Integer>,BackendDAE.IncidenceMatrix> inTpl;
   output DAE.Exp outExp;
-  output tuple<BackendDAE.Variables,BackendDAE.EquationArray,BackendDAE.StateOrder,list<Integer>,Integer,array<Integer>,BackendDAE.IncidenceMatrixT> outTpl;
+  output tuple<BackendDAE.Variables,BackendDAE.EquationArray,list<Integer>,Integer,array<Integer>,BackendDAE.IncidenceMatrixT> outTpl;
 algorithm
   (outExp,outTpl) := match (inExp,inTpl)
     local
@@ -3944,29 +3953,28 @@ algorithm
       array<Integer> mapIncRowEqn;
       BackendDAE.IncidenceMatrixT mt;
       BackendDAE.EquationArray eqns;
-      BackendDAE.StateOrder so;
       Integer index,eindx;
      /* der(var), change algebraic to states */
-     case (e as DAE.CALL(path = Absyn.IDENT(name = "der"),expLst = {DAE.CREF(componentRef = cr)}),(vars,eqns,so,ilst,eindx,mapIncRowEqn,mt))
+     case (e as DAE.CALL(path = Absyn.IDENT(name = "der"),expLst = {DAE.CREF(componentRef = cr)}),(vars,eqns,ilst,eindx,mapIncRowEqn,mt))
       equation
         (varlst,changedVars) = BackendVariable.getVar(cr,vars);
         (vars,ilst) = algebraicState(varlst,changedVars,vars,ilst);
       then
-        (e, (vars,eqns,so,ilst,eindx,mapIncRowEqn,mt));
+        (e, (vars,eqns,ilst,eindx,mapIncRowEqn,mt));
     /* der(der(var)), set differentiation counter = 2 */
-    case (DAE.CALL(path = Absyn.IDENT(name = "der"),expLst = {DAE.CALL(path = Absyn.IDENT(name = "der"),expLst = {e as DAE.CREF(componentRef = cr)})}),(vars,eqns,so,ilst,eindx,mapIncRowEqn,mt))
+    case (DAE.CALL(path = Absyn.IDENT(name = "der"),expLst = {DAE.CALL(path = Absyn.IDENT(name = "der"),expLst = {e as DAE.CREF(componentRef = cr)})}),(vars,eqns,ilst,eindx,mapIncRowEqn,mt))
       equation
         (varlst,changedVars) = BackendVariable.getVar(cr,vars);
         (vars,ilst) = increaseDifferentiation(varlst,changedVars,2,vars,ilst);
       then
-        (DAE.CALL(Absyn.IDENT("der"),{e,DAE.ICONST(2)},DAE.callAttrBuiltinReal), (vars,eqns,so,ilst,eindx,mapIncRowEqn,mt));
+        (DAE.CALL(Absyn.IDENT("der"),{e,DAE.ICONST(2)},DAE.callAttrBuiltinReal), (vars,eqns,ilst,eindx,mapIncRowEqn,mt));
     /* der(var,index), set differentiation counter = index+1 */
-    case (e as DAE.CALL(path = Absyn.IDENT(name = "der"),expLst = {DAE.CREF(componentRef = cr),DAE.ICONST(index)}),(vars,eqns,so,ilst,eindx,mapIncRowEqn,mt))
+    case (e as DAE.CALL(path = Absyn.IDENT(name = "der"),expLst = {DAE.CREF(componentRef = cr),DAE.ICONST(index)}),(vars,eqns,ilst,eindx,mapIncRowEqn,mt))
       equation
         (varlst,changedVars) = BackendVariable.getVar(cr,vars);
         (vars,ilst) = increaseDifferentiation(varlst,changedVars,index,vars,ilst);
       then
-        (e, (vars,eqns,so,ilst,eindx,mapIncRowEqn,mt));
+        (e, (vars,eqns,ilst,eindx,mapIncRowEqn,mt));
     else (inExp,inTpl);
   end match;
 end changeDerVariablesToStatesFinder;

@@ -37,7 +37,7 @@
 
 #include <Core/SimulationSettings/IGlobalSettings.h>
 
-#ifdef FMU_KINSOL
+#ifdef ENABLE_SUNDIALS_STATIC
   #define DEFAULT_NLS "kinsol"
 #else
   #define DEFAULT_NLS "newton"
@@ -85,5 +85,9 @@ class FMU2GlobalSettings : public IGlobalSettings
   virtual unsigned int    getAlarmTime() { return 0; }
   virtual void setNonLinearSolverContinueOnError(bool){};
   virtual bool getNonLinearSolverContinueOnError(){ return false; };
+  virtual void setSolverThreads(int){};
+  virtual int getSolverThreads() { return 1; };
+  virtual OutputFormat getOutputFormat() {return EMPTY;};
+  virtual void setOutputFormat(OutputFormat) {};
 };
 /** @} */ // end of fmu2

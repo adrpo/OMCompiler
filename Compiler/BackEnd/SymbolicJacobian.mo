@@ -1823,7 +1823,10 @@ algorithm
           end if;
 
           backendDAE2 = BackendDAEUtil.getSolvedSystemforJacobians(backendDAE,
-                                                                   SOME({"evalFunc","removeEqualFunctionCalls","removeSimpleEquations"}),
+                                                                   SOME({"simplifyAllExpressions",
+                                                                         "evalFunc",
+                                                                         "removeEqualFunctionCalls",
+                                                                         "removeSimpleEquations"}),
                                                                    NONE(),
                                                                    NONE(),
                                                                    SOME({"inlineArrayEqn",
@@ -1833,7 +1836,8 @@ algorithm
                                                                          "tearingSystem",
                                                                          "solveSimpleEquations",
                                                                          "simplifyTimeIndepFuncCalls",
-                                                                         "calculateStrongComponentJacobians"}));
+                                                                         "calculateStrongComponentJacobians",
+                                                                         "simplifyAllExpressions"}));
           _ = Flags.set(Flags.EXEC_STAT, b);
           if Flags.isSet(Flags.JAC_DUMP) then
             BackendDump.bltdump("Symbolic Jacobian",backendDAE2);
@@ -1917,7 +1921,7 @@ algorithm
       end if;
       diffVarsArr = BackendVariable.listVar1(diffVars);
       comref_diffvars = List.map(diffVars, BackendVariable.varCref);
-      diffData = BackendDAE.DIFFINPUTDATA(SOME(diffVarsArr), SOME(diffedVars), SOME(knownVars), SOME(orderedVars), SOME({}), SOME(comref_diffvars), SOME(matrixName));
+      diffData = BackendDAE.DIFFINPUTDATA(SOME(diffVarsArr), SOME(diffedVars), SOME(knownVars), SOME(orderedVars), {}, comref_diffvars, SOME(matrixName));
       eqns = BackendEquation.equationList(orderedEqs);
       if Flags.isSet(Flags.JAC_DUMP2) then
         print("*** analytical Jacobians -> before derive all equation." + realString(clock()) + "\n");

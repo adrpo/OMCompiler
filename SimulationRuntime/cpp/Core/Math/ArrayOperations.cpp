@@ -43,15 +43,19 @@ void cat_array(int k, const vector<const BaseArray<T>*>& x, BaseArray<T>& a)
     new_k_dim_size = x[0]->getDims()[k-1];
     for(int i = 1; i < n; i++)
     {
-        if(x[0]->getDims().size() != x[i]->getDims().size())
+        //arrays must have same number of dimensions
+		if(x[0]->getDims().size() != x[i]->getDims().size())
            throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,"Wrong dimension for input array");
-        for(int j = 0; j < (k - 1); j++)
+        //Size matching: Arrays must have identical array sizes with the exception of the size of dimension k
+		for(int j = 0; j < (k - 1); j++)
         {
             if (x[0]->getDims()[j] != x[i]->getDims()[j])
                 throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,"Wrong size for input array");
         }
+		//calculate new size of dimension k
         new_k_dim_size += x[i]->getDims()[k-1];
-        for(int j = k; j < x[0]->getDims().size(); j++)
+         //Size matching: Arrays must have identical array sizes with the exception of the size of dimension k
+		for(int j = k; j < x[0]->getDims().size(); j++)
         {
           if (x[0]->getDims()[j] != x[i]->getDims()[j])
             throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,"Wrong size for input array");
@@ -209,6 +213,7 @@ void multiply_array(const BaseArray<T> &leftArray, const BaseArray<T> &rightArra
   size_t leftNumDims = leftArray.getNumDims();
   size_t rightNumDims = rightArray.getNumDims();
   size_t matchDim = rightArray.getDim(1);
+  resultArray.setDims(leftArray.getDims());
   if (leftArray.getDim(leftNumDims) != matchDim)
     throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,
                                   "Wrong sizes in multiply_array");
@@ -248,6 +253,24 @@ void multiply_array(const BaseArray<T> &leftArray, const BaseArray<T> &rightArra
 }
 
 template <typename T>
+void multiply_array_elem_wise(const BaseArray<T> &leftArray, const BaseArray<T> &rightArray, BaseArray<T> &resultArray)
+{
+  size_t dimLeft = leftArray.getNumElems();
+  size_t dimRight = rightArray.getNumElems();
+
+  if(dimLeft != dimRight)
+      throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,
+                                      "Right and left array must have the same size for element wise multiplication");
+
+  resultArray.setDims(leftArray.getDims());
+  const T* leftData = leftArray.getData();
+  const T* rightData = rightArray.getData();
+  T* aim = resultArray.getData();
+
+  std::transform (leftData, leftData + leftArray.getNumElems(), rightData, aim, std::multiplies<T>());
+}
+
+template <typename T>
 void divide_array(const BaseArray<T>& inputArray, const T &b, BaseArray<T>& outputArray)
 {
   size_t nelems = inputArray.getNumElems();
@@ -284,17 +307,45 @@ void pow_array_scalar(const BaseArray<double> &inputArray, T exponent,
 template <typename T>
 void subtract_array(const BaseArray<T>& leftArray, const BaseArray<T>& rightArray, BaseArray<T>& resultArray)
 {
+  size_t dimLeft = leftArray.getNumElems();
+  size_t dimRight = rightArray.getNumElems();
+
+  if(dimLeft != dimRight)
+    throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,
+                                      "Right and left array must have the same size for element wise substraction");
+
   resultArray.setDims(leftArray.getDims());
   const T* data1 = leftArray.getData();
   const T* data2 = rightArray.getData();
   T* aim = resultArray.getData();
 
-  std::transform (data1, data1 + leftArray.getNumElems(), data2, aim, std::minus<T>());
+  std::transform (data1, data1 + dimLeft, data2, aim, std::minus<T>());
+}
+
+template <typename T>
+void subtract_array_scalar(const BaseArray<T>& inputArray, T b, BaseArray<T>& outputArray)
+{
+  size_t dim = inputArray.getNumElems();
+  if(dim > 0)
+  {
+    outputArray.setDims(inputArray.getDims());
+    const T* data = inputArray.getData();
+    T* aim = outputArray.getData();
+    std::transform (data, data + inputArray.getNumElems(),
+                  aim, std::bind2nd(std::minus<T>(), b));
+  }
 }
 
 template <typename T>
 void add_array(const BaseArray<T>& leftArray, const BaseArray<T>& rightArray, BaseArray<T>& resultArray)
 {
+  size_t dimLeft = leftArray.getNumElems();
+  size_t dimRight = rightArray.getNumElems();
+
+  if(dimLeft != dimRight)
+    throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,
+                                      "Right and left array must have the same size for element wise addition");
+
   resultArray.setDims(leftArray.getDims());
   const T* data1 = leftArray.getData();
   const T* data2 = rightArray.getData();
@@ -355,40 +406,19 @@ std::pair<T,T> min_max(const BaseArray<T>& x)
 {
   const T* data = x.getData();
   std::pair<const T*, const T*>
-    ret = boost::minmax_element(data, data + x.getNumElems());
+    ret = minmax_element(data, data + x.getNumElems());
   return std::make_pair(*(ret.first), *(ret.second));
 }
 
-void convertBoolToInt(const BaseArray<bool>& a, BaseArray<int>& b)
+template <typename S, typename T>
+void cast_array(const BaseArray<S>& a, BaseArray<T>& b)
 {
   b.setDims(a.getDims());
-  int numEle = a.getNumElems();
-  const bool* source_data = a.getData();
-  int* dest_data = b.getData();
-  for (int i = 0; (numEle > 0) && (i <= numEle); i++)
-  {
-    if(source_data[i])
-      dest_data[i]=1;
-    else
-      dest_data[i]=0;
-  }
-}
-
-void convertIntToBool(const BaseArray<int>& a, BaseArray<bool>& b)
-{
-  b.setDims(a.getDims());
-  int numEle = a.getNumElems();
-  for (int i = 0; i <= numEle; i++)
-  {
-    if (a(i))
-    {
-      b(i) = true;
-    }
-    else
-    {
-      b(i) = false;
-    }
-  }
+  int numElems = a.getNumElems();
+  const S* src_data = a.getData();
+  T* dst_data = b.getData();
+  for (int i = 0; i < numElems; i++)
+    *dst_data++ = (T)(*src_data++);
 }
 
 /**
@@ -496,6 +526,13 @@ template void BOOST_EXTENSION_EXPORT_DECL
 multiply_array(const BaseArray<bool> &leftArray, const BaseArray<bool> &rightArray, BaseArray<bool> &resultArray);
 
 template void BOOST_EXTENSION_EXPORT_DECL
+multiply_array_elem_wise(const BaseArray<double> &leftArray, const BaseArray<double> &rightArray, BaseArray<double> &resultArray);
+template void BOOST_EXTENSION_EXPORT_DECL
+multiply_array_elem_wise(const BaseArray<int> &leftArray, const BaseArray<int> &rightArray, BaseArray<int> &resultArray);
+template void BOOST_EXTENSION_EXPORT_DECL
+multiply_array_elem_wise(const BaseArray<bool> &leftArray, const BaseArray<bool> &rightArray, BaseArray<bool> &resultArray);
+
+template void BOOST_EXTENSION_EXPORT_DECL
 divide_array(const BaseArray<double>& inputArray, const double &b, BaseArray<double>& outputArray);
 template void BOOST_EXTENSION_EXPORT_DECL
 divide_array(const BaseArray<int>& inputArray, const int &b, BaseArray<int>& outputArray);
@@ -520,6 +557,13 @@ template void BOOST_EXTENSION_EXPORT_DECL
 subtract_array(const BaseArray<int>& leftArray, const BaseArray<int>& rightArray, BaseArray<int>& resultArray);
 template void BOOST_EXTENSION_EXPORT_DECL
 subtract_array(const BaseArray<bool>& leftArray, const BaseArray<bool>& rightArray, BaseArray<bool>& resultArray);
+
+template void BOOST_EXTENSION_EXPORT_DECL
+subtract_array_scalar(const BaseArray<double>& inputArray, double b, BaseArray<double>& outputArray);
+template void BOOST_EXTENSION_EXPORT_DECL
+subtract_array_scalar(const BaseArray<int>& inputArray, int b, BaseArray<int>& outputArray);
+template void BOOST_EXTENSION_EXPORT_DECL
+subtract_array_scalar(const BaseArray<bool>& inputArray, bool b, BaseArray<bool>& outputArray);
 
 template void BOOST_EXTENSION_EXPORT_DECL
 add_array(const BaseArray<double>& leftArray, const BaseArray<double>& rightArray, BaseArray<double>& resultArray);
@@ -563,10 +607,12 @@ min_max(const BaseArray<int>& x);
 template std::pair<bool,bool> BOOST_EXTENSION_EXPORT_DECL
 min_max(const BaseArray<bool>& x);
 
-void BOOST_EXTENSION_EXPORT_DECL
-convertBoolToInt(const BaseArray<bool>& a, BaseArray<int>& b);
-void BOOST_EXTENSION_EXPORT_DECL
-convertIntToBool(BaseArray<int>& a, BaseArray<bool>& b);
+template void BOOST_EXTENSION_EXPORT_DECL
+cast_array(const BaseArray<int> &a, BaseArray<double> &b);
+template void BOOST_EXTENSION_EXPORT_DECL
+cast_array(const BaseArray<int> &a, BaseArray<bool> &b);
+template void BOOST_EXTENSION_EXPORT_DECL
+cast_array(const BaseArray<bool> &a, BaseArray<int> &b);
 
 template void BOOST_EXTENSION_EXPORT_DECL
 convertArrayLayout(const BaseArray<double> &s, BaseArray<double> &d);

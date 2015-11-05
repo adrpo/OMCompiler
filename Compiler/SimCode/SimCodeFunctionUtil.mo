@@ -1086,6 +1086,45 @@ algorithm
   end match;
 end isBoxedArg;
 
+public function funcHasParallelInOutArrays
+"checks if a boxed function can be generated.
+currently this is not the case if the input/output
+involves parallel (global/local) array variables."
+  input SimCode.Function fn;
+  output Boolean b;
+protected
+  list<SimCode.Variable> inVars, outVars;
+algorithm
+  SimCode.FUNCTION(functionArguments = inVars, outVars = outVars) := fn;
+  for e in inVars loop
+    if isParallelArrayVar(e) then
+      b := true;
+      return;
+    end if;
+  end for;
+
+  for e in outVars loop
+    if isParallelArrayVar(e) then
+      b := true;
+      return;
+    end if;
+  end for;
+
+  b := false;
+end funcHasParallelInOutArrays;
+
+protected function isParallelArrayVar
+"Checks if a variable is a boxed datatype"
+  input SimCode.Variable var;
+  output Boolean b;
+algorithm
+  b := match var
+    case SimCode.VARIABLE(ty = DAE.T_ARRAY(), parallelism = DAE.PARGLOBAL()) then true;
+    case SimCode.VARIABLE(ty = DAE.T_ARRAY(), parallelism = DAE.PARLOCAL()) then true;
+    else false;
+  end match;
+end isParallelArrayVar;
+
 public function findLiterals
   "Finds all literal expressions in functions"
   input list<DAE.Function> fns;
@@ -2716,6 +2755,7 @@ public function createMakefileParams
   input list<String> libs;
   input list<String> libPaths;
   input Boolean isFunction;
+  input Boolean isFMU=false;
   output SimCode.MakefileParams makefileParams;
 protected
   String omhome, ccompiler, cxxcompiler, linker, exeext, dllext, cflags, ldflags, rtlibs, platform, fopenmp,compileDir;
@@ -2732,7 +2772,7 @@ algorithm
             (if Flags.isSet(Flags.HPCOM) then "-fopenmp" else "");
   cflags := if stringEq(Config.simCodeTarget(),"JavaScript") then "-Os -Wno-warn-absolute-paths" else cflags;
   ldflags := System.getLDFlags();
-  rtlibs := if isFunction then System.getRTLibs() else System.getRTLibsSim();
+  rtlibs := if isFunction then System.getRTLibs() else (if isFMU then System.getRTLibsFMU() else System.getRTLibsSim());
   platform := System.modelicaPlatform();
   compileDir :=  System.pwd() + System.pathDelimiter();
   makefileParams := SimCode.MAKEFILE_PARAMS(ccompiler, cxxcompiler, linker, exeext, dllext,
@@ -2784,35 +2824,24 @@ public function execStat
   consumed by the compiler at this point in time.
   "
   input String name;
+protected
+  Real t, total;
+  String timeStr, totalTimeStr, gcStr;
 algorithm
-  execStat2(Flags.isSet(Flags.EXEC_STAT),name);
-end execStat;
-
-protected function execStat2
-  input Boolean cond;
-  input String name;
-algorithm
-  _ := match (cond,name)
-    local
-      Real t,total,used,allocated;
-      String timeStr,totalTimeStr,gcStr;
-    case (false,_) then ();
+  if Flags.isSet(Flags.EXEC_STAT) then
+    t := System.realtimeTock(ClockIndexes.RT_CLOCK_EXECSTAT);
+    total := System.realtimeTock(ClockIndexes.RT_CLOCK_EXECSTAT_CUMULATIVE);
+    gcStr := GC.profStatsStr(GC.getProfStats(), head="");
+    timeStr := System.snprintff("%.4g", 20, t);
+    totalTimeStr := System.snprintff("%.4g", 20, total);
+    if Flags.isSet(Flags.GC_PROF) then
+      Error.addMessage(Error.EXEC_STAT_GC, {name, timeStr, totalTimeStr, gcStr});
     else
-      equation
-        t = System.realtimeTock(ClockIndexes.RT_CLOCK_EXECSTAT);
-        total = System.realtimeTock(ClockIndexes.RT_CLOCK_EXECSTAT_CUMULATIVE);
-        gcStr = GC.profStatsStr(GC.getProfStats(), head="");
-        timeStr = System.snprintff("%.4g",20,t);
-        totalTimeStr = System.snprintff("%.4g",20,total);
-        if Flags.isSet(Flags.GC_PROF) then
-          Error.addMessage(Error.EXEC_STAT_GC,{name,timeStr,totalTimeStr,gcStr});
-        else
-          Error.addMessage(Error.EXEC_STAT,{name,timeStr,totalTimeStr});
-        end if;
-        System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT);
-      then ();
-  end match;
-end execStat2;
+      Error.addMessage(Error.EXEC_STAT, {name, timeStr, totalTimeStr});
+    end if;
+    System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT);
+  end if;
+end execStat;
 
 public function varIndex
   input SimCodeVar.SimVar var;

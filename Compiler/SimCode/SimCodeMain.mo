@@ -56,14 +56,12 @@ import SimCode;
 // protected imports
 protected
 import BackendDAECreate;
-import BackendQSS;
 import ClockIndexes;
 import CevalScriptBackend;
 import CodegenC;
 import CodegenFMU;
 import CodegenFMUCpp;
 import CodegenFMUCppHpcom;
-import CodegenQSS;
 import CodegenAdevs;
 import CodegenSparseFMI;
 import CodegenCSharp;
@@ -115,6 +113,11 @@ protected function generateModelCodeFMU "
   Generates code for a model by creating a SimCode structure and calling the
   template-based code generator on it."
   input BackendDAE.BackendDAE inBackendDAE;
+  input BackendDAE.BackendDAE inInitDAE;
+  input Boolean inUseHomotopy "true if homotopy(...) is used during initialization";
+  input list<BackendDAE.Equation> inRemovedInitialEquationLst;
+  input list<BackendDAE.Var> inPrimaryParameters "already sorted";
+  input list<BackendDAE.Var> inAllPrimaryParameters "already sorted";
   input Absyn.Program p;
   input Absyn.Path className;
   input String FMUVersion;
@@ -141,8 +144,8 @@ algorithm
   fileDir := CevalScriptBackend.getFileDir(a_cref, p);
   (libs,libPaths,includes, includeDirs, recordDecls, functions, literals) :=
     SimCodeUtil.createFunctions(p, inBackendDAE);
-  simCode := createSimCode(inBackendDAE,
-    className, filenamePrefix, fileDir, functions, includes, includeDirs, libs, libPaths, simSettingsOpt, recordDecls, literals,Absyn.FUNCTIONARGS({},{}));
+  simCode := createSimCode(inBackendDAE, inInitDAE, inUseHomotopy, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters,
+    className, filenamePrefix, fileDir, functions, includes, includeDirs, libs, libPaths, simSettingsOpt, recordDecls, literals, Absyn.FUNCTIONARGS({},{}), isFMU=true);
   timeSimCode := System.realtimeTock(ClockIndexes.RT_CLOCK_SIMCODE);
   SimCodeFunctionUtil.execStat("SimCode");
 
@@ -156,6 +159,11 @@ protected function generateModelCodeXML "
   Generates code for a model by creating a SimCode structure and calling the
   template-based code generator on it."
   input BackendDAE.BackendDAE inBackendDAE;
+  input BackendDAE.BackendDAE inInitDAE;
+  input Boolean inUseHomotopy "true if homotopy(...) is used during initialization";
+  input list<BackendDAE.Equation> inRemovedInitialEquationLst;
+  input list<BackendDAE.Var> inPrimaryParameters "already sorted";
+  input list<BackendDAE.Var> inAllPrimaryParameters "already sorted";
   input Absyn.Program p;
   input Absyn.Path className;
   input String filenamePrefix;
@@ -180,7 +188,7 @@ algorithm
   fileDir := CevalScriptBackend.getFileDir(a_cref, p);
   (libs, libPaths, includes, includeDirs, recordDecls, functions, literals) :=
     SimCodeUtil.createFunctions(p, inBackendDAE);
-  (simCode,_) := SimCodeUtil.createSimCode(inBackendDAE,
+  (simCode,_) := SimCodeUtil.createSimCode(inBackendDAE, inInitDAE, inUseHomotopy, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters,
     className, filenamePrefix, fileDir, functions, includes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals,Absyn.FUNCTIONARGS({},{}));
   timeSimCode := System.realtimeTock(ClockIndexes.RT_CLOCK_SIMCODE);
   SimCodeFunctionUtil.execStat("SimCode");
@@ -230,6 +238,11 @@ algorithm
       Boolean symbolicJacActivated;
       Boolean fmi20;
       Boolean flagValue;
+      BackendDAE.BackendDAE initDAE;
+      Boolean useHomotopy "true if homotopy(...) is used during initialization";
+      list<BackendDAE.Equation> removedInitialEquationLst;
+      list<BackendDAE.Var> primaryParameters "already sorted";
+      list<BackendDAE.Var> allPrimaryParameters "already sorted";
 
     case (cache,graph,_,st as GlobalScript.SYMBOLTABLE(ast=p),FMUVersion,FMUType,filenameprefix,_, _)
       equation
@@ -245,21 +258,25 @@ algorithm
         fmi20 = FMI.isFMIVersion20(FMUVersion);
         symbolicJacActivated = Flags.getConfigBool(Flags.GENERATE_SYMBOLIC_LINEARIZATION);
         Flags.setConfigBool(Flags.GENERATE_SYMBOLIC_LINEARIZATION, fmi20);
-        flagValue = Flags.enableDebug(Flags.DIS_SYMJAC_FMI20);
+        if not Flags.isSet(Flags.FMU_EXPERIMENTAL) then
+            flagValue = Flags.enableDebug(Flags.DIS_SYMJAC_FMI20);
+        end if;
 
         _ = FCore.getFunctionTree(cache);
         dae = DAEUtil.transformationsBeforeBackend(cache,graph,dae);
         description = DAEUtil.daeDescription(dae);
         dlow = BackendDAECreate.lower(dae, cache, graph, BackendDAE.EXTRA_INFO(description,filenameprefix));
-        dlow_1 = BackendDAEUtil.getSolvedSystem(dlow,inFileNamePrefix);
+        (dlow_1, initDAE, useHomotopy, removedInitialEquationLst, primaryParameters, allPrimaryParameters) = BackendDAEUtil.getSolvedSystem(dlow, inFileNamePrefix);
         timeBackend = System.realtimeTock(ClockIndexes.RT_CLOCK_BACKEND);
 
         (libs,file_dir,timeSimCode,timeTemplates) =
-          generateModelCodeFMU(dlow_1, p, className, FMUVersion, FMUType, filenameprefix, inSimSettingsOpt);
+          generateModelCodeFMU(dlow_1, initDAE, useHomotopy, removedInitialEquationLst, primaryParameters, allPrimaryParameters, p, className, FMUVersion, FMUType, filenameprefix, inSimSettingsOpt);
 
         //reset config flag
         Flags.setConfigBool(Flags.GENERATE_SYMBOLIC_LINEARIZATION, symbolicJacActivated);
-        Flags.set(Flags.DIS_SYMJAC_FMI20, flagValue);
+        if not Flags.isSet(Flags.FMU_EXPERIMENTAL) then
+            Flags.set(Flags.DIS_SYMJAC_FMI20, flagValue);
+        end if;
 
         resultValues =
         {("timeTemplates",Values.REAL(timeTemplates)),
@@ -315,6 +332,12 @@ algorithm
       FCore.Cache cache;
       DAE.FunctionTree funcs;
       Real timeSimCode, timeTemplates, timeBackend, timeFrontend;
+      BackendDAE.BackendDAE initDAE;
+      Boolean useHomotopy "true if homotopy(...) is used during initialization";
+      list<BackendDAE.Equation> removedInitialEquationLst;
+      list<BackendDAE.Var> primaryParameters "already sorted";
+      list<BackendDAE.Var> allPrimaryParameters "already sorted";
+
     case (cache,graph,_,st as GlobalScript.SYMBOLTABLE(ast=p),filenameprefix,_, _)
       equation
         /* calculate stuff that we need to create SimCode data structure */
@@ -327,11 +350,11 @@ algorithm
         dae = DAEUtil.transformationsBeforeBackend(cache,graph,dae);
         description = DAEUtil.daeDescription(dae);
         dlow = BackendDAECreate.lower(dae, cache, graph, BackendDAE.EXTRA_INFO(description,filenameprefix));
-        dlow_1 = BackendDAEUtil.getSolvedSystem(dlow,inFileNamePrefix);
+        (dlow_1, initDAE, useHomotopy, removedInitialEquationLst, primaryParameters, allPrimaryParameters) = BackendDAEUtil.getSolvedSystem(dlow,inFileNamePrefix);
         timeBackend = System.realtimeTock(ClockIndexes.RT_CLOCK_BACKEND);
 
         (libs,file_dir,timeSimCode,timeTemplates) =
-          generateModelCodeXML(dlow_1, p, className, filenameprefix, inSimSettingsOpt);
+          generateModelCodeXML(dlow_1, initDAE, useHomotopy, removedInitialEquationLst, primaryParameters, allPrimaryParameters, p, className, filenameprefix, inSimSettingsOpt);
         resultValues =
         {("timeTemplates",Values.REAL(timeTemplates)),
           ("timeSimCode",  Values.REAL(timeSimCode)),
@@ -358,6 +381,11 @@ public function generateModelCode "
   Generates code for a model by creating a SimCode structure and calling the
   template-based code generator on it."
   input BackendDAE.BackendDAE inBackendDAE;
+  input BackendDAE.BackendDAE inInitDAE;
+  input Boolean inUseHomotopy "true if homotopy(...) is used during initialization";
+  input list<BackendDAE.Equation> inRemovedInitialEquationLst;
+  input list<BackendDAE.Var> inPrimaryParameters "already sorted";
+  input list<BackendDAE.Var> inAllPrimaryParameters "already sorted";
   input Absyn.Program p;
   input Absyn.Path className;
   input String filenamePrefix;
@@ -381,13 +409,14 @@ algorithm
   System.realtimeTick(ClockIndexes.RT_CLOCK_SIMCODE);
   a_cref := Absyn.pathToCref(className);
   fileDir := CevalScriptBackend.getFileDir(a_cref, p);
-  (libs, libPaths,includes, includeDirs, recordDecls, functions, literals) := SimCodeUtil.createFunctions(p, inBackendDAE);
-  simCode := createSimCode(inBackendDAE, className, filenamePrefix, fileDir, functions, includes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals, args);
+
+  (libs, libPaths, includes, includeDirs, recordDecls, functions, literals) := SimCodeUtil.createFunctions(p, inBackendDAE);
+  simCode := createSimCode(inBackendDAE, inInitDAE, inUseHomotopy, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters, className, filenamePrefix, fileDir, functions, includes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals, args);
   timeSimCode := System.realtimeTock(ClockIndexes.RT_CLOCK_SIMCODE);
   SimCodeFunctionUtil.execStat("SimCode");
 
   System.realtimeTick(ClockIndexes.RT_CLOCK_TEMPLATES);
-  callTargetTemplates(simCode, inBackendDAE, Config.simCodeTarget());
+  callTargetTemplates(simCode, Config.simCodeTarget());
   timeTemplates := System.realtimeTock(ClockIndexes.RT_CLOCK_TEMPLATES);
   SimCodeFunctionUtil.execStat("Templates");
 end generateModelCode;
@@ -395,6 +424,11 @@ end generateModelCode;
 protected function createSimCode "
   SimCode generator switch - if the NUMPROC-Flag is set, the simcode will be extended with parallel informations."
   input BackendDAE.BackendDAE inBackendDAE;
+  input BackendDAE.BackendDAE inInitDAE;
+  input Boolean inUseHomotopy "true if homotopy(...) is used during initialization";
+  input list<BackendDAE.Equation> inRemovedInitialEquationLst;
+  input list<BackendDAE.Var> inPrimaryParameters "already sorted";
+  input list<BackendDAE.Var> inAllPrimaryParameters "already sorted";
   input Absyn.Path inClassName;
   input String filenamePrefix;
   input String inString11;
@@ -407,6 +441,7 @@ protected function createSimCode "
   input list<SimCode.RecordDeclaration> recordDecls;
   input tuple<Integer, HashTableExpToIndex.HashTable, list<DAE.Exp>> literals;
   input Absyn.FunctionArgs args;
+  input Boolean isFMU=false;
   output SimCode.SimCode simCode;
 algorithm
   simCode := matchcontinue(inBackendDAE, inClassName, filenamePrefix, inString11, functions, externalFunctionIncludes, includeDirs, libs, libPaths,simSettingsOpt, recordDecls, literals, args)
@@ -425,7 +460,7 @@ algorithm
       numProc = Flags.getConfigInt(Flags.NUM_PROC);
       true = numProc == 0;
       print("hpcom computes the ideal number of processors. If you want to set the number manually, use the flag +n=_ \n");
-    then HpcOmSimCodeMain.createSimCode(inBackendDAE, inClassName, filenamePrefix, inString11, functions, externalFunctionIncludes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals, args);
+    then HpcOmSimCodeMain.createSimCode(inBackendDAE, inInitDAE, inUseHomotopy, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters, inClassName, filenamePrefix, inString11, functions, externalFunctionIncludes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals, args);
 
     case(_, _, _, _, _, _, _, _, _,_, _, _, _) equation
       true = Flags.isSet(Flags.HPCOM);
@@ -437,94 +472,80 @@ algorithm
 
       numProc = Flags.getConfigInt(Flags.NUM_PROC);
       true = (numProc > 0);
-    then HpcOmSimCodeMain.createSimCode(inBackendDAE, inClassName, filenamePrefix, inString11, functions, externalFunctionIncludes, includeDirs, libs, libPaths,simSettingsOpt, recordDecls, literals, args);
+    then HpcOmSimCodeMain.createSimCode(inBackendDAE, inInitDAE, inUseHomotopy, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters, inClassName, filenamePrefix, inString11, functions, externalFunctionIncludes, includeDirs, libs, libPaths,simSettingsOpt, recordDecls, literals, args);
 
     else equation
-      (tmpSimCode, _) = SimCodeUtil.createSimCode(inBackendDAE, inClassName, filenamePrefix, inString11, functions, externalFunctionIncludes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals, args);
+      (tmpSimCode, _) = SimCodeUtil.createSimCode(inBackendDAE, inInitDAE, inUseHomotopy, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters, inClassName, filenamePrefix, inString11, functions, externalFunctionIncludes, includeDirs, libs,libPaths, simSettingsOpt, recordDecls, literals, args, isFMU=isFMU);
     then tmpSimCode;
   end matchcontinue;
 end createSimCode;
 
 // TODO: use another switch ... later make it first class option like -target or so
-// Update: inQSSrequiredData passed in order to call BackendQSS and generate the extra structures needed for QSS simulation.
 protected function callTargetTemplates "
   Generate target code by passing the SimCode data structure to templates."
   input SimCode.SimCode simCode;
-  input BackendDAE.BackendDAE inQSSrequiredData;
   input String target;
 algorithm
-  _ := match(simCode, inQSSrequiredData, target)
+  _ := match target
     local
-    BackendDAE.BackendDAE outIndexedBackendDAE;
-    BackendQSS.QSSinfo qssInfo;
-    String str,guid;
-    SimCode.SimCode sc;
+      String str, guid;
 
-    case (_, _, "CSharp") equation
+    case "CSharp" equation
       Tpl.tplNoret(CodegenCSharp.translateModel, simCode);
     then ();
 
-    case (_, _, "Cpp") equation
+    case "Cpp" equation
       callTargetTemplatesCPP(simCode);
     then ();
 
-    case (_, _, "Adevs") equation
+    case "Adevs" equation
       Tpl.tplNoret(CodegenAdevs.translateModel, simCode);
     then ();
 
-    case (_, _, "sfmi") equation
+    case "sfmi" equation
       Tpl.tplNoret3(CodegenSparseFMI.translateModel, simCode, "2.0", "me");
     then ();
 
-    case (_, outIndexedBackendDAE, "QSS") equation
-      /* as BackendDAE.DAE(eqs={ BackendDAE.EQSYSTEM( m=SOME(incidenceMatrix) , mT=SOME(incidenceMatrixT), matching=BackendDAE.MATCHING(equationIndices, variableIndices, strongComponents)*/
-      Debug.trace("Generating code for QSS solver\n");
-      (qssInfo, sc) = BackendQSS.generateStructureCodeQSS(outIndexedBackendDAE, simCode); //, equationIndices, variableIndices, incidenceMatrix, incidenceMatrixT, strongComponents, simCode);
-      Tpl.tplNoret2(CodegenQSS.translateModel, sc, qssInfo);
+    case "C" equation
+      guid = System.getUUIDStr();
+
+      System.realtimeTick(ClockIndexes.RT_PROFILER0);
+      Tpl.tplNoret2(CodegenC.translateInitFile, simCode, guid);
+      // print("SimCode -> init.xml: " + realString(System.realtimeTock(ClockIndexes.RT_PROFILER0)*1000) + "ms\n");
+      // System.realtimeTick(ClockIndexes.RT_PROFILER0);
+      if Flags.isSet(Flags.MODEL_INFO_JSON) then
+        SerializeModelInfo.serialize(simCode, Flags.isSet(Flags.INFO_XML_OPERATIONS));
+      else
+        Tpl.tplNoret2(SimCodeDump.dumpSimCode, simCode, Flags.isSet(Flags.INFO_XML_OPERATIONS));
+      end if;
+      dumpTaskSystemIfFlag(simCode);
+      // print("SimCode -> info.xml: " + realString(System.realtimeTock(ClockIndexes.RT_PROFILER0)*1000) + "ms\n");
+      // System.realtimeTick(ClockIndexes.RT_PROFILER0);
+      // print("SimCode -> info.json: " + realString(System.realtimeTock(ClockIndexes.RT_PROFILER0)*1000) + "ms\n");
+      Tpl.tplNoret2(CodegenC.translateModel, simCode, guid);
+      // print("SimCode -> C-files: " + realString(System.realtimeTock(ClockIndexes.RT_PROFILER0)*1000) + "ms\n");
     then ();
 
-    case (_, _, "C")
-      equation
-        guid = System.getUUIDStr();
+    case "JavaScript" equation
+      guid = System.getUUIDStr();
+      Tpl.tplNoret2(CodegenC.translateModel, simCode, guid);
+      Tpl.tplNoret2(CodegenC.translateInitFile, simCode, guid);
+      Tpl.tplNoret2(SimCodeDump.dumpSimCodeToC, simCode, false);
+      Tpl.tplNoret(CodegenJS.markdownFile, simCode);
+    then ();
 
-        System.realtimeTick(ClockIndexes.RT_PROFILER0);
-        Tpl.tplNoret2(CodegenC.translateInitFile, simCode, guid);
-        // print("SimCode -> init.xml: " + realString(System.realtimeTock(ClockIndexes.RT_PROFILER0)*1000) + "ms\n");
-        // System.realtimeTick(ClockIndexes.RT_PROFILER0);
-        if Flags.isSet(Flags.MODEL_INFO_JSON) then
-          SerializeModelInfo.serialize(simCode, Flags.isSet(Flags.INFO_XML_OPERATIONS));
-        else
-          Tpl.tplNoret2(SimCodeDump.dumpSimCode, simCode, Flags.isSet(Flags.INFO_XML_OPERATIONS));
-        end if;
-        dumpTaskSystemIfFlag(simCode);
-        // print("SimCode -> info.xml: " + realString(System.realtimeTock(ClockIndexes.RT_PROFILER0)*1000) + "ms\n");
-        // System.realtimeTick(ClockIndexes.RT_PROFILER0);
-        // print("SimCode -> info.json: " + realString(System.realtimeTock(ClockIndexes.RT_PROFILER0)*1000) + "ms\n");
-        Tpl.tplNoret2(CodegenC.translateModel, simCode, guid);
-        // print("SimCode -> C-files: " + realString(System.realtimeTock(ClockIndexes.RT_PROFILER0)*1000) + "ms\n");
-      then ();
-
-    case (_, _, "JavaScript")
-      equation
-        guid = System.getUUIDStr();
-        Tpl.tplNoret2(CodegenC.translateModel, simCode, guid);
-        Tpl.tplNoret2(CodegenC.translateInitFile, simCode, guid);
-        Tpl.tplNoret2(SimCodeDump.dumpSimCodeToC, simCode, false);
-        Tpl.tplNoret(CodegenJS.markdownFile, simCode);
-      then ();
-
-    case (_, _, "XML") equation
+    case "XML" equation
       Tpl.tplNoret(CodegenXML.translateModel, simCode);
     then ();
 
-    case (_, _, "Java") equation
+    case "Java" equation
       Tpl.tplNoret(CodegenJava.translateModel, simCode);
     then ();
 
-    case (_, _, "None")
+    case "None"
     then ();
 
-    case (_, _, _) equation
+    else equation
       str = "Unknown template target: " + target;
       Error.addMessage(Error.INTERNAL_ERROR, {str});
     then fail();
@@ -559,15 +580,22 @@ algorithm
   _ := match (simCode,target)
     local
       String str;
+      String fmutmp;
 
     case (SimCode.SIMCODE(),"C")
       algorithm
+        fmutmp := simCode.fileNamePrefix + ".fmutmp";
+        if System.directoryExists(fmutmp) then
+          if not System.removeDirectory(fmutmp) then
+            print("Failed to remove directory: " + fmutmp + "\n");
+            fail();
+          end if;
+        end if;
+        Util.createDirectoryTree(fmutmp + "/sources/include/");
         if Flags.isSet(Flags.MODEL_INFO_JSON) then
           SerializeModelInfo.serialize(simCode, Flags.isSet(Flags.INFO_XML_OPERATIONS));
-          true := System.covertTextFileToCLiteral(
-		            simCode.fileNamePrefix+"_info.json",
-					simCode.fileNamePrefix+"_info.c",
-					Flags.getConfigString(Flags.TARGET));
+          str := fmutmp + "/sources/" + simCode.fileNamePrefix;
+          true := System.covertTextFileToCLiteral(simCode.fileNamePrefix+"_info.json", str+"_info.c", Flags.getConfigString(Flags.TARGET));
         else
           Tpl.tplNoret2(SimCodeDump.dumpSimCodeToC, simCode, false);
         end if;
@@ -629,6 +657,11 @@ algorithm
       //DAE.Exp fileprefix;
       FCore.Cache cache;
       Real timeSimCode, timeTemplates, timeBackend, timeFrontend;
+      BackendDAE.BackendDAE initDAE;
+      Boolean useHomotopy "true if homotopy(...) is used during initialization";
+      list<BackendDAE.Equation> removedInitialEquationLst;
+      list<BackendDAE.Var> primaryParameters "already sorted";
+      list<BackendDAE.Var> allPrimaryParameters "already sorted";
 
     case (cache, graph, _, (st as GlobalScript.SYMBOLTABLE(ast=p)), filenameprefix, _, _, _) equation
       // calculate stuff that we need to create SimCode data structure
@@ -645,11 +678,11 @@ algorithm
       description = DAEUtil.daeDescription(dae);
       dlow = BackendDAECreate.lower(dae, cache, graph, BackendDAE.EXTRA_INFO(description,filenameprefix));
       //BackendDump.printBackendDAE(dlow);
-      dlow_1 = BackendDAEUtil.getSolvedSystem(dlow,inFileNamePrefix);
+      (dlow_1, initDAE, useHomotopy, removedInitialEquationLst, primaryParameters, allPrimaryParameters) = BackendDAEUtil.getSolvedSystem(dlow,inFileNamePrefix);
       timeBackend = System.realtimeTock(ClockIndexes.RT_CLOCK_BACKEND);
 
       (libs, file_dir, timeSimCode, timeTemplates) =
-        generateModelCode(dlow_1, p, className, filenameprefix, inSimSettingsOpt, args);
+        generateModelCode(dlow_1, initDAE, useHomotopy, removedInitialEquationLst, primaryParameters, allPrimaryParameters, p, className, filenameprefix, inSimSettingsOpt, args);
 
       resultValues = {("timeTemplates", Values.REAL(timeTemplates)),
                       ("timeSimCode", Values.REAL(timeSimCode)),

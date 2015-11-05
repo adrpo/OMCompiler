@@ -34,8 +34,8 @@
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
-#include "gc.h"
-#include "meta/meta_modelica.h"
+#include "meta/meta_modelica_data.h"
+#include "omc_error.h"
 
 #define FMT_BUFSIZE 400
 
@@ -277,7 +277,7 @@ extern char* omc__escapedString(const char* str, int nl)
   if (!hasEscape) {
     return NULL;
   }
-  res = (char*) GC_malloc(len+1);
+  res = (char*) omc_alloc_interface.malloc_atomic(len+1);
   while(*str) {
     switch (*str) {
       case '"': res[i++] = '\\'; res[i++] = '"'; break;
@@ -298,9 +298,11 @@ extern char* omc__escapedString(const char* str, int nl)
 
 int GC_vasprintf(char **strp, const char *fmt, va_list ap) {
   int len;
+  va_list ap2;
+  va_copy(ap2, ap);
   len = vsnprintf(NULL, 0, fmt, ap);
-  *strp = GC_malloc_atomic(len+1);
-  len = vsnprintf(*strp, len+1, fmt, ap);
+  *strp = omc_alloc_interface.malloc_atomic(len+1);
+  len = vsnprintf(*strp, len+1, fmt, ap2);
   return len;
 }
 

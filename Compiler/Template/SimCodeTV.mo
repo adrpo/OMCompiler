@@ -199,7 +199,7 @@ package SimCodeVar
       list<SimVar> jacobianVars;
       list<SimVar> realOptimizeConstraintsVars;
       list<SimVar> realOptimizeFinalConstraintsVars;
-      list<SimCodeVar.SimVar> mixedArrayVars;
+      list<SimVar> mixedArrayVars;
     end SIMVARS;
   end SimVars;
 
@@ -314,6 +314,7 @@ package SimCode
 
   uniontype SubPartition
     record SUBPARTITION
+      list<tuple<SimCodeVar.SimVar, Boolean>> vars;
       list<SimEqSystem> equations;
       list<SimEqSystem> removedEquations;
       BackendDAE.SubClock subClock;
@@ -699,6 +700,12 @@ package SimCode
     end FMIDERIVATIVES;
   end FmiDerivatives;
 
+  uniontype FmiDiscreteStates
+    record FMIDISCRETESTATES
+      list<FmiUnknown> fmiUnknownsList;
+    end FMIDISCRETESTATES;
+  end FmiDiscreteStates;
+
   uniontype FmiInitialUnknowns
     record FMIINITIALUNKNOWNS
       list<FmiUnknown> fmiUnknownsList;
@@ -709,6 +716,7 @@ package SimCode
     record FMIMODELSTRUCTURE
       FmiOutputs fmiOutputs;
       FmiDerivatives fmiDerivatives;
+      FmiDiscreteStates fmiDiscreteStates;
       FmiInitialUnknowns fmiInitialUnknowns;
     end FMIMODELSTRUCTURE;
   end FmiModelStructure;
@@ -806,6 +814,13 @@ package SimCodeUtil
     output list<SimCode.SimEqSystem> oEqs;
   end getDaeEqsNotPartOfOdeSystem;
 
+  function getValueReference
+    input SimCodeVar.SimVar inSimVar;
+    input SimCode.SimCode inSimCode;
+    input Boolean inElimNegAliases;
+    output String outValueReference;
+  end getValueReference;
+
   function getVarIndexListByMapping
     input HashTableCrIListArray.HashTable iVarToArrayIndexMapping;
     input DAE.ComponentRef iVarName;
@@ -830,6 +845,18 @@ package SimCodeUtil
     input list<SimCode.ClockedPartition> inPartitions;
     output list<SimCode.SubPartition> outSubPartitions;
   end getSubPartitions;
+
+  function getClockIndex
+    input SimCodeVar.SimVar simVar;
+    input SimCode.SimCode simCode;
+    output Option<Integer> clockIndex;
+  end getClockIndex;
+
+  function computeDependencies
+    input list<SimCode.SimEqSystem> eqs;
+    input DAE.ComponentRef cref;
+    output list<SimCode.SimEqSystem> deps;
+  end computeDependencies;
 end SimCodeUtil;
 
 package SimCodeFunctionUtil
@@ -933,6 +960,11 @@ package SimCodeFunctionUtil
     output Boolean b;
   end isBoxedFunction;
 
+  function funcHasParallelInOutArrays
+    input SimCode.Function fn;
+    output Boolean b;
+  end funcHasParallelInOutArrays;
+
   function incrementInt
     input Integer inInt;
     input Integer increment;
@@ -988,6 +1020,9 @@ package BackendDAE
     record STATE_DER end STATE_DER;
     record DUMMY_DER end DUMMY_DER;
     record DUMMY_STATE end DUMMY_STATE;
+    record CLOCKED_STATE
+      DAE.ComponentRef previousName "the name of the previous variable";
+    end CLOCKED_STATE;
     record DISCRETE end DISCRETE;
     record PARAM end PARAM;
     record CONST end CONST;
@@ -2059,7 +2094,8 @@ package DAE
   end Subscript;
 
   uniontype MatchType
-    record MATCHCONTINUE end MATCHCONTINUE;
+  record MATCHCONTINUE end MATCHCONTINUE;
+  record TRY_STACKOVERFLOW end TRY_STACKOVERFLOW;
     record MATCH
       Option<tuple<Integer,Type,Integer>> switch;
     end MATCH;
@@ -2971,6 +3007,11 @@ package ComponentReference
     input DAE.ComponentRef inComponentRef;
     output DAE.ComponentRef outComponentRef;
   end crefArrayGetFirstCref;
+
+  function crefPrefixPrevious
+    input DAE.ComponentRef inCref;
+    output DAE.ComponentRef outCref;
+  end crefPrefixPrevious;
 end ComponentReference;
 
 package Expression
@@ -3000,6 +3041,11 @@ package Expression
     input DAE.Exp inExp;
     output DAE.Type outType;
   end typeof;
+
+  function isAtomic
+    input DAE.Exp inExp;
+    output Boolean outBoolean;
+  end isAtomic;
 
   function isHalf
     input DAE.Exp inExp;
@@ -3079,10 +3125,10 @@ package Expression
     output Boolean outB;
   end isMetaArray;
 
-  function getClockIntvl
+  function getClockInterval
     input DAE.ClockKind inClk;
     output DAE.Exp outIntvl;
-  end getClockIntvl;
+  end getClockInterval;
 end Expression;
 
 package ExpressionDump
@@ -3094,6 +3140,10 @@ package ExpressionDump
     input DAE.Exp e;
     output String s;
   end printCrefsFromExpStr;
+  function binopSymbol
+    input DAE.Operator inOperator;
+    output String outString;
+  end binopSymbol;
 end ExpressionDump;
 
 package Config
@@ -3166,11 +3216,13 @@ package Flags
   constant DebugFlag MODEL_INFO_JSON;
   constant DebugFlag USEMPI;
   constant DebugFlag RUNTIME_STATIC_LINKING;
+  constant DebugFlag HARDCODED_START_VALUES;
   constant ConfigFlag NUM_PROC;
   constant ConfigFlag HPCOM_CODE;
   constant ConfigFlag PROFILING_LEVEL;
   constant ConfigFlag CPP_FLAGS;
   constant ConfigFlag MATRIX_FORMAT;
+  constant DebugFlag FMU_EXPERIMENTAL;
 
   function isSet
     input DebugFlag inFlag;
@@ -3306,6 +3358,10 @@ package Types
     input DAE.Type ty;
     output list<DAE.Var> fields;
   end getMetaRecordFields;
+  function unboxedType
+    input DAE.Type boxedType;
+    output DAE.Type ty;
+  end unboxedType;
 end Types;
 
 package HashTableCrIListArray

@@ -1035,7 +1035,7 @@ algorithm
     case(cache,env,DAE.CREF_QUAL())
       equation
         (cache,DAE.ATTR(ct,prl,var,dir,_,vis),ty1,_,_,_,_,_,_) = lookupVarLocal(cache,env,cr);
-        cr1 = ComponentReference.crefStripLastIdent(cr);
+        cr1 = ComponentReference.crefFirstCref(cr);
         // Find innerOuter attribute from "parent"
         (cache,DAE.ATTR(innerOuter=io),_,_,_,_,_,_,_) = lookupVarLocal(cache,env,cr1);
       then
@@ -1333,6 +1333,8 @@ algorithm
             then ();
         end match;
         (cache,p_env,attr,ty,bind,cnstForRange,splicedExpData,componentEnv,name) = lookupVarInPackages(cache,env5,cref,prevFrames,inState);
+         // Add the class name to the spliced exp so that the name is correct.
+         splicedExpData = prefixSplicedExp(ComponentReference.crefFirstCref(inComponentRef), splicedExpData);
       then
         (cache,p_env,attr,ty,bind,cnstForRange,splicedExpData,componentEnv,name);
 
@@ -3196,6 +3198,61 @@ algorithm
 
   end matchcontinue;
 end isFunctionCallViaComponent;
+
+protected function prefixSplicedExp
+  "Prefixes a spliced exp that contains a cref with another cref."
+  input DAE.ComponentRef inCref;
+  input InstTypes.SplicedExpData inSplicedExp;
+  output InstTypes.SplicedExpData outSplicedExp;
+algorithm
+  outSplicedExp := match inSplicedExp
+    local
+      DAE.Type ety, ty;
+      DAE.ComponentRef cref;
+
+    case InstTypes.SPLICEDEXPDATA(SOME(DAE.CREF(cref, ety)), ty)
+      algorithm
+        cref := ComponentReference.joinCrefs(inCref, cref);
+      then
+        InstTypes.SPLICEDEXPDATA(SOME(DAE.CREF(cref, ety)), ty);
+
+    else inSplicedExp;
+  end match;
+end prefixSplicedExp;
+
+public function isArrayType
+  input FCore.Cache inCache;
+  input FCore.Graph inEnv;
+  input Absyn.Path inPath;
+  output FCore.Cache outCache;
+  output Boolean outIsArray;
+protected
+  SCode.Element el;
+  Absyn.Path p;
+  FCore.Graph env;
+algorithm
+  try
+    (outCache, el, env) := lookupClass(inCache, inEnv, inPath, false);
+
+    outIsArray := match el
+      case SCode.CLASS(classDef = SCode.DERIVED(typeSpec = Absyn.TPATH(arrayDim = SOME(_))))
+        then true;
+
+      case SCode.CLASS(classDef = SCode.DERIVED(attributes = SCode.ATTR(arrayDims = _ :: _)))
+        then true;
+
+      case SCode.CLASS(classDef = SCode.DERIVED(typeSpec = Absyn.TPATH(path = p)))
+        algorithm
+          (outCache, outIsArray) := isArrayType(outCache, env, p);
+        then
+          outIsArray;
+
+      else false;
+    end match;
+  else
+    outIsArray := false;
+  end try;
+end isArrayType;
 
 annotation(__OpenModelica_Interface="frontend");
 end Lookup;

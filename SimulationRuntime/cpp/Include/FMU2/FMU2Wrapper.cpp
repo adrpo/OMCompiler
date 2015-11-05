@@ -36,18 +36,6 @@
 
 #include "FMU2Wrapper.h"
 
-#include <Core/ModelicaDefine.h>
- #include <Core/Modelica.h>
-/*workarround until cmake file is modified*/
-//#define OMC_BUILD
-#include <Core/Solver/ISolverSettings.h>
-#include <Core/SimulationSettings/ISettingsFactory.h>
-#include <Core/Solver/ISolver.h>
-#include <Core/DataExchange/SimData.h>
-
-/*end workarround*/
-#include <Core/System/AlgLoopSolverFactory.h>
-
 static fmi2String const _LogCategoryFMUNames[] = {
   "logEvents",
   "logSingularLinearSystems",
@@ -75,19 +63,18 @@ FMU2Wrapper::FMU2Wrapper(fmi2String instanceName, fmi2String GUID,
   _instanceName = instanceName;
   _GUID = GUID;
   _logCategories = loggingOn? 0xFFFF: 0x0000;
-  boost::shared_ptr<IAlgLoopSolverFactory>
-    solver_factory(new AlgLoopSolverFactory(&_global_settings,
-                                            PATH(""), PATH("")));
-  _model = boost::shared_ptr<MODEL_CLASS>
-    (new MODEL_CLASS(&_global_settings, solver_factory,
-                     boost::shared_ptr<ISimData>(new SimData()),
-                     boost::shared_ptr<ISimVars>(MODEL_CLASS::createSimVars())));
+  _model = createSystemFMU(&_global_settings);
   _model->initialize();
   _string_buffer.resize(_model->getDimString());
+  _clock_buffer = new bool[_model->getDimClock()];
+  std::fill(_clock_buffer, _clock_buffer + _model->getDimClock(), false);
+  _nclock_active = 0;
 }
 
 FMU2Wrapper::~FMU2Wrapper()
 {
+  delete [] _clock_buffer;
+  delete _model;
 }
 
 fmi2Status FMU2Wrapper::setDebugLogging(fmi2Boolean loggingOn,
@@ -174,6 +161,10 @@ void FMU2Wrapper::updateModel()
 
 fmi2Status FMU2Wrapper::setTime(fmi2Real time)
 {
+  if (_nclock_active > 0) {
+    std::fill(_clock_buffer, _clock_buffer + _model->getDimClock(), false);
+    _nclock_active = 0;
+  }
   _model->setTime(time);
   _need_update = true;
   return fmi2OK;
@@ -251,6 +242,28 @@ fmi2Status FMU2Wrapper::setString(const fmi2ValueReference vr[], size_t nvr,
   return fmi2OK;
 }
 
+fmi2Status FMU2Wrapper::setClock(const fmi2Integer clockIndex[],
+                                 size_t nClockIndex, const fmi2Boolean active[])
+{
+  for (int i = 0; i < nClockIndex; i++) {
+    _clock_buffer[clockIndex[i] - 1] = active[i];
+    _nclock_active ++;
+  }
+  _need_update = true;
+  return fmi2OK;
+}
+
+fmi2Status FMU2Wrapper::setInterval(const fmi2Integer clockIndex[],
+                                    size_t nClockIndex, const fmi2Real interval[])
+{
+  double *clockInterval = _model->clockInterval();
+  for (int i = 0; i < nClockIndex; i++) {
+    clockInterval[clockIndex[i] - 1] = interval[i];
+  }
+  _need_update = true;
+  return fmi2OK;
+}
+
 fmi2Status FMU2Wrapper::getEventIndicators(fmi2Real eventIndicators[], size_t ni)
 {
   if (_need_update)
@@ -308,11 +321,36 @@ fmi2Status FMU2Wrapper::getString(const fmi2ValueReference vr[], size_t nvr,
   return fmi2OK;
 }
 
+fmi2Status FMU2Wrapper::getClock(const fmi2Integer clockIndex[],
+                                 size_t nClockIndex, fmi2Boolean active[])
+{
+  for (int i = 0; i < nClockIndex; i++) {
+    active[i] = _clock_buffer[clockIndex[i] - 1];
+  }
+}
+
+fmi2Status FMU2Wrapper::getInterval(const fmi2Integer clockIndex[],
+                                    size_t nClockIndex, fmi2Real interval[])
+{
+  double *clockInterval = _model->clockInterval();
+  for (int i = 0; i < nClockIndex; i++) {
+    interval[i] = clockInterval[clockIndex[i] - 1];
+  }
+  return fmi2OK;
+}
 
 fmi2Status FMU2Wrapper::newDiscreteStates(fmi2EventInfo *eventInfo)
 {
-  if (_need_update)
+  if (_need_update) {
+    if (_nclock_active > 0)
+      _model->setClock(_clock_buffer);
     updateModel();
+    if (_nclock_active > 0) {
+      // reset clocks
+      std::fill(_clock_buffer, _clock_buffer + _model->getDimClock(), false);
+      _nclock_active = 0;
+    }
+  }
   // Check if an Zero Crossings happend
   double f[NUMBER_OF_EVENT_INDICATORS];
   bool events[NUMBER_OF_EVENT_INDICATORS];

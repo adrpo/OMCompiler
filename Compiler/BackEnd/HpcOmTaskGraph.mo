@@ -130,7 +130,7 @@ algorithm
   ((oGraph,oGraphData,_)) := List.fold(systs, function createTaskGraph0(iShared=shared, iAnalyzeParameters=iAnalyzeParameters), (graph,graphData,1));
 end createTaskGraph;
 
-protected function createTaskGraph0 "author: marcusw,waurich
+public function createTaskGraph0 "author: marcusw,waurich
   Creates a task graph out of the given system."
   input BackendDAE.EqSystem iSyst; //The input system which should be analysed
   input BackendDAE.Shared iShared;
@@ -1815,7 +1815,7 @@ algorithm
   end matchcontinue;
 end getCompInComps;
 
-protected function getAllSuccessors"gets all successors including all childNodes of the childNodes...
+public function getAllSuccessors"gets all successors including all childNodes of the childNodes...
 author:Waurich TUD 2014-09"
   input list<Integer> nodes;
   input TaskGraph graph;
@@ -2671,31 +2671,6 @@ algorithm
   sccSimEqMapping := arrayCreate(arrayLength(taskGraph),{-1});
   HpcOmTaskGraph.dumpAsGraphMLSccLevel(taskGraph, taskGraphData, name, "", {}, {}, sccSimEqMapping, schedulerInfo, HpcOmTaskGraph.GRAPHDUMPOPTIONS(false,false,true,true));
 end dumpTaskGraph;
-
-public function dumpBipartiteGraph
-  input BackendDAE.BackendDAE dae;
-  input String fileName;
-protected
-  BackendDAE.Variables vars;
-  BackendDAE.EquationArray eqs;
-  BackendDAE.EqSystems eqSysts;
-  BackendDAE.IncidenceMatrix m,mT;
-  list<BackendDAE.Equation> eqLst;
-  list<BackendDAE.Var> varLst;
-  list<tuple<Boolean,String>> varAtts,eqAtts;
-algorithm
-  BackendDAE.DAE(eqs=eqSysts) := dae;
-  eqLst := List.flatten(List.map(List.map(eqSysts,BackendEquation.getEqnsFromEqSystem),BackendEquation.equationList));
-  varLst := List.flatten(List.map(List.map(eqSysts,BackendVariable.daeVars),BackendVariable.varList));
-  vars := BackendVariable.listVar1(varLst);
-  eqs := BackendEquation.listEquation(eqLst);
-  // build the incidence matrix for the whole System
-  (m,mT) := BackendDAEUtil.incidenceMatrixDispatch(vars,eqs, BackendDAE.NORMAL());
-  m := Array.map(m,function List.filter1OnTrue(inFilterFunc=intGt,inArg1=0));
-  varAtts := List.threadMap(List.fill(false,listLength(varLst)),List.fill("",listLength(varLst)),Util.makeTuple);
-  eqAtts := List.threadMap(List.fill(false,listLength(eqLst)),List.fill("",listLength(eqLst)),Util.makeTuple);
-  HpcOmEqSystems.dumpEquationSystemBipartiteGraph2(vars,eqs,m,varAtts,eqAtts,"BipartiteGraph_"+fileName);
-end dumpBipartiteGraph;
 
 public function dumpAsGraphMLSccLevel "author: marcusw, waurich
   Write out the given graph as a graphml file."

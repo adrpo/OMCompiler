@@ -227,7 +227,7 @@ algorithm
 
     case (DAE.ARRAY(array = {}, ty = ty))
       equation
-        (ty,dims) = Types.flattenArrayTypeOpt(ty);
+        (ty, dims) = Types.flattenArrayType(ty);
         ae1 = unleabZeroExpFromType(ty);
         expl_1 = List.map(dims, unelabDimensionToFillExp);
       then
@@ -1547,7 +1547,8 @@ algorithm
   end match;
 end expInt;
 
-public function getClockIntvl
+public function getClockInterval
+  "Returns a real interval expression for any clock kind; 0.0 if unknown."
   input DAE.ClockKind inClk;
   output DAE.Exp outIntvl;
 protected
@@ -1555,14 +1556,14 @@ protected
   Integer res;
 algorithm
   outIntvl := match inClk
-    case DAE.INFERRED_CLOCK()
-      then DAE.RCONST(1.0);
     case DAE.REAL_CLOCK(e)
       then e;
     case DAE.INTEGER_CLOCK(e, res)
-      then DAE.BINARY(e, DAE.DIV(DAE.T_REAL_DEFAULT), DAE.ICONST(res));
+      then DAE.BINARY(e, DAE.DIV(DAE.T_REAL_DEFAULT), DAE.RCONST(res));
+    else
+      then DAE.RCONST(0.0);
   end match;
-end getClockIntvl;
+end getClockInterval;
 
 public function expArrayIndex
   "Returns the array index that an expression represents as an integer."
@@ -1576,7 +1577,7 @@ algorithm
   end match;
 end expArrayIndex;
 
-public function expString
+public function sconstEnumNameString
   input DAE.Exp exp;
   output String str;
 algorithm
@@ -1587,7 +1588,7 @@ algorithm
     case DAE.SCONST(s) then s;
     case DAE.ENUM_LITERAL(name) then Absyn.pathString(name);
   end match;
-end expString;
+end sconstEnumNameString;
 
 public function varName "Returns the name of a Var"
   input DAE.Var v;
@@ -2244,14 +2245,15 @@ algorithm
     local
       Type tp;
       Operator op;
-      DAE.Exp e1,e2,e3,e;
+      DAE.Exp e1,e2,e3,e,iterExp,operExp;
       list<DAE.Exp> explist,exps;
       Absyn.Path p;
       String msg;
-      DAE.Type ty;
+      DAE.Type ty, iterTp, operTp;
       list<DAE.Type> tys;
       Integer i,i1,i2;
       DAE.Dimension dim;
+      DAE.Dimensions iterdims;
 
     case (DAE.ICONST()) then DAE.T_INTEGER_DEFAULT;
     case (DAE.RCONST()) then DAE.T_REAL_DEFAULT;
@@ -2290,12 +2292,13 @@ algorithm
     case DAE.RSUB() then inExp.ty;
     case (DAE.CODE(ty = tp)) then tp;
       /* array reduction with known size */
-    case (DAE.REDUCTION(iterators={DAE.REDUCTIONITER(exp=e,guardExp=NONE())},reductionInfo=DAE.REDUCTIONINFO(exprType=ty as DAE.T_ARRAY(dims=dim::_),path = Absyn.IDENT("array"))))
+    case (DAE.REDUCTION(iterators={DAE.REDUCTIONITER(exp=iterExp,guardExp=NONE())},expr = operExp, reductionInfo=DAE.REDUCTIONINFO(exprType=ty as DAE.T_ARRAY(dims=dim::_),path = Absyn.IDENT("array"))))
       equation
         false = dimensionKnown(dim);
-        DAE.T_ARRAY(dims={dim}) = typeof(e);
-        true = dimensionKnown(dim);
-        tp = liftArrayR(Types.unliftArray(Types.simplifyType(ty)),dim);
+        iterTp = typeof(iterExp);
+        operTp = typeof(operExp);
+        DAE.T_ARRAY(dims=iterdims) = iterTp;
+        tp = Types.liftTypeWithDims(operTp, iterdims);
       then tp;
     case (DAE.REDUCTION(reductionInfo=DAE.REDUCTIONINFO(exprType=ty)))
       then Types.simplifyType(ty);
@@ -3239,7 +3242,25 @@ algorithm
   end match;
 end makeCrefExp;
 
-public function crefExp "
+
+public function crefToExp
+" mahge:
+  creates a DAE.Exp from a cref by exrtacting the type from the types of the cref (if qualified) and
+  considering the dimensions and subscripts that exist in the cref.
+"
+  input DAE.ComponentRef cr;
+  output DAE.Exp cref;
+algorithm
+  cref := DAE.CREF(cr,ComponentReference.crefTypeFull(cr));
+end crefToExp;
+
+
+
+
+public function crefExp
+" ***deprecated.
+  mahge: use crefToExp(). This is not correct. We need to consider more than just the last subs.
+
 Author: BZ, 2008-08
 generate an DAE.CREF(ComponentRef, Type) from a ComponenRef, make array type correct from subs"
   input DAE.ComponentRef cr;
@@ -3319,6 +3340,14 @@ public function makeASUBSingleSub
 algorithm
   outExp := makeASUB(exp,{sub});
 end makeASUBSingleSub;
+
+public function makeTuple
+  input list<DAE.Exp> inExps;
+  output DAE.Exp outExp;
+algorithm
+  outExp := if listLength(inExps) > 1 then DAE.TUPLE(inExps) else List.first(inExps);
+end makeTuple;
+
 
 public function generateCrefsExpFromExpVar "
 Author: Frenkel TUD 2010-05"
@@ -7278,6 +7307,19 @@ algorithm
   end match;
 end isHalf;
 
+public function isAtomic
+  input DAE.Exp inExp;
+  output Boolean outBoolean;
+algorithm
+  outBoolean := match (inExp)
+    case DAE.CREF() then true;
+    case DAE.CALL() then true;
+    case DAE.ICONST() then inExp.integer >= 0;
+    case DAE.RCONST() then inExp.real > 0.0;
+    else false;
+  end match;
+end isAtomic;
+
 public function isImpure "author: lochel
   Returns true if an expression contains an impure function call."
   input DAE.Exp inExp;
@@ -7345,6 +7387,33 @@ public function isConst
 algorithm
   outBoolean := isConstWork(inExp,true);
 end isConst;
+
+public function isEvaluatedConst
+"Returns true if an expression is really a constant scalar value. no calls, casts, or something"
+  input DAE.Exp inExp;
+  output Boolean outBoolean;
+algorithm
+  outBoolean := isEvaluatedConstWork(inExp,true);
+end isEvaluatedConst;
+
+protected function isEvaluatedConstWork
+"Returns true if an expression is really constant"
+  input DAE.Exp inExp;
+  input Boolean inRes;
+  output Boolean outBoolean;
+algorithm
+  outBoolean := match (inExp,inRes)
+    local
+      DAE.Exp e;
+    case (_,false) then false;
+    case (DAE.ICONST(),_) then true;
+    case (DAE.RCONST(),_) then true;
+    case (DAE.BCONST(),_) then true;
+    case (DAE.SCONST(),_) then true;
+    case (DAE.ENUM_LITERAL(),_) then true;
+    else false;
+  end match;
+end isEvaluatedConstWork;
 
 protected function isConstWork
 "Returns true if an expression is constant"
@@ -8345,6 +8414,25 @@ algorithm
     else false;
   end match;
 end isCall;
+
+public function isRecordCall
+  "Returns true if the given expression is a record call,i.e. a function call without elements
+   otherwise false."
+  input DAE.Exp inExp;
+  input DAE.FunctionTree funcsIn;
+  output Boolean outIsCall;
+algorithm
+  outIsCall := match(inExp,funcsIn)
+    local
+      Absyn.Path path;
+      DAE.Function func;
+    case (DAE.CALL(path=path),_)
+      equation
+        SOME(func) = DAEUtil.avlTreeGet(funcsIn,path);
+         then listEmpty(DAEUtil.getFunctionElements(func));
+    else false;
+  end match;
+end isRecordCall;
 
 public function isNotCref
   "Returns true if the given expression is a not component reference,
@@ -11761,6 +11849,47 @@ public function makeVectorCall
 algorithm
   outExp := makePureBuiltinCall("vector",{exp},tp);
 end makeVectorCall;
+
+
+public function expandExpression
+ " mahge:
+   Expands a given expression to a list of expression. this means flattening any records in the
+   expression and  vectorizing arrays.
+
+   Currently can only handle crefs and array expressions. Maybe we need to handle binary operations at least.
+
+   Right now this is used in generating simple residual equations from complex ones in SimCode.
+ "
+
+  input DAE.Exp inExp;
+  output list<DAE.Exp> outExps;
+algorithm
+  (outExps) := match (inExp)
+    local
+      DAE.ComponentRef cr;
+      list<DAE.ComponentRef> crlst;
+      list<DAE.Exp> expl;
+      String msg;
+
+    case (DAE.CREF(cr,_))
+      algorithm
+        crlst := ComponentReference.expandCref(cr,true);
+        outExps := List.map(crlst, crefToExp);
+      then outExps;
+
+    case DAE.ARRAY(_,_,expl)
+      algorithm
+        expl := List.mapFlat(expl,expandExpression);
+      then expl;
+
+    else
+     algorithm
+        msg := "- Expression.expandExpression failed for " + ExpressionDump.printExpStr(inExp);
+        Error.addMessage(Error.INTERNAL_ERROR, {msg});
+      then
+        fail();
+  end match;
+end expandExpression;
 
 public function extendArrExp "author: Frenkel TUD 2010-07
   alternative name: vectorizeExp"
