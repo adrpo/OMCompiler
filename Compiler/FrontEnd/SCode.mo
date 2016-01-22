@@ -739,6 +739,17 @@ algorithm
   end match;
 end isElementExtends;
 
+public function isElementExtendsOrClassExtends
+  "Check if an element extends another class."
+  input Element ele;
+  output Boolean isExtend;
+algorithm
+  isExtend := match(ele)
+    case EXTENDS() then true;
+    else false;
+  end match;
+end isElementExtendsOrClassExtends;
+
 public function isNotElementClassExtends "
 check if an element is not of type CLASS_EXTENDS."
   input Element ele;
@@ -1778,6 +1789,21 @@ algorithm
       then CLASS(name,prefixes,e,p,r,parts,cmt,info);
   end matchcontinue;
 end setClassName;
+
+public function makeClassPartial
+  input Element inClass;
+  output Element outClass = inClass;
+algorithm
+  outClass := match outClass
+    case CLASS(partialPrefix = NOT_PARTIAL())
+      algorithm
+        outClass.partialPrefix := PARTIAL();
+      then
+        outClass;
+
+    else outClass;
+  end match;
+end makeClassPartial;
 
 public function setClassPartialPrefix "Sets the partial prefix of a SCode Class"
   input Partial partialPrefix;

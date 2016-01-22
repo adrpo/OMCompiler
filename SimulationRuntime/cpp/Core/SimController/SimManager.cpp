@@ -550,6 +550,7 @@ void SimManager::runSingleProcess()
     _solver->setEndTime(_tEnd);
 
     _solver->solve(_solverTask);
+    //initialize();
     _solverTask = ISolver::SOLVERCALL(_solverTask ^ ISolver::RECORDCALL);
     /* Logs temporarily disabled
      BOOST_LOG_SEV(simmgr_lg::get(), simmgr_normal) <<"Run single process." ; */
@@ -625,6 +626,8 @@ void SimManager::runSingleProcess()
                     _mixed_system->handleSystemEvents(_events);
                     // Reset time-events
                     _timeevent_system->handleTimeEvent(_timeEventCounter);
+					_cont_system->evaluateAll(IContinuous::CONTINUOUS);
+					_event_system->saveAll();
             }
 
             user_stop = (_solver->getSolverStatus() & ISolver::USER_STOP);
@@ -685,6 +688,8 @@ void SimManager::runSingleProcess()
                     //_cont_system->evaluateODE(IContinuous::CONTINUOUS);
                     //reset time-events
                     _timeevent_system->handleTimeEvent(_timeEventCounter);
+					_cont_system->evaluateAll(IContinuous::CONTINUOUS);
+					_event_system->saveAll();
                 }
             }
 

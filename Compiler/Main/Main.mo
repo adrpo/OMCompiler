@@ -290,13 +290,13 @@ algorithm
       equation
         names = List.map(cls,Absyn.className);
         names = List.map1(names,Absyn.joinPaths,scope);
-        res = "{" + stringDelimitList(List.map(names,Absyn.pathString),",") + "}\n";
+        res = "{" + stringDelimitList(list(Absyn.pathString(n) for n in names),",") + "}\n";
       then res;
 
     case(Absyn.PROGRAM(classes=cls,within_=Absyn.TOP()))
       equation
         names = List.map(cls,Absyn.className);
-        res = "{" + stringDelimitList(List.map(names,Absyn.pathString),",") + "}\n";
+        res = "{" + stringDelimitList(list(Absyn.pathString(n) for n in names),",") + "}\n";
       then res;
 
   end match;
@@ -466,8 +466,7 @@ algorithm
       equation
         //print("Class to instantiate: " + Config.classToInstantiate() + "\n");
         isEmptyOrFirstIsModelicaFile(libs);
-        System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT);
-        System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT_CUMULATIVE);
+        SimCodeFunctionUtil.execStatReset();
         // Parse libraries and extra mo-files that might have been given at the command line.
         GlobalScript.SYMBOLTABLE(ast = p) = List.fold(libs, loadLib, GlobalScript.emptySymboltable);
         // Show any errors that occured during parsing.
@@ -595,6 +594,7 @@ protected
   BackendDAE.BackendDAE dlow;
   BackendDAE.BackendDAE initDAE;
   Boolean useHomotopy "true if homotopy(...) is used during initialization";
+  Option<BackendDAE.BackendDAE> initDAE_lambda0;
   list<BackendDAE.Equation> removedInitialEquationLst;
   list<BackendDAE.Var> primaryParameters "already sorted";
   list<BackendDAE.Var> allPrimaryParameters "already sorted";
@@ -602,8 +602,8 @@ algorithm
   if Config.simulationCg() then
     info := BackendDAE.EXTRA_INFO(DAEUtil.daeDescription(dae), Absyn.pathString(inClassName));
     dlow := BackendDAECreate.lower(dae, inCache, inEnv, info);
-    (dlow, initDAE, useHomotopy, removedInitialEquationLst, primaryParameters, allPrimaryParameters) := BackendDAEUtil.getSolvedSystem(dlow, "");
-    simcodegen(dlow, initDAE, useHomotopy, removedInitialEquationLst, primaryParameters, allPrimaryParameters, inClassName, ap);
+    (dlow, initDAE, useHomotopy, initDAE_lambda0, removedInitialEquationLst, primaryParameters, allPrimaryParameters) := BackendDAEUtil.getSolvedSystem(dlow, "");
+    simcodegen(dlow, initDAE, useHomotopy, initDAE_lambda0, removedInitialEquationLst, primaryParameters, allPrimaryParameters, inClassName, ap);
   end if;
 end optimizeDae;
 
@@ -612,6 +612,7 @@ protected function simcodegen "
   input BackendDAE.BackendDAE inBackendDAE;
   input BackendDAE.BackendDAE inInitDAE;
   input Boolean inUseHomotopy "true if homotopy(...) is used during initialization";
+  input Option<BackendDAE.BackendDAE> inInitDAE_lambda0;
   input list<BackendDAE.Equation> inRemovedInitialEquationLst;
   input list<BackendDAE.Var> inPrimaryParameters "already sorted";
   input list<BackendDAE.Var> inAllPrimaryParameters "already sorted";
@@ -634,7 +635,7 @@ algorithm
       SimCodeMain.createSimulationSettings(0.0, 1.0, 500, 1e-6, "dassl", "", "mat", ".*", "");
 
     System.realtimeTock(ClockIndexes.RT_CLOCK_BACKEND); // Is this necessary?
-    SimCodeMain.generateModelCode(inBackendDAE, inInitDAE, inUseHomotopy, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters, inProgram, inClassName, cname, SOME(sim_settings), Absyn.FUNCTIONARGS({}, {}));
+    SimCodeMain.generateModelCode(inBackendDAE, inInitDAE, inUseHomotopy, inInitDAE_lambda0, inRemovedInitialEquationLst, inPrimaryParameters, inAllPrimaryParameters, inProgram, inClassName, cname, SOME(sim_settings), Absyn.FUNCTIONARGS({}, {}));
 
     SimCodeFunctionUtil.execStat("Codegen Done");
   end if;
@@ -735,7 +736,7 @@ algorithm
     // check if we have OMDEV set
     case (omHome)
       equation
-        _ = System.setEnv("OPENMODELICAHOME",omHome,true);
+        System.setEnv("OPENMODELICAHOME",omHome,true);
         omdevPath = Util.makeValueOrDefault(System.readEnv,"OMDEV","");
         // we have something!
         false = stringEq(omdevPath, "");
@@ -751,13 +752,12 @@ algorithm
                                     binDir + ";",
                                     libBinDir + ";",
                                     oldPath});
-        _ = System.setEnv("PATH",newPath,true);
-      then
-        ();
+        System.setEnv("PATH",newPath,true);
+      then ();
 
     case (omHome)
       equation
-        _ = System.setEnv("OPENMODELICAHOME",omHome,true);
+        System.setEnv("OPENMODELICAHOME",omHome,true);
         oldPath = System.readEnv("PATH");
         mingwDir = System.openModelicaPlatform();
         binDir = omHome + "\\tools\\msys\\" + mingwDir + "\\bin";
@@ -770,16 +770,14 @@ algorithm
                                     binDir + ";",
                                     libBinDir + ";",
                                     oldPath});
-        _ = System.setEnv("PATH",newPath,true);
-      then
-        ();
+        System.setEnv("PATH",newPath,true);
+      then ();
 
     // do not display anything if +d=disableWindowsPathCheckWarning
     case (_)
       equation
         true = Flags.isSet(Flags.DISABLE_WINDOWS_PATH_CHECK_WARNING);
-      then
-        ();
+      then ();
 
     else
       equation
@@ -787,8 +785,7 @@ algorithm
         mingwDir = System.openModelicaPlatform();
         print("\t$OPENMODELICAHOME/tools/msys/" + mingwDir + "/bin" + "\n");
         print("\t$OMDEV/tools/msys/" + mingwDir + "/bin" + "\n");
-      then
-        ();
+      then ();
 
   end matchcontinue;
 end setWindowsPaths;

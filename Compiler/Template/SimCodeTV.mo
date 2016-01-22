@@ -226,6 +226,7 @@ package SimCodeVar
       list<String> numArrayElement;
       Boolean isValueChangeable;
       Boolean isProtected;
+      Boolean hideResult;
     end SIMVAR;
   end SimVar;
 
@@ -275,6 +276,7 @@ package SimCode
       Boolean useSymbolicInitialization;         // true if a system to solve the initial problem symbolically is generated, otherwise false
       Boolean useHomotopy;                       // true if homotopy(...) is used during initialization
       list<SimEqSystem> initialEquations;
+      list<SimEqSystem> initialEquations_lambda0;
       list<SimEqSystem> removedInitialEquations;
       list<SimEqSystem> startValueEquations;
       list<SimEqSystem> nominalValueEquations;
@@ -302,8 +304,18 @@ package SimCode
       HpcOmSimCode.HpcOmData hpcomData;
       HashTableCrIListArray.HashTable varToArrayIndexMapping;
       Option<FmiModelStructure> modelStructure;
+      PartitionData partitionData;
     end SIMCODE;
   end SimCode;
+
+  uniontype PartitionData
+    record PARTITIONDATA
+      Integer numPartitions;
+      list<list<Integer>> partitions; // which equations are assigned to the partitions
+      list<list<Integer>> activatorsForPartitions; // which activators can activate each partition
+      list<Integer> stateToActivators; // which states belong to which activator
+    end PARTITIONDATA;
+  end PartitionData;
 
   uniontype ClockedPartition
     record CLOCKED_PARTITION
@@ -824,6 +836,7 @@ package SimCodeUtil
   function getVarIndexListByMapping
     input HashTableCrIListArray.HashTable iVarToArrayIndexMapping;
     input DAE.ComponentRef iVarName;
+    input Boolean iColumnMajor;
     input String iIndexForUndefinedReferences;
     output list<String> oVarIndexList;
   end getVarIndexListByMapping;
@@ -831,6 +844,7 @@ package SimCodeUtil
   function getVarIndexByMapping
     input HashTableCrIListArray.HashTable iVarToArrayIndexMapping;
     input DAE.ComponentRef iVarName;
+    input Boolean iColumnMajor;
     input String iIndexForUndefinedReferences;
     output String oVarIndex;
   end getVarIndexByMapping;
@@ -857,6 +871,17 @@ package SimCodeUtil
     input DAE.ComponentRef cref;
     output list<SimCode.SimEqSystem> deps;
   end computeDependencies;
+
+  function getSimEqSystemsByIndexLst
+    input list<Integer> idcs;
+    input list<SimCode.SimEqSystem> allSes;
+    output list<SimCode.SimEqSystem> sesOut;
+  end getSimEqSystemsByIndexLst;
+
+  function getInputIndex
+    input SimCodeVar.SimVar var;
+    output Integer inputIndex;
+  end getInputIndex;
 end SimCodeUtil;
 
 package SimCodeFunctionUtil
@@ -1294,11 +1319,12 @@ package Absyn
     end THREAD;
   end ReductionIterType;
 
-  function pathString2NoLeadingDot "Tail-recursive version, with string builder (stringDelimitList is optimised)"
+  function pathString
     input Path path;
     input String delimiter;
+    input Boolean usefq;
     output String outString;
-  end pathString2NoLeadingDot;
+  end pathString;
 
   function pathLastIdent
     input Path inPath;
@@ -3223,6 +3249,7 @@ package Flags
   constant ConfigFlag CPP_FLAGS;
   constant ConfigFlag MATRIX_FORMAT;
   constant DebugFlag FMU_EXPERIMENTAL;
+  constant DebugFlag MULTIRATE_PARTITION;
 
   function isSet
     input DebugFlag inFlag;

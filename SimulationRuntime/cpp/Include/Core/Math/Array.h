@@ -169,14 +169,7 @@ class CStrArray
     for(size_t i = 0; i < _c_str_array.size(); i++)
       _c_str_array[i] = data[i].c_str();
   }
-  ///Special case for Modelica external C string arrays. Modelica strings are mapped to const char*
-  CStrArray(const BaseArray<const char*>& stringArray)
-    :_c_str_array(stringArray.getNumElems())
-  {
 
-    for(size_t i = 0; i < _c_str_array.size(); i++)
-      _c_str_array[i] = stringArray(i);
-  }
 
   /**
    * Convert to c_str array
@@ -1089,8 +1082,9 @@ class StatArrayDim2 : public StatArray<T, size1*size2, external>
    * Copies one dimensional array to row i
    * @param b array of type StatArrayDim1
    * @param i row number
+   * @param n optional number of rows not needed for static arrays
    */
-  void append(size_t i, const StatArrayDim1<T, size2, external>& b)
+  void append(size_t i, const StatArrayDim1<T, size2, external>& b, size_t n = 0)
   {
     const T* data = b.getData();
     T *array_data = StatArray<T, size1*size2, external>::getData() + i-1;
@@ -1273,8 +1267,9 @@ class StatArrayDim3 : public StatArray<T, size1*size2*size3, external>
    * Copies two dimensional array to row i
    * @param b array of type StatArrayDim2
    * @param i row number
+   * @param n optional number of rows not needed for static arrays
    */
-  void append(size_t i, const StatArrayDim2<T,size2,size3>& b)
+  void append(size_t i, const StatArrayDim2<T,size2,size3>& b, size_t n = 0)
   {
     const T* data = b.getData();
     T *array_data = StatArray<T, size1*size2*size3, external>::getData() + i-1;
@@ -1631,9 +1626,20 @@ class DynArrayDim2 : public DynArray<T, 2>
    * Copies one dimensional array to row i
    * @param b array of type DynArrayDim1
    * @param i row number
+   * @param n number of rows
    */
-  void append(size_t i, const DynArrayDim1<T>& b)
+  void append(size_t i, const DynArrayDim1<T>& b, size_t n)
   {
+    //if the dynamic array was not allocate before
+    if(this->_dims[0]==0 )
+    {
+        size_t m = b.getDim(1);
+        if(n > 0 && m > 0)
+          setDims(n,m);
+        else
+          throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION, "Could not append array, wrong array dimensions");
+
+    }
     const T* data = b.getData();
     T *array_data = this->_array_data + i-1;
     size_t size1 = this->_dims[0];

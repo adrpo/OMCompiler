@@ -610,20 +610,12 @@ Author BZ 2008-05
 This function verifies if it is some kind of a Real type we are working with."
   input DAE.Type inType;
   output Boolean b;
+protected
+  Boolean lb1, lb2;
 algorithm
-  b := matchcontinue(inType)
-    local Type ty; Boolean lb1,lb2,lb3;
-    case(ty)
-      equation
-        lb1 = isReal(ty);
-        lb2 = subtype(ty, DAE.T_REAL_DEFAULT);
-        lb3 = subtype(DAE.T_REAL_DEFAULT,ty);
-        lb1 = boolOr(lb1,boolAnd(lb2,lb3));
-    then lb1;
-
-    else false;
-
-  end matchcontinue;
+  lb1 := isReal(inType);
+  lb2 := equivtypes(inType, DAE.T_REAL_DEFAULT);
+  b := lb1 or lb2;
 end isRealOrSubTypeReal;
 
 public function isIntegerOrSubTypeInteger "
@@ -631,37 +623,24 @@ Author BZ 2009-02
 This function verifies if it is some kind of a Integer type we are working with."
   input DAE.Type inType;
   output Boolean b;
+protected
+  Boolean lb1, lb2;
 algorithm
-  b := matchcontinue(inType)
-    local Type ty; Boolean lb1,lb2,lb3;
-    case(ty)
-      equation
-        lb1 = isInteger(ty);
-        lb2 = subtype(ty, DAE.T_INTEGER_DEFAULT);
-        lb3 = subtype(DAE.T_INTEGER_DEFAULT,ty);
-        lb1 = boolOr(lb1,boolAnd(lb2,lb3));
-        //lb1 = boolOr(lb1,lb2);
-      then lb1;
-    else false;
-end matchcontinue;
+  lb1 := isInteger(inType);
+  lb2 := equivtypes(inType, DAE.T_INTEGER_DEFAULT);
+  b := lb1 or lb2;
 end isIntegerOrSubTypeInteger;
 
 protected function isClockOrSubTypeClock1
   input DAE.Type inType;
   output Boolean b;
+protected
+  Boolean lb1, lb2, lb3;
 algorithm
-  b := matchcontinue(inType)
-    local Type ty; Boolean lb1,lb2,lb3, lb4;
-    case(ty)
-      equation
-        lb1 = isClock(ty);
-        lb2 = subtype(ty, DAE.T_CLOCK_DEFAULT);
-        lb3 = subtype(DAE.T_CLOCK_DEFAULT,ty);
-        lb1 = boolOr(lb1,boolAnd(lb2,lb3));
-
-      then lb1;
-    else false;
-end matchcontinue;
+  lb1 := isClock(inType);
+  lb2 := equivtypes(inType, DAE.T_CLOCK_DEFAULT);
+  lb3 := not equivtypes(inType, DAE.T_UNKNOWN_DEFAULT);
+  b := lb1 or (lb2 and lb3);
 end isClockOrSubTypeClock1;
 
 public function isClockOrSubTypeClock
@@ -671,7 +650,7 @@ algorithm
   b := match inType
     local
       DAE.Type ty;
-    case DAE.T_FUNCTION(funcResultType = ty)
+    case DAE.T_FUNCTION(funcResultType=ty)
       then isClockOrSubTypeClock1(ty);
     else isClockOrSubTypeClock1(inType);
   end match;
@@ -682,18 +661,12 @@ public function isBooleanOrSubTypeBoolean
  This function verifies if it is some kind of a Boolean type we are working with."
   input DAE.Type inType;
   output Boolean b;
+protected
+  Boolean lb1, lb2;
 algorithm
-  b := matchcontinue(inType)
-    local Type ty; Boolean lb1,lb2,lb3;
-    case(ty)
-      equation
-        lb1 = isBoolean(ty);
-        lb2 = subtype(ty, DAE.T_BOOL_DEFAULT);
-        lb3 = subtype(DAE.T_BOOL_DEFAULT, ty);
-        lb1 = boolOr(lb1,boolAnd(lb2,lb3));
-      then lb1;
-    else false;
-  end matchcontinue;
+  lb1 := isBoolean(inType);
+  lb2 := equivtypes(inType, DAE.T_BOOL_DEFAULT);
+  b := lb1 or lb2;
 end isBooleanOrSubTypeBoolean;
 
 public function isStringOrSubTypeString
@@ -701,18 +674,12 @@ public function isStringOrSubTypeString
  This function verifies if it is some kind of a String type we are working with."
   input DAE.Type inType;
   output Boolean b;
+protected
+  Boolean lb1, lb2;
 algorithm
-  b := matchcontinue(inType)
-    local Type ty; Boolean lb1,lb2,lb3;
-    case(ty)
-      equation
-        lb1 = isString(ty);
-        lb2 = subtype(ty, DAE.T_STRING_DEFAULT);
-        lb3 = subtype(DAE.T_STRING_DEFAULT, ty);
-        lb1 = boolOr(lb1,boolAnd(lb2,lb3));
-      then lb1;
-    else false;
-  end matchcontinue;
+  lb1 := isString(inType);
+  lb2 := equivtypes(inType, DAE.T_STRING_DEFAULT);
+  b := lb1 or lb2;
 end isStringOrSubTypeString;
 
 public function isIntegerOrRealOrSubTypeOfEither
@@ -2225,7 +2192,7 @@ algorithm
 
     case (DAE.T_FUNCTION(funcArg = params, funcResultType = restype, source = ts))
       equation
-        funcstr = stringDelimitList(List.map(ts, Absyn.pathString), ", ");
+        funcstr = stringDelimitList(list(Absyn.pathString(pt) for pt in ts), ", ");
         paramstrs = List.map(params, unparseParam);
         paramstr = stringDelimitList(paramstrs, ", ");
         restypestr = unparseType(restype);
@@ -6489,7 +6456,7 @@ algorithm
 
     else
       equation
-        pathStr = stringDelimitList(List.map(pathLst, Absyn.pathString), ", ");
+        pathStr = stringDelimitList(list(Absyn.pathString(p) for p in pathLst), ", ");
         bindingsStr = polymorphicBindingsStr(bindings);
         solvedBindingsStr = polymorphicBindingsStr(solvedBindings);
         unsolvedBindingsStr = polymorphicBindingsStr(unsolvedBindings);
@@ -7839,7 +7806,7 @@ algorithm
     // yeha, we have some
     case (ts)
       equation
-        s = " origin: " + stringDelimitList(List.map(ts, Absyn.pathString), ", ");
+        s = " origin: " + stringDelimitList(list(Absyn.pathString(t) for t in ts), ", ");
       then
         s;
   end matchcontinue;
@@ -8249,13 +8216,13 @@ public function makeCallAttr
   output DAE.CallAttributes callAttr;
 protected
   Boolean isImpure,isT,isB;
-  DAE.FunctionBuiltin builtin;
-  DAE.InlineType inline;
+  DAE.FunctionBuiltin isbuiltin;
+  DAE.InlineType isinline;
 algorithm
-  DAE.FUNCTION_ATTRIBUTES(isBuiltin=builtin,isImpure=isImpure,inline=inline) := attr;
+  DAE.FUNCTION_ATTRIBUTES(isBuiltin=isbuiltin,isImpure=isImpure,inline=isinline) := attr;
   isT := isTuple(ty);
-  isB := isBuiltin(builtin);
-  callAttr := DAE.CALL_ATTR(ty,isT,isB,isImpure,false,inline,DAE.NO_TAIL());
+  isB := isBuiltin(isbuiltin);
+  callAttr := DAE.CALL_ATTR(ty,isT,isB,isImpure,false,isinline,DAE.NO_TAIL());
 end makeCallAttr;
 
 public function getFuncArg

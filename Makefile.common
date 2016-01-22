@@ -130,6 +130,9 @@ $(OMBUILDDIR)/$(LIB_OMC)/libumfpack$(SHREXT): 3rdParty/SuiteSparse/CMakeLists.tx
 	$(MAKE) -C 3rdParty/SuiteSparse/build install
 	test ! `uname` = Darwin || install_name_tool -id @rpath/libumfpack.dylib "$@"
 	test ! `uname` = Darwin || install_name_tool -id @rpath/libamd.dylib "$(OMBUILDDIR)/$(LIB_OMC)/libamd$(SHREXT)"
+	test ! `uname` = Darwin || install_name_tool -id @rpath/libklu.dylib "$(OMBUILDDIR)/$(LIB_OMC)/libklu$(SHREXT)"
+	test ! `uname` = Darwin || install_name_tool -id @rpath/libbtf.dylib "$(OMBUILDDIR)/$(LIB_OMC)/libbtf$(SHREXT)"
+	test ! `uname` = Darwin || install_name_tool -id @rpath/libcolamd.dylib "$(OMBUILDDIR)/$(LIB_OMC)/libcolamd$(SHREXT)"
 	#cp -au 3rdParty/SuiteSparse/build/*.$(STATIC_EXT) build/$(LIB_OMC)
 	#mkdir --parent build/include/omc/c/suitesparse
 	#cp -a 3rdParty/SuiteSparse/UMFPACK/Include/*.h build/include/omc/c/suitesparse
@@ -139,6 +142,7 @@ umfpack: $(OMBUILDDIR)/$(LIB_OMC)/libumfpack$(SHREXT)
 
 umfpack-clean:
 	if test -d 3rdParty/SuiteSparse/build ; then cd 3rdParty/SuiteSparse/build && make clean ; fi
+	rm -rf 3rdParty/SuiteSparse/build
 	rm -rf $(OMBUILDDIR)/include/omc/c/suitesparse
 	rm -f $(OMBUILDDIR)/$(LIB_OMC)/libumfpack.a
 	rm -f $(OMBUILDDIR)/$(LIB_OMC)/libamd.a
@@ -343,7 +347,7 @@ install: install-dirs
 	# man pages
 	# cp -p ${builddir_man}/man1/*.gz ${INSTALL_MANDIR}/man1/
 	# Shared data
-	cp -p ${builddir_share}/omc/*.* ${INSTALL_SHAREDIR}/omc/
+	cp -p ${builddir_share}/omc/*.* ${builddir_share}/omc/runtime ${INSTALL_SHAREDIR}/omc/
 	test ! -d ${builddir_share}/omnotebook/ || cp -rp ${builddir_share}/omnotebook/* ${INSTALL_SHAREDIR}/omnotebook/
 	test ! -d ${builddir_share}/omshell/ || cp -p ${builddir_share}/omshell/*.xml ${INSTALL_SHAREDIR}/omshell/
 	test ! -d ${builddir_share}/omshell/nls/ || cp -p ${builddir_share}/omshell/nls/*.qm ${INSTALL_SHAREDIR}/omshell/nls/

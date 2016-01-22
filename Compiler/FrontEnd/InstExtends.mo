@@ -145,11 +145,15 @@ algorithm
             SOME(cls) := ocls;
             SCode.CLASS(name = cn, encapsulatedPrefix = encf, restriction = r) := cls;
           else
-            // Base class could not be found, print an error.
-            bc_str := Absyn.pathString(el.baseClassPath);
-            scope_str := FGraph.printGraphPathStr(inEnv);
-            Error.addSourceMessageAndFail(Error.LOOKUP_BASECLASS_ERROR,
-              {bc_str, scope_str}, el.info);
+            // Base class could not be found, print an error unless --permissive
+            // is used.
+            if Flags.getConfigBool(Flags.PERMISSIVE) then
+              bc_str := Absyn.pathString(el.baseClassPath);
+              scope_str := FGraph.printGraphPathStr(inEnv);
+              Error.addSourceMessage(Error.LOOKUP_BASECLASS_ERROR,
+                {bc_str, scope_str}, el.info);
+            end if;
+            fail();
           end if;
 
           (outCache, cenv, outIH, els1, eq1, ieq1, alg1, ialg1, mod) :=
@@ -178,8 +182,8 @@ algorithm
           rest_els := SCodeUtil.addRedeclareAsElementsToExtends(rest_els,
             list(e for e guard(SCodeUtil.isRedeclareElement(e)) in rest_els));
 
-          outMod := Mod.elabUntypedMod(emod, inEnv, Prefix.NOPRE(), Mod.EXTENDS(el.baseClassPath));
-          outMod := Mod.merge(mod, outMod, inEnv, Prefix.NOPRE());
+          outMod := Mod.elabUntypedMod(emod, Mod.EXTENDS(el.baseClassPath));
+          outMod := Mod.merge(mod, outMod, "", false);
 
           (outCache, _, outIH, _, els2, eq2, ieq2, alg2, ialg2) :=
             instExtendsAndClassExtendsList2(outCache, cenv, outIH, outMod, inPrefix,
@@ -213,6 +217,10 @@ algorithm
 
         then
           ();
+
+      // Skip any extends we couldn't handle if --permissive is given.
+      case SCode.EXTENDS() guard(Flags.getConfigBool(Flags.PERMISSIVE))
+        then ();
 
       case SCode.COMPONENT()
         algorithm
@@ -294,7 +302,7 @@ algorithm
     case (_, _)
       equation
         path = Absyn.removePartialPrefix(Absyn.IDENT(inClassName), inPath);
-        (cache, elem, env) = Lookup.lookupClass(inCache, inEnv, path, false);
+        (cache, elem, env) = Lookup.lookupClass(inCache, inEnv, path);
       then
         (cache, SOME(elem), env);
 
@@ -655,13 +663,13 @@ algorithm
     case (cache,env,ih,mod,pre,SCode.CLASS( info = info, classDef = SCode.DERIVED(typeSpec = Absyn.TPATH(tp, _),modifications = dmod)),impl, _, false, _)
       equation
         // fprintln(Flags.INST_TRACE, "DERIVED: " + FGraph.printGraphPathStr(env) + " el: " + SCodeDump.unparseElementStr(inClass) + " mods: " + Mod.printModStr(mod));
-        (cache, c, cenv) = Lookup.lookupClass(cache, env, tp, true);
+        (cache, c, cenv) = Lookup.lookupClass(cache, env, tp, SOME(info));
         dmod = InstUtil.chainRedeclares(mod, dmod);
         // false = Absyn.pathEqual(FGraph.getGraphName(env),FGraph.getGraphName(cenv)) and SCode.elementEqual(c,inClass);
         // modifiers should be evaluated in the current scope for derived!
-        //daeDMOD = Mod.elabUntypedMod(dmod, env, Prefix.NOPRE(), Mod.DERIVED(tp));
+        //daeDMOD = Mod.elabUntypedMod(dmod, Mod.DERIVED(tp));
         (cache,daeDMOD) = Mod.elabMod(cache, env, ih, pre, dmod, impl, Mod.DERIVED(tp), info);
-        mod = Mod.merge(mod, daeDMOD, env, pre);
+        mod = Mod.merge(mod, daeDMOD);
         // print("DER: " + SCodeDump.unparseElementStr(inClass, SCodeDump.defaultOptions) + "\n");
         (cache,env,ih,elt,eq,ieq,alg,ialg,mod) = instDerivedClassesWork(cache, cenv, ih, mod, pre, c, impl, info, numIter >= Global.recursionDepthLimit, numIter+1)
         "Mod.lookup_modification_p(mod, c) => innermod & We have to merge and apply modifications as well!" ;
@@ -757,7 +765,7 @@ algorithm
         // cmod2 = Mod.getModifs(inMod, id, m);
         cmod2 = Mod.lookupCompModificationFromEqu(inMod, id);
         // Debug.traceln("\tSpecific mods on comp: " +  Mod.printModStr(cmod2));
-        cmod = Mod.merge(cmod2, cmod, inEnv, Prefix.NOPRE());
+        cmod = Mod.merge(cmod2, cmod, id, false);
         mod_rest = inMod; //mod_rest = Mod.removeMod(inMod, id);
       then
         ((comp, cmod, b), mod_rest);
@@ -770,9 +778,9 @@ algorithm
 
     case ((comp1 as SCode.CLASS(name = id, prefixes = SCode.PREFIXES(replaceablePrefix = SCode.REPLACEABLE(_))), cmod1, b), _, _)
       equation
-        DAE.REDECL(_, _, (comp2, cmod2)::_) = Mod.lookupCompModification(inMod, id);
+        DAE.REDECL(element = comp2, mod = cmod2) = Mod.lookupCompModification(inMod, id);
         mod_rest = inMod; //mod_rest = Mod.removeMod(inMod, id);
-        cmod2 = Mod.merge(cmod2, cmod1, inEnv, Prefix.NOPRE());
+        cmod2 = Mod.merge(cmod2, cmod1, id, false);
         comp2 = SCode.mergeWithOriginal(comp2, comp1);
         // comp2 = SCode.renameElement(comp2, id);
       then
@@ -1112,7 +1120,7 @@ algorithm
 
     case (cache,env,SCode.PARTS(elts,ne,ie,na,ia,nc,clats,ed),htParent)
       equation
-        ht = BaseHashTable.copy(htParent);
+        ht = if listEmpty(elts) then htParent else BaseHashTable.copy(htParent);
         ht = getLocalIdentList(elts,ht,getLocalIdentElement);
         (cache,elts) = fixList(cache,env,elts,ht,fixElement);
         (cache,ne) = fixList(cache,env,ne,ht,fixEquation);
@@ -1124,7 +1132,7 @@ algorithm
 
     case (cache,env,SCode.CLASS_EXTENDS(name,mod,SCode.PARTS(elts,ne,ie,na,ia,nc,clats,ed)),htParent)
       equation
-        ht = BaseHashTable.copy(htParent);
+        ht = if listEmpty(elts) then htParent else BaseHashTable.copy(htParent);
         (cache,mod) = fixModifications(cache,env,mod,ht);
         (cache,elts) = fixList(cache,env,elts,ht,fixElement);
         (cache,ne) = fixList(cache,env,ne,ht,fixEquation);
@@ -1613,7 +1621,7 @@ algorithm
     case (_, _, _)
       equation
         // see where the first ident from the path leads, if is outside the current env DO NOT strip!
-        (_, _, env) = Lookup.lookupClass(inCache, inEnv, Absyn.makeIdentPathFromString(Absyn.pathFirstIdent(inPath)), false);
+        (_, _, env) = Lookup.lookupClass(inCache, inEnv, Absyn.makeIdentPathFromString(Absyn.pathFirstIdent(inPath)));
         // if envClass is prefix of env then is outside scope
         yes = FGraph.graphPrefixOf(env, inEnv);
       then
@@ -1700,7 +1708,7 @@ algorithm
       equation
         id = Absyn.crefFirstIdent(cref);
         //print("Try lookupC " + id + "\n");
-        (_,c,denv) = Lookup.lookupClass(cache,env,Absyn.IDENT(id),false);
+        (_,c,denv) = Lookup.lookupClass(cache,env,Absyn.IDENT(id));
         // isOutside = FGraph.graphPrefixOf(denv, env);
         // id might come from named import, make sure you use the actual class name!
         id = SCode.getElementName(c);

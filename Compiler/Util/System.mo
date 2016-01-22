@@ -80,6 +80,19 @@ public function strcmp
   external "C" outInteger=System_strcmp(inString1,inString2) annotation(Library = "omcruntime");
 end strcmp;
 
+public function strcmp_offset
+"Like strcmp, but also takes offset and lengths of the strings in order to avoid building them through substring"
+  input String string1;
+  input Integer offset1;
+  input Integer length1;
+  input String string2;
+  input Integer offset2;
+  input Integer length2;
+  output Integer outInteger;
+
+  external "C" outInteger=System_strcmp_offset(string1,offset1,length1,string2,offset2,length2) annotation(Library = "omcruntime");
+end strcmp_offset;
+
 public function stringFind "locates substring searchStr in str. If succeeds return position, otherwise return -1"
   input String str;
   input String searchStr;
@@ -1200,6 +1213,53 @@ annotation(Documentation(info="<html>
 <p>Only works on Linux. Other platforms return dummy strings.</p>.
 </html>"));
 end dladdr;
+
+class StringAllocator
+  extends ExternalObject;
+  function constructor
+    input Integer sz;
+    output StringAllocator str;
+  external "C" str=StringAllocator_constructor(sz) annotation(Include="
+void* StringAllocator_constructor(int sz)
+{
+  if (sz < 0) {
+    MMC_THROW();
+  }
+  return mmc_alloc_scon(sz);
+}
+");
+  end constructor;
+  function destructor
+    input StringAllocator str;
+  algorithm
+    /* Nothing */
+  end destructor;
+end StringAllocator;
+
+function stringAllocatorStringCopy
+  input StringAllocator dest;
+  input String source;
+  input Integer destOffset=0;
+external "C" om_stringAllocatorStringCopy(dest,source,destOffset) annotation(Include="
+void om_stringAllocatorStringCopy(void *dest, char *source, int destOffset) {
+  strcpy(MMC_STRINGDATA(dest)+destOffset, source);
+}
+", Documentation(info="<html>
+<p>Does a strcpy into the (input) destination. This is dangerous and not valid Modelica.</p>
+<p>Make sure the String has been allocated properly and is not shared. The input lengths are not validated, so this function can write out of bounds if called incorrectly.</p>
+</html>"));
+end stringAllocatorStringCopy;
+
+function stringAllocatorResult<T>
+  input StringAllocator sa;
+  input T dummy "This is just added so we do not make an extra allocation for the string" annotation(__OpenModelica_UnusedVariable=true);
+  output T res;
+external "C" res=om_stringAllocatorResult(sa) annotation(Include="
+const char* om_stringAllocatorResult(void *sa) {
+  return sa;
+}
+");
+end stringAllocatorResult;
 
 annotation(__OpenModelica_Interface="util");
 end System;

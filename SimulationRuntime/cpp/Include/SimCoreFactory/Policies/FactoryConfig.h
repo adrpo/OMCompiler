@@ -102,15 +102,10 @@
   #include <Core/SimulationSettings/ISimControllerSettings.h>
   #include <Core/SimController/ISimController.h>
 
-  /** Minimal OMCFactory for statically linked solvers */
-  class BaseOMCFactory {
-  public:
-    BaseOMCFactory(PATH library_path, PATH modelicasystem_path) {}
-  };
+
 
 #else
   #error "operating system not supported"
 #endif
 
 /** @} */ // end of simcorefactoriesPolicies
-

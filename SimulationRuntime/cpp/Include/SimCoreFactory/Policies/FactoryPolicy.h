@@ -60,7 +60,8 @@
 
 #elif defined(OMC_BUILD) && !defined(RUNTIME_STATIC_LINKING)
 
-  /*Policy include*/
+
+    /*Policy include*/
     #include <SimCoreFactory/Policies/SolverOMCFactory.h>
     #include <SimCoreFactory/Policies/SolverSettingsOMCFactory.h>
     #include <SimCoreFactory/Policies/SystemOMCFactory.h>
@@ -79,6 +80,7 @@
 #elif defined(OMC_BUILD) && defined(RUNTIME_STATIC_LINKING)
 
   /*Policy include*/
+  #include <SimCoreFactory/OMCFactory/OMCFactory.h>
   #include <SimCoreFactory/Policies/StaticSolverOMCFactory.h>
   #include <SimCoreFactory/Policies/StaticSolverSettingsOMCFactory.h>
   #include <SimCoreFactory/Policies/StaticSystemOMCFactory.h>
@@ -97,6 +99,4 @@
 //#else
 //    #error "operating system not supported"
 #endif
-
 /** @} */ // end of simcorefactoriesPolicies
-

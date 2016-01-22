@@ -342,8 +342,13 @@ static void XMLCALL endElement(void *userData, const char *name)
 
 static void read_var_info(omc_ScalarVariable *v, VAR_INFO *info)
 {
+  modelica_integer inputIndex;
   read_value_string(findHashStringString(v,"name"), &info->name);
   debugStreamPrint(LOG_DEBUG, 1, "read var %s from setup file", info->name);
+
+  read_value_long(findHashStringStringNull(v,"inputIndex"), &inputIndex, -1);
+  info->inputIndex = inputIndex;
+  debugStreamPrint(LOG_DEBUG, 0, "read input index %d from setup file", info->inputIndex);
 
   read_value_int(findHashStringString(v,"valueReference"), &info->id);
   debugStreamPrint(LOG_DEBUG, 0, "read for %s id %d from setup file", info->name, info->id);
@@ -423,6 +428,7 @@ void read_input_xml(MODEL_DATA* modelData,
   hash_string_long *mapAlias = NULL, *mapAliasParam = NULL;
   long *it, *itParam;
   mmc_sint_t i;
+  int inputIndex = 0;
 
   modelica_integer nxchk, nychk, npchk;
   modelica_integer nyintchk, npintchk;
@@ -584,7 +590,7 @@ void read_input_xml(MODEL_DATA* modelData,
 
   /* read all static data from File for every variable */
 
-#define READ_VARIABLES(out,in,attributeKind,read_var_attribute,debugName,start,nStates,mapAlias) \
+#define READ_VARIABLES(out, in, attributeKind, read_var_attribute, debugName, start, nStates, mapAlias) \
   infoStreamPrint(LOG_DEBUG, 1, "read xml file for %s", debugName); \
   for(i = 0; i < nStates; i++) \
   { \
@@ -594,10 +600,18 @@ void read_input_xml(MODEL_DATA* modelData,
     omc_ScalarVariable *v = *findHashLongVar(in, i); \
     read_var_info(v, info); \
     read_var_attribute(v, attribute); \
-    if (info->name[0] == '$') { \
+    if (info->name[0] == '$') \
+    { \
       out[j].filterOutput = 1; \
-    } else if (!omc_flag[FLAG_EMIT_PROTECTED] && 0 == strcmp(findHashStringString(v,"isProtected"),"true")) { \
+    } \
+    else if (!omc_flag[FLAG_EMIT_PROTECTED] && 0 == strcmp(findHashStringString(v, "isProtected"), "true")) \
+    { \
       infoStreamPrint(LOG_DEBUG, 0, "filtering protected variable %s", info->name); \
+      out[j].filterOutput = 1; \
+    } \
+    else if (!omc_flag[FLAG_IGNORE_HIDERESULT] && 0 == strcmp(findHashStringString(v, "hideResult"), "true")) \
+    { \
+      infoStreamPrint(LOG_DEBUG, 0, "filtering variable %s due to HideResult annotation", info->name); \
       out[j].filterOutput = 1; \
     } \
     addHashStringLong(&mapAlias, info->name, j); /* create a mapping for Alias variable to get the correct index */ \
@@ -829,9 +843,9 @@ static inline void read_value_bool(const char *s, modelica_boolean* res)
 /* reads integer value from a string */
 static inline void read_value_long(const char *s, modelica_integer* res, modelica_integer default_value)
 {
-  if (*s == '\0') {
+  if (s == NULL || *s == '\0') {
     *res = default_value;
-  } if (0 == strcmp(s, "true")) {
+  } else if (0 == strcmp(s, "true")) {
     *res = 1;
   } else if (0 == strcmp(s, "false")) {
     *res = 0;

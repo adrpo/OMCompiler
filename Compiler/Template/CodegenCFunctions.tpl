@@ -342,7 +342,7 @@ template functionHeader(Function fn, Boolean inFunc, Boolean isSimulation, Text 
       >>
     case RECORD_CONSTRUCTOR(__) then
       let fname = underscorePath(name)
-      let funArgsStr = (funArgs |> var as VARIABLE(__) => ', <%varType(var)%> <%crefStr(name)%>')
+      let funArgsStr = (funArgs |> var as VARIABLE(__) => ', <%varType(var)%> omc_<%crefStr(name)%>')
       <<
       <% match visibility case PUBLIC() then "DLLExport" %>
       <%fname%> omc_<%fname%>(threadData_t *threadData<%funArgsStr%>); /* record head */
@@ -1353,11 +1353,11 @@ case RECORD_CONSTRUCTOR(__) then
   let boxedFn = functionBodyBoxed(fn, isSimulation)
   <<
   <%auxFunction%>
-  <%fname%> omc_<%fname%>(threadData_t *threadData<%funArgs |> VARIABLE(__) => ', <%expTypeArrayIf(ty)%> <%crefStr(name)%>'%>)
+  <%fname%> omc_<%fname%>(threadData_t *threadData<%funArgs |> VARIABLE(__) => ', <%expTypeArrayIf(ty)%> omc_<%crefStr(name)%>'%>)
   {
     <%varDecls%>
     <%varInits%>
-    <%funArgs |> VARIABLE(__) => '<%structVar%>._<%crefStr(name)%> = <%crefStr(name)%>;' ;separator="\n"%>
+    <%funArgs |> VARIABLE(__) => '<%structVar%>._<%crefStr(name)%> = omc_<%crefStr(name)%>;' ;separator="\n"%>
     return <%structVar%>;
   }
 
@@ -3159,7 +3159,7 @@ template algStmtWhen(DAE.Statement when, Context context, Text &varDecls, Text &
             else '; /* nothing to do */'
           let else = algStatementWhenElse(elseWhen, &varDecls, &auxFunction)
           <<
-          if(data->simulationInfo.discreteCall == 1)
+          if(data->simulationInfo->discreteCall == 1)
           {
             if(initial())
             {
@@ -3208,7 +3208,7 @@ template algStmtReinit(DAE.Statement stmt, Context context, Text &varDecls, Text
     <%preExp%>
     <%expPart1%> = <%expPart2%>;
     infoStreamPrint(LOG_EVENTS, 0, "reinit <%expPart1%> = %f", <%expPart1%>);
-    data->simulationInfo.needToIterate = 1;
+    data->simulationInfo->needToIterate = 1;
     >>
 end algStmtReinit;
 
@@ -4107,6 +4107,14 @@ template tempDecl(String ty, Text &varDecls)
         newVarIx
   newVar
 end tempDecl;
+
+template tempDeclArray(String ty, Text len, Text elts, Text &varDecls)
+ "Declares a temporary variable in varDecls and returns the name."
+::=
+  let newVarIx = 'tmp<%System.tmpTick()%>'
+  let &varDecls += '<%ty%> <%newVarIx%>[<%len%>] = {<%elts%>};<%\n%>'
+  newVarIx
+end tempDeclArray;
 
 template tempDeclZero(String ty, Text &varDecls)
  "Declares a temporary variable initialized to zero in varDecls and returns the name."
@@ -5079,19 +5087,19 @@ case rel as RELATION(__) then
         let isReal = if isRealType(typeof(rel.exp1)) then (if isRealType(typeof(rel.exp2)) then 'true' else '') else ''
         match rel.operator
         case LESS(__) then
-          let hysteresisfunction = if isReal then 'LessZC(<%e1%>, <%e2%>, data->simulationInfo.storedRelations[<%rel.index%>])' else 'Less(<%e1%>,<%e2%>)'
+          let hysteresisfunction = if isReal then 'LessZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'Less(<%e1%>,<%e2%>)'
           let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
           res
         case LESSEQ(__) then
-          let hysteresisfunction = if isReal then 'LessEqZC(<%e1%>, <%e2%>, data->simulationInfo.storedRelations[<%rel.index%>])' else 'LessEq(<%e1%>,<%e2%>)'
+          let hysteresisfunction = if isReal then 'LessEqZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'LessEq(<%e1%>,<%e2%>)'
           let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
           res
         case GREATER(__) then
-          let hysteresisfunction = if isReal then 'GreaterZC(<%e1%>, <%e2%>, data->simulationInfo.storedRelations[<%rel.index%>])' else 'Greater(<%e1%>,<%e2%>)'
+          let hysteresisfunction = if isReal then 'GreaterZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'Greater(<%e1%>,<%e2%>)'
           let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
           res
         case GREATEREQ(__) then
-          let hysteresisfunction = if isReal then 'GreaterEqZC(<%e1%>, <%e2%>, data->simulationInfo.storedRelations[<%rel.index%>])' else 'GreaterEq(<%e1%>,<%e2%>)'
+          let hysteresisfunction = if isReal then 'GreaterEqZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'GreaterEq(<%e1%>,<%e2%>)'
           let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
           res
         end match
@@ -5118,19 +5126,19 @@ case rel as RELATION(__) then
         let isReal = if isRealType(typeof(rel.exp1)) then (if isRealType(typeof(rel.exp2)) then 'true' else '') else ''
         match rel.operator
         case LESS(__) then
-          let hysteresisfunction = if isReal then 'LessZC(<%e1%>, <%e2%>, data->simulationInfo.storedRelations[<%rel.index%>])' else 'Less(<%e1%>,<%e2%>)'
+          let hysteresisfunction = if isReal then 'LessZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'Less(<%e1%>,<%e2%>)'
           let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
           res
         case LESSEQ(__) then
-          let hysteresisfunction = if isReal then 'LessEqZC(<%e1%>, <%e2%>, data->simulationInfo.storedRelations[<%rel.index%>])' else 'LessEq(<%e1%>,<%e2%>)'
+          let hysteresisfunction = if isReal then 'LessEqZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'LessEq(<%e1%>,<%e2%>)'
           let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
           res
         case GREATER(__) then
-          let hysteresisfunction = if isReal then 'GreaterZC(<%e1%>, <%e2%>, data->simulationInfo.storedRelations[<%rel.index%>])' else 'Greater(<%e1%>,<%e2%>)'
+          let hysteresisfunction = if isReal then 'GreaterZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'Greater(<%e1%>,<%e2%>)'
           let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
           res
         case GREATEREQ(__) then
-          let hysteresisfunction = if isReal then 'GreaterEqZC(<%e1%>, <%e2%>, data->simulationInfo.storedRelations[<%rel.index%>])' else 'GreaterEq(<%e1%>,<%e2%>)'
+          let hysteresisfunction = if isReal then 'GreaterEqZC(<%e1%>, <%e2%>, data->simulationInfo->storedRelations[<%rel.index%>])' else 'GreaterEq(<%e1%>,<%e2%>)'
           let &preExp += '<%res%> = <%hysteresisfunction%>;<%\n%>'
           res
         end match
@@ -5329,7 +5337,7 @@ template daeExpCall(Exp call, Context context, Text &preExp, Text &varDecls, Tex
   case CALL(path=IDENT(name="pre"), expLst={arg}) then
     daeExpCallPre(arg, context, preExp, varDecls, &auxFunction)
   case CALL(path=IDENT(name="interval")) then
-    'data->simulationInfo.clocksData[clockIndex].interval'
+    'data->simulationInfo->clocksData[clockIndex].interval'
   case CALL(path=IDENT(name="previous"), expLst={arg as CREF(__)}) then
     '<%cref(crefPrefixPrevious(arg.componentRef))%>'
   case CALL(path=IDENT(name="$_clkfire"), expLst={arg as ICONST(__)}) then
@@ -5616,13 +5624,17 @@ template daeExpCall(Exp call, Context context, Text &preExp, Text &varDecls, Tex
     let sExp = daeExp(s, context, &preExp, &varDecls, &auxFunction)
     let minlenExp = daeExp(minlen, context, &preExp, &varDecls, &auxFunction)
     let leftjustExp = daeExp(leftjust, context, &preExp, &varDecls, &auxFunction)
-    let typeStr = expTypeFromExpModelica(s)
+    let enumStr = (match typeof(s)
+      case T_ENUMERATION(__) then
+      let strs = names |> s => '"<%Util.escapeModelicaStringToCString(s)%>"' ; separator = ", "
+      ', <%tempDeclArray("const char*", listLength(names), strs, &varDecls)%>')
+    let typeStr = (if enumStr then "enum" else expTypeFromExpModelica(s))
     match typeStr
     case "modelica_real" then
       let &preExp += '<%tvar%> = <%typeStr%>_to_modelica_string(<%sExp%>, <%minlenExp%>, <%leftjustExp%>, 6);<%\n%>'
       '<%tvar%>'
     else
-    let &preExp += '<%tvar%> = <%typeStr%>_to_modelica_string(<%sExp%>, <%minlenExp%>, <%leftjustExp%>);<%\n%>'
+    let &preExp += '<%tvar%> = <%typeStr%>_to_modelica_string(<%sExp%><%enumStr%>, <%minlenExp%>, <%leftjustExp%>);<%\n%>'
     '<%tvar%>'
     end match
 
@@ -5690,7 +5702,7 @@ template daeExpCall(Exp call, Context context, Text &preExp, Text &varDecls, Tex
   case CALL(path=IDENT(name = name as "intBitLShift"),expLst={e1,e2})
   case CALL(path=IDENT(name = name as "intBitRShift"),expLst={e1,e2}) then
     let i1 = daeExp(e1, context, &preExp, &varDecls, &auxFunction)
-    let i2 = daeExp(e1, context, &preExp, &varDecls, &auxFunction)
+    let i2 = daeExp(e2, context, &preExp, &varDecls, &auxFunction)
     let op = (match name
       case "intBitAnd" then "&"
       case "intBitOr" then "|"
@@ -6506,7 +6518,7 @@ template daeExpMatchCases(list<MatchCase> cases, list<Exp> tupleAssignExps, DAE.
     /* Check guard condition after assignments */
     if (!<%daeExp(exp,context,&preGuardCheck,&varDeclsCaseInner, &auxFunction)%>) <%onPatternFail%>;<%\n%>
     >>)
-  let caseRes = (match c.result
+  let caseRes = match res case "" then "" else (match c.result
     case SOME(TUPLE(PR=exps)) then
       (exps |> e hasindex i1 fromindex 1 =>
       '<%getTempDeclMatchOutputName(exps, res, startIndexOutputs, i1)%> = <%daeExp(e,context,&preRes,&varDeclsCaseInner, &auxFunction)%>;<%\n%>')

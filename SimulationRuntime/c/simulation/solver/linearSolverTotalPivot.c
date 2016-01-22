@@ -51,24 +51,30 @@ void debugMatrixDoubleLS(int logName, char* matrixName, double* matrix, int n, i
   {
     int i, j;
     int sparsity = 0;
-    char buffer[4096];
+    char *buffer = (char*)malloc(sizeof(char)*m*18);
 
     infoStreamPrint(logName, 1, "%s [%dx%d-dim]", matrixName, n, m);
     for(i=0; i<n;i++)
     {
       buffer[0] = 0;
       for(j=0; j<m; j++)
-        if (sparsity) {
+      {
+        if (sparsity)
+        {
           if (fabs(matrix[i + j*(m-1)])<1e-12)
             sprintf(buffer, "%s 0", buffer);
           else
             sprintf(buffer, "%s *", buffer);
-        } else {
+        }
+        else
+        {
           sprintf(buffer, "%s%12.4g ", buffer, matrix[i + j*(m-1)]);
         }
+      }
       infoStreamPrint(logName, 0, "%s", buffer);
     }
     messageClose(logName);
+    free(buffer);
   }
 }
 
@@ -77,7 +83,7 @@ void debugVectorDoubleLS(int logName, char* vectorName, double* vector, int n)
    if(ACTIVE_STREAM(logName))
   {
     int i;
-    char buffer[4096];
+    char *buffer = (char*)malloc(sizeof(char)*n*22);
 
     infoStreamPrint(logName, 1, "%s [%d-dim]", vectorName, n);
     buffer[0] = 0;
@@ -91,6 +97,7 @@ void debugVectorDoubleLS(int logName, char* vectorName, double* vector, int n)
         sprintf(buffer, "%s%16.8g ", buffer, vector[i]);
     }
     infoStreamPrint(logName, 0, "%s", buffer);
+    free(buffer);
     messageClose(logName);
   }
 }
@@ -311,40 +318,40 @@ int freeTotalPivotData(void** voiddata)
 int getAnalyticalJacobianTotalPivot(DATA* data, threadData_t *threadData, double* jac, int sysNumber)
 {
   int i,j,k,l,ii,currentSys = sysNumber;
-  LINEAR_SYSTEM_DATA* systemData = &(((DATA*)data)->simulationInfo.linearSystemData[currentSys]);
+  LINEAR_SYSTEM_DATA* systemData = &(((DATA*)data)->simulationInfo->linearSystemData[currentSys]);
 
   const int index = systemData->jacobianIndex;
 
   memset(jac, 0, (systemData->size)*(systemData->size)*sizeof(double));
 
-  for(i=0; i < data->simulationInfo.analyticJacobians[index].sparsePattern.maxColors; i++)
+  for(i=0; i < data->simulationInfo->analyticJacobians[index].sparsePattern.maxColors; i++)
   {
     /* activate seed variable for the corresponding color */
-    for(ii=0; ii < data->simulationInfo.analyticJacobians[index].sizeCols; ii++)
-      if(data->simulationInfo.analyticJacobians[index].sparsePattern.colorCols[ii]-1 == i)
-        data->simulationInfo.analyticJacobians[index].seedVars[ii] = 1;
+    for(ii=0; ii < data->simulationInfo->analyticJacobians[index].sizeCols; ii++)
+      if(data->simulationInfo->analyticJacobians[index].sparsePattern.colorCols[ii]-1 == i)
+        data->simulationInfo->analyticJacobians[index].seedVars[ii] = 1;
 
     ((systemData->analyticalJacobianColumn))(data, threadData);
 
-    for(j = 0; j < data->simulationInfo.analyticJacobians[index].sizeCols; j++)
+    for(j = 0; j < data->simulationInfo->analyticJacobians[index].sizeCols; j++)
     {
-      if(data->simulationInfo.analyticJacobians[index].seedVars[j] == 1)
+      if(data->simulationInfo->analyticJacobians[index].seedVars[j] == 1)
       {
         if(j==0) {
           ii = 0;
         } else {
-          ii = data->simulationInfo.analyticJacobians[index].sparsePattern.leadindex[j-1];
+          ii = data->simulationInfo->analyticJacobians[index].sparsePattern.leadindex[j-1];
         }
-        while(ii < data->simulationInfo.analyticJacobians[index].sparsePattern.leadindex[j]) {
-          l  = data->simulationInfo.analyticJacobians[index].sparsePattern.index[ii];
-          k  = j*data->simulationInfo.analyticJacobians[index].sizeRows + l;
-          jac[k] = data->simulationInfo.analyticJacobians[index].resultVars[l];
+        while(ii < data->simulationInfo->analyticJacobians[index].sparsePattern.leadindex[j]) {
+          l  = data->simulationInfo->analyticJacobians[index].sparsePattern.index[ii];
+          k  = j*data->simulationInfo->analyticJacobians[index].sizeRows + l;
+          jac[k] = data->simulationInfo->analyticJacobians[index].resultVars[l];
           ii++;
         }
       }
       /* de-activate seed variable for the corresponding color */
-      if(data->simulationInfo.analyticJacobians[index].sparsePattern.colorCols[j]-1 == i) {
-        data->simulationInfo.analyticJacobians[index].seedVars[j] = 0;
+      if(data->simulationInfo->analyticJacobians[index].sparsePattern.colorCols[j]-1 == i) {
+        data->simulationInfo->analyticJacobians[index].seedVars[j] = 0;
       }
     }
 
@@ -361,10 +368,10 @@ static int wrapper_fvec_totalpivot(double* x, double* f, void** data, int sysNum
 {
   int currentSys = sysNumber;
   int iflag = 0;
-  /* NONLINEAR_SYSTEM_DATA* systemData = &(((DATA*)data)->simulationInfo.nonlinearSystemData[currentSys]); */
+  /* NONLINEAR_SYSTEM_DATA* systemData = &(((DATA*)data)->simulationInfo->nonlinearSystemData[currentSys]); */
   /* DATA_NEWTON* solverData = (DATA_NEWTON*)(systemData->solverData); */
 
-  (*((DATA*)data[0])->simulationInfo.linearSystemData[currentSys].residualFunc)(data, x, f, &iflag);
+  (*((DATA*)data[0])->simulationInfo->linearSystemData[currentSys].residualFunc)(data, x, f, &iflag);
   return 0;
 }
 
@@ -379,7 +386,7 @@ int solveTotalPivot(DATA *data, threadData_t *threadData, int sysNumber)
 {
   void *dataAndThreadData[2] = {data, threadData};
   int i, j;
-  LINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo.linearSystemData[sysNumber]);
+  LINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo->linearSystemData[sysNumber]);
   DATA_TOTALPIVOT* solverData = (DATA_TOTALPIVOT*)systemData->solverData;
   int n = systemData->size, status;
   double fdeps = 1e-8;
@@ -451,10 +458,10 @@ int solveTotalPivot(DATA *data, threadData_t *threadData, int sysNumber)
 
     if (ACTIVE_STREAM(LOG_LS_V)){
       infoStreamPrint(LOG_LS_V, 1, "Solution x:");
-      infoStreamPrint(LOG_LS_V, 0, "System %d numVars %d.", eqSystemNumber, modelInfoGetEquation(&data->modelData.modelDataXml,eqSystemNumber).numVar);
+      infoStreamPrint(LOG_LS_V, 0, "System %d numVars %d.", eqSystemNumber, modelInfoGetEquation(&data->modelData->modelDataXml,eqSystemNumber).numVar);
       for(i=0; i<systemData->size; ++i)
       {
-        infoStreamPrint(LOG_LS_V, 0, "[%d] %s = %g", i+1, modelInfoGetEquation(&data->modelData.modelDataXml,eqSystemNumber).vars[i], systemData->x[i]);
+        infoStreamPrint(LOG_LS_V, 0, "[%d] %s = %g", i+1, modelInfoGetEquation(&data->modelData->modelDataXml,eqSystemNumber).vars[i], systemData->x[i]);
       }
       messageClose(LOG_LS_V);
     }

@@ -130,8 +130,11 @@ protected
   BackendDAE.Variables vars;
   BackendDAE.EquationArray eqs;
 algorithm
+  try
   BackendDAE.EQSYSTEM(orderedEqs=eqs, orderedVars=vars, matching=BackendDAE.MATCHING(ass1=ass1)) := eqSysIn;
   BackendVariable.traverseBackendDAEVarsWithUpdate(vars, setBindingForProtectedVars1, (1, ass1, eqs));
+  else
+  end try;
   eqSysOut := eqSysIn;
 end setBindingForProtectedVars;
 
@@ -445,7 +448,7 @@ algorithm
     case(BackendDAE.VAR(varName=varName, varType = varType, source=source), (varLst,crefs))
       algorithm
        paths := DAEUtil.getElementSourceTypes(source);
-       paths_lst := List.map(paths, Absyn.pathString);
+       paths_lst := list(Absyn.pathString(p) for p in paths);
          //print("paths_lst "+stringDelimitList(paths_lst, "; ")+"\n");
        (obj,idx) := hasVisPath(paths,1);
        true := Util.stringNotEqual(obj,"");

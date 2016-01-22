@@ -466,7 +466,7 @@ type StructurallySingularSystemHandlerArg = tuple<StateOrder,ConstraintEquations
 "StateOrder,ConstraintEqns,Eqn->EqnsIndxes,EqnIndex->Eqns,NrOfEqnsbeforeIndexReduction";
 
 public
-type ConstraintEquations = list<tuple<Integer,list<Equation>>>;
+type ConstraintEquations = array<list<Equation>>;
 
 public
 uniontype StateOrder
@@ -715,7 +715,8 @@ public
 type SparsePattern = tuple<list<tuple< .DAE.ComponentRef, list< .DAE.ComponentRef>>>, // column-wise sparse pattern
                            list<tuple< .DAE.ComponentRef, list< .DAE.ComponentRef>>>, // row-wise sparse pattern
                            tuple<list< .DAE.ComponentRef>,                            // diff vars
-                                 list< .DAE.ComponentRef>>>;                          // diffed vars
+                                 list< .DAE.ComponentRef>>,                           // diffed vars
+                           Integer>;                                                  // nonZeroElements
 
 public
 type SparseColoring = list<list< .DAE.ComponentRef>>;   // colouring

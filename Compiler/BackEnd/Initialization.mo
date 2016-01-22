@@ -77,12 +77,14 @@ public function solveInitialSystem "author: lochel
   input BackendDAE.BackendDAE inDAE "simulation system";
   output BackendDAE.BackendDAE outInitDAE "initialization system";
   output Boolean outUseHomotopy;
+  output Option<BackendDAE.BackendDAE> outInitDAE_lambda0 "initialization system for lambda=0";
   output list<BackendDAE.Equation> outRemovedInitialEquations;
   output list<BackendDAE.Var> outPrimaryParameters "already sorted";
   output list<BackendDAE.Var> outAllPrimaryParameters "already sorted";
 protected
   BackendDAE.BackendDAE dae;
   BackendDAE.BackendDAE initdae;
+  BackendDAE.BackendDAE initdae0;
   BackendDAE.EqSystem initsyst;
   BackendDAE.EqSystems systs;
   BackendDAE.EquationArray eqns, reeqns;
@@ -94,7 +96,7 @@ protected
   HashSet.HashSet clkHS "contains all clocked variables";
   list<BackendDAE.Equation> removedEqns;
   list<BackendDAE.Var> dumpVars, dumpVars2;
-  list<tuple<BackendDAEFunc.optimizationModule, String, Boolean>> initOptModules;
+  list<tuple<BackendDAEFunc.optimizationModule, String>> initOptModules;
   tuple<BackendDAEFunc.StructurallySingularSystemHandlerFunc, String, BackendDAEFunc.stateDeselectionFunc, String> daeHandler;
   tuple<BackendDAEFunc.matchingAlgorithmFunc, String> matchingAlgorithm;
 algorithm
@@ -188,22 +190,31 @@ algorithm
     initdae := BackendDAEUtil.mapEqSystem(initdae, solveInitialSystemEqSystem);
     SimCodeFunctionUtil.execStat("solveInitialSystemEqSystem (initialization)");
 
-    // transform and optimize DAE
-    initOptModules := BackendDAEUtil.getInitOptModules(NONE());
-
-    matchingAlgorithm := BackendDAEUtil.getMatchingAlgorithm(NONE());
-    daeHandler := BackendDAEUtil.getIndexReductionMethod(NONE());
-
     // solve system
     initdae := BackendDAEUtil.transformBackendDAE(initdae, SOME((BackendDAE.NO_INDEX_REDUCTION(), BackendDAE.EXACT())), NONE(), NONE());
+    if useHomotopy then
+      initdae0 := BackendDAEUtil.copyBackendDAE(initdae);
+    end if;
 
     // simplify system
+    initOptModules := BackendDAEUtil.getInitOptModules(NONE());
+    matchingAlgorithm := BackendDAEUtil.getMatchingAlgorithm(NONE());
+    daeHandler := BackendDAEUtil.getIndexReductionMethod(NONE());
     initdae := BackendDAEUtil.postOptimizeDAE(initdae, initOptModules, matchingAlgorithm, daeHandler);
+
     if Flags.isSet(Flags.DUMP_INITIAL_SYSTEM) then
       BackendDump.dumpBackendDAE(initdae, "solved initial system");
       if Flags.isSet(Flags.ADDITIONAL_GRAPHVIZ_DUMP) then
         BackendDump.graphvizBackendDAE(initdae, "dumpinitialsystem");
       end if;
+    end if;
+
+    // compute system for lambda=0
+    if useHomotopy then
+      initdae0 := BackendDAEUtil.postOptimizeDAE(initdae0, (replaceHomotopyWithSimplified, "replaceHomotopyWithSimplified")::initOptModules, matchingAlgorithm, daeHandler);
+      outInitDAE_lambda0 := SOME(initdae0);
+    else
+      outInitDAE_lambda0 := NONE();
     end if;
 
     // warn about selected default initial conditions
@@ -310,51 +321,50 @@ protected function inlineWhenForInitializationSystem "author: lochel"
   output BackendDAE.EqSystem outEqSystem;
 protected
   list<BackendDAE.Equation> eqnlst;
+  HashSet.HashSet leftCrs = HashSet.emptyHashSetSized(50) "hack for #3209";
+  list<DAE.ComponentRef> crefLst;
 algorithm
-  eqnlst := BackendEquation.traverseEquationArray(inEqSystem.orderedEqs, inlineWhenForInitializationEquation, {});
-  //print("Before: " + intString(listLength(eqnlst)) + "\n");
-  eqnlst := List.uniqueOnTrue(eqnlst, BackendEquation.equationEqual) "hack for #3209";
-  //print("After: " + intString(listLength(eqnlst)) + "\n");
+  (eqnlst, leftCrs) := BackendEquation.traverseEquationArray(inEqSystem.orderedEqs, inlineWhenForInitializationEquation, ({}, leftCrs));
+  crefLst := BaseHashSet.hashSetList(leftCrs);
+  eqnlst := generateInactiveWhenEquationForInitialization(crefLst, DAE.emptyElementSource, eqnlst);
   outEqSystem := BackendDAEUtil.setEqSystEqs(inEqSystem, BackendEquation.listEquation(eqnlst));
   outEqSystem := BackendDAEUtil.clearEqSyst(outEqSystem);
 end inlineWhenForInitializationSystem;
 
 protected function inlineWhenForInitializationEquation "author: lochel"
   input BackendDAE.Equation inEq;
-  input list<BackendDAE.Equation> inAccEq;
+  input tuple<list<BackendDAE.Equation>, HashSet.HashSet> inTpl;
   output BackendDAE.Equation outEq = inEq;
-  output list<BackendDAE.Equation> outAccEq;
+  output tuple<list<BackendDAE.Equation>, HashSet.HashSet> outTpl;
+protected
+  BackendDAE.EquationAttributes eqAttr;
+  BackendDAE.WhenEquation weqn;
+  DAE.Algorithm alg;
+  DAE.ElementSource source;
+  DAE.Expand crefExpand;
+  HashSet.HashSet leftCrs;
+  Integer size;
+  list<BackendDAE.Equation> eqns;
+  list<BackendDAE.Equation> accEq;
+  list<DAE.Statement> stmts;
 algorithm
-  outAccEq := match (inEq)
-    local
-      DAE.ElementSource source;
-      DAE.Algorithm alg;
-      Integer size;
-      list< DAE.Statement> stmts;
-      list< BackendDAE.Equation> eqns;
-      BackendDAE.WhenEquation weqn;
-      list< DAE.ComponentRef> crefLst;
-      HashSet.HashSet leftCrs;
-      DAE.Expand crefExpand;
-      BackendDAE.EquationAttributes eqAttr;
-
+  (accEq, leftCrs) := inTpl;
+  outTpl := match (inEq)
     // when equation
     case BackendDAE.WHEN_EQUATION(whenEquation=weqn, source=source, attr=eqAttr) equation
-      eqns = inlineWhenForInitializationWhenEquation(weqn, source, eqAttr, inAccEq);
-    then eqns;
+      (leftCrs, eqns) = inlineWhenForInitializationWhenEquation(weqn, source, eqAttr, accEq, leftCrs);
+    then (eqns, leftCrs);
 
     // algorithm
     case BackendDAE.ALGORITHM(alg=alg, source=source, expand=crefExpand) equation
       DAE.ALGORITHM_STMTS(statementLst=stmts) = alg;
-      (stmts, leftCrs) = inlineWhenForInitializationWhenAlgorithm(stmts, {}, HashSet.emptyHashSetSized(50));
+      (stmts, leftCrs) = inlineWhenForInitializationWhenAlgorithm(stmts, {}, leftCrs);
       alg = DAE.ALGORITHM_STMTS(stmts);
       size = listLength(CheckModel.checkAndGetAlgorithmOutputs(alg, source, crefExpand));
-      crefLst = BaseHashSet.hashSetList(leftCrs);
-      eqns = generateInactiveWhenEquationForInitialization(crefLst, source, inAccEq);
-      eqns = List.consOnTrue(not listEmpty(stmts), BackendDAE.ALGORITHM(size, alg, source, crefExpand, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC), eqns);
-    then eqns;
+      eqns = List.consOnTrue(not listEmpty(stmts), BackendDAE.ALGORITHM(size, alg, source, crefExpand, BackendDAE.EQ_ATTR_DEFAULT_DYNAMIC), accEq);
+    then (eqns, leftCrs);
 
-    else inEq::inAccEq;
+    else (inEq::accEq, leftCrs);
   end match;
 end inlineWhenForInitializationEquation;
 
@@ -363,30 +373,34 @@ protected function inlineWhenForInitializationWhenEquation "author: lochel"
   input DAE.ElementSource inSource;
   input BackendDAE.EquationAttributes inEqAttr;
   input list<BackendDAE.Equation> inEqns;
-  output list<BackendDAE.Equation> outEqns;
+  input HashSet.HashSet inLeftCrs;
+  output HashSet.HashSet outLeftCrs = inLeftCrs;
+  output list<BackendDAE.Equation> outEqns = inEqns;
 protected
   DAE.Exp crexp, condition, e;
   BackendDAE.Equation eqn;
   list<BackendDAE.WhenOperator> whenStmtLst;
   DAE.ComponentRef cr;
+  Boolean active;
 algorithm
   outEqns := match(inWEqn)
     case BackendDAE.WHEN_STMTS(condition=condition,whenStmtLst=whenStmtLst) algorithm
+      active := Expression.containsInitialCall(condition, false);
       for stmt in whenStmtLst loop
         _ := match stmt
           case BackendDAE.ASSIGN(left = cr, right = e) equation
-            if Expression.containsInitialCall(condition, false) then
+            if active then
               crexp = Expression.crefExp(cr);
               eqn = BackendEquation.generateEquation(crexp, e, inSource, inEqAttr);
-              outEqns = eqn::inEqns;
+              outEqns = eqn::outEqns;
             else
-              outEqns = generateInactiveWhenEquationForInitialization(ComponentReference.expandCref(cr, true), inSource, inEqns);
+              outLeftCrs = List.fold(ComponentReference.expandCref(cr, true), BaseHashSet.add, outLeftCrs);
             end if;
           then ();
         end match;
       end for;
     then outEqns;
-    else inEqns;
+    else outEqns;
   end match;
 end inlineWhenForInitializationWhenEquation;
 
@@ -684,28 +698,45 @@ end warnAboutIterationVariablesWithDefaultZeroStartAttribute1;
 
 protected function warnAboutVars2 "author: lochel
   TODO: Replace this with an general BackendDump implementation."
-  input list<BackendDAE.Var> inVars;
+  input list<BackendDAE.Var> vars;
   output String outString;
+protected
+  list<String> strs;
+  Integer len;
+  Integer size;
 algorithm
-  outString := match(inVars)
-    local
-      BackendDAE.Var v;
-      list<BackendDAE.Var> vars;
-      String crStr;
-      String str;
-
-    case ({}) then "";
-
-    case (v::{}) equation
-      crStr = "         " + BackendDump.varString(v);
-    then crStr;
-
-    case (v::vars) equation
-      crStr = BackendDump.varString(v);
-      str = "         " + crStr + "\n" + warnAboutVars2(vars);
-    then str;
-  end match;
+  if listEmpty(vars) then
+    outString := "";
+    return;
+  end if;
+  strs := list(BackendDump.varString(v) for v in vars);
+  len := listLength(strs);
+  size := sum(stringLength(s) for s in strs) + len*10;
+  outString := warnAboutVars2Work(strs, "         ", "\n", size);
 end warnAboutVars2;
+
+function warnAboutVars2Work
+  input list<String> strs;
+  input String prefix;
+  input String suffix;
+  input Integer size;
+  output String s="";
+protected
+  // Allocate a string of the exact required length
+  System.StringAllocator sb=System.StringAllocator(size);
+  Integer i=0;
+algorithm
+  for str in strs loop
+    System.stringAllocatorStringCopy(sb, prefix, i);
+    i := i+stringLength(prefix);
+    System.stringAllocatorStringCopy(sb, str, i);
+    i := i+stringLength(str);
+    System.stringAllocatorStringCopy(sb, suffix, i);
+    i := i+stringLength(suffix);
+  end for;
+  // Return the string
+  s := System.stringAllocatorResult(sb,s);
+end warnAboutVars2Work;
 
 protected function warnAboutEqns2 "author: lochel
   TODO: Replace this with an general BackendDump implementation."
@@ -977,41 +1008,35 @@ end selectInitializationVariables2;
 protected function simplifyInitialFunctions
   input DAE.Exp inExp;
   input Boolean inUseHomotopy;
-  output DAE.Exp exp;
-  output Boolean useHomotopy;
+  output DAE.Exp outExp;
+  output Boolean outUseHomotopy;
 algorithm
-  (exp, useHomotopy) := Expression.traverseExpBottomUp(inExp, simplifyInitialFunctionsExp, inUseHomotopy);
+  (outExp, outUseHomotopy) := Expression.traverseExpBottomUp(inExp, simplifyInitialFunctionsExp, inUseHomotopy);
 end simplifyInitialFunctions;
 
 protected function simplifyInitialFunctionsExp
   input DAE.Exp inExp;
-  input Boolean useHomotopy;
+  input Boolean inUseHomotopy;
   output DAE.Exp outExp;
   output Boolean outUseHomotopy;
 algorithm
-  (outExp, outUseHomotopy) := match (inExp, useHomotopy)
+  (outExp, outUseHomotopy) := match inExp
     local
-      DAE.Exp e1, e2, e3, actual, simplified;
+      DAE.Exp expr;
 
-    case (DAE.CALL(path = Absyn.IDENT(name="initial")), _)
-    then (DAE.BCONST(true), useHomotopy);
+    case DAE.CALL(path=Absyn.IDENT(name="initial"))
+    then (DAE.BCONST(true), inUseHomotopy);
 
-    case (DAE.CALL(path = Absyn.IDENT(name="sample")), _)
-    then (DAE.BCONST(false), useHomotopy);
+    case DAE.CALL(path=Absyn.IDENT(name="sample"))
+    then (DAE.BCONST(false), inUseHomotopy);
 
-    case (DAE.CALL(path = Absyn.IDENT(name="delay"), expLst = _::e1::_ ), _)
-    then (e1, useHomotopy);
+    case DAE.CALL(path=Absyn.IDENT(name="delay"), expLst=_::expr::_)
+    then (expr, inUseHomotopy);
 
-    case (DAE.CALL(path = Absyn.IDENT(name="homotopy"), expLst = actual::simplified::_ ), _) //equation
-    //  e1 = Expression.makePureBuiltinCall("homotopyParameter", {}, DAE.T_REAL_DEFAULT);
-    //  e2 = DAE.BINARY(e1, DAE.MUL(DAE.T_REAL_DEFAULT), actual);
-    //  e3 = DAE.BINARY(DAE.RCONST(1.0), DAE.SUB(DAE.T_REAL_DEFAULT), e1);
-    //  e1 = DAE.BINARY(e3, DAE.MUL(DAE.T_REAL_DEFAULT), simplified);
-    //  e3 = DAE.BINARY(e2, DAE.ADD(DAE.T_REAL_DEFAULT), e1);
-    //then (e3, true);
+    case DAE.CALL(path=Absyn.IDENT(name="homotopy"))
     then (inExp, true);
 
-    else (inExp, useHomotopy);
+    else (inExp, inUseHomotopy);
   end match;
 end simplifyInitialFunctionsExp;
 
@@ -1195,11 +1220,11 @@ algorithm
     (m_, _, _, mapIncRowEqn) := BackendDAEUtil.incidenceMatrixScalar(syst, BackendDAE.SOLVABLE(), SOME(funcs));
     //BackendDump.dumpEqSystem(syst, "fixInitialSystem");
     //BackendDump.dumpVariables(initVars, "selected initialization variables");
+    //BackendDump.dumpVariables(inEqSystem.orderedVars, "vars in the system");
     //BackendDump.dumpIncidenceMatrix(m_);
 
     // get state-index list
-    stateIndices := BackendVariable.getVarIndexFromVariables(initVars, inEqSystem.orderedVars);
-    //print("{" + stringDelimitList(List.map(stateIndices, intString), ",") + "}\n");
+    stateIndices := BackendVariable.getVarIndexFromVariablesIndexInFirstSet(inEqSystem.orderedVars, initVars);
 
     // get initial equation-index list
     //(initEqs, _) := List.extractOnTrue(BackendEquation.equationList(inEqSystem.orderedEqs), BackendEquation.isInitialEquation);
@@ -2475,6 +2500,52 @@ algorithm
     else (inExp, inUseHomotopy);
   end match;
 end removeInitializationStuff2;
+
+
+// =============================================================================
+// section for post-optimization module "replaceHomotopyWithSimplified"
+//
+// =============================================================================
+
+protected function replaceHomotopyWithSimplified
+  input BackendDAE.BackendDAE inDAE;
+  output BackendDAE.BackendDAE outDAE = inDAE;
+protected
+  list<BackendDAE.Equation> removedEqsList = {};
+  BackendDAE.Shared shared = inDAE.shared;
+algorithm
+  for eqs in outDAE.eqs loop
+    _ := BackendDAEUtil.traverseBackendDAEExpsEqnsWithUpdate(eqs.orderedEqs, replaceHomotopyWithSimplified1, false);
+    _ := BackendDAEUtil.traverseBackendDAEExpsEqnsWithUpdate(eqs.removedEqs, replaceHomotopyWithSimplified1, false);
+  end for;
+end replaceHomotopyWithSimplified;
+
+protected function replaceHomotopyWithSimplified1
+  input DAE.Exp inExp;
+  input Boolean inUseHomotopy;
+  output DAE.Exp outExp;
+  output Boolean outUseHomotopy;
+algorithm
+  (outExp, outUseHomotopy) := Expression.traverseExpBottomUp(inExp, replaceHomotopyWithSimplified2, inUseHomotopy);
+end replaceHomotopyWithSimplified1;
+
+protected function replaceHomotopyWithSimplified2
+  input DAE.Exp inExp;
+  input Boolean inUseHomotopy;
+  output DAE.Exp outExp;
+  output Boolean outUseHomotopy;
+algorithm
+  (outExp, outUseHomotopy) := match inExp
+    local
+      DAE.Exp simplified;
+
+    // replace homotopy(actual, simplified) with simplified
+    case DAE.CALL(path=Absyn.IDENT(name="homotopy"), expLst=_::simplified::_)
+    then (simplified, true);
+
+    else (inExp, inUseHomotopy);
+  end match;
+end replaceHomotopyWithSimplified2;
 
 annotation(__OpenModelica_Interface="backend");
 end Initialization;

@@ -11,17 +11,22 @@
 #     if ScoreP should be used for performance analysis                            -DUSE_SCOREP
 #     if the Intel TBB library was found                                           -DUSE_INTEL_TBB
 #     if the Pugi XML library was found                                            -DUSE_PUGI_XML
-#     if profiling for the simulation runtime should be enabled                    -DRUNTIME_PROFILING
+#     if profiling for the simulation runtime is enabled                           -DRUNTIME_PROFILING
 #     if the equation systems of a FMU should be solved with sundials solvers      -DFMU_SUNDIALS
-#     if the logger should be used                                                 -DUSE_LOGGER
+#     if the logger is used                                                        -DUSE_LOGGER
 #
 # Some of these options can be controlled by passing arguments to CMAKE
 #     if write output should be handled in parallel                                -DUSE_PARALLEL_OUTPUT=ON [default: OFF]
 #     if ScoreP should be used for performance analysis                            -DUSE_SCOREP=ON [default: OFF]
+#     the path to the scorep-installation                                          -DSCOREP_HOME="..." [default: ""]
+#     if dgesv library should NOT be used to solve simple equation systems in FMUs -DUSE_DGESV=OFF [default: ON]
+#     the path to the dgesv-installation                                           -DDGESV_HOME="..." [default: ""]
 #     if the boost libraries should be linked statically                           -DBOOST_STATIC_LINKING=ON [default: OFF]
 #     if boost libraries should be linked against absolute path libraries          -DUSE_BOOST_REALPATHS=ON [default: OFF]
-#     disable c++11, even if the compiler is able to use it                        -DUSE_CPP_ELEVEN=OFF [default: ON]
+#     disable c++11, even if the compiler is able to use it                        -DUSE_CPP_03=ON [default: OFF]
+#     if profiling of the simulation runtime should be enabled                     -DRUNTIME_PROFILING=ON [default: OFF]
 #     if the equation systems of a FMU should be solved with sundials solvers      -DFMU_SUNDIALS=ON [default: OFF]
+#     if the logger should be completely disabled or used                          -DUSE_LOGGER=OFF [default: ON]
 #
 #     Example: "cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo" to create statically linked libraries
 #
@@ -34,15 +39,18 @@ LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/CMake")
 
 MESSAGE(STATUS "CMake version ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION}")
 
+STRING(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UPPER)
+
 #Set Options
 OPTION(USE_PARALLEL_OUTPUT "USE_PARALLEL_OUTPUT" OFF)
 OPTION(USE_SCOREP "USE_SCOREP" OFF)
+OPTION(USE_DGESV "USE_DGESV" ON)
 OPTION(BOOST_STATIC_LINKING "BOOST_STATIC_LINKING" OFF)
 OPTION(USE_BOOST_REALPATHS "USE_BOOST_REALPATHS" OFF)
 OPTION(RUNTIME_PROFILING "RUNTIME_PROFILING" OFF)
 OPTION(FMU_SUNDIALS "FMU_SUNDIALS" OFF)
 OPTION(SUNDIALS_ROOT "SUNDIALS ROOT" "")
-OPTION(USE_CPP_ELEVEN "USE_CPP_ELEVEN" ON)
+OPTION(USE_CPP_03 "USE_CPP_03" OFF)
 
 #Set Variables
 SET(MODELICAEXTERNALCDIR  "${CMAKE_SOURCE_DIR}/../../3rdParty/ModelicaExternalC/C-Sources")
@@ -63,8 +71,10 @@ SET(CVodeName ${LIBPREFIX}CVode)
 SET(ARKodeName ${LIBPREFIX}ARKode)
 SET(IDAName ${LIBPREFIX}IDA)
 SET(PeerName ${LIBPREFIX}Peer)
+SET(CppDASSLName ${LIBPREFIX}CppDASSL)
 SET(RTRKName ${LIBPREFIX}RTRK)
 SET(EulerName ${LIBPREFIX}Euler)
+SET(RK12Name ${LIBPREFIX}RK12)
 #SET(kluName ${LIBPREFIX}klu)
 SET(RTEulerName ${LIBPREFIX}RTEuler)
 SET(IdaName ${LIBPREFIX}Ida)
@@ -81,6 +91,7 @@ SET(ExtensionUtilitiesName ${LIBPREFIX}ExtensionUtilities)
 SET(BasiLibName ${LIBPREFIX}Base)
 SET(ModelicaCompilerName ${LIBPREFIX}ModelicaCompiler)
 SET(FMUName ${LIBPREFIX}FMU)
+SET(DgesvName ${LIBPREFIX}Dgesv)
 
 SET(USE_MICO OFF)
 SET(REDUCE_DAE OFF)
@@ -97,10 +108,14 @@ ELSE(USE_BOOST_REALPATHS)
   MESSAGE(STATUS "Boost real paths disabled")
 ENDIF(USE_BOOST_REALPATHS)
 
+# Precompiled Header
+IF(MSVC)
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zm113")
+ENDIF(MSVC)
 INCLUDE(${CMAKE_SOURCE_DIR}/PrecompiledHeader.cmake)
 
 # Check C++11
-IF(USE_CPP_ELEVEN)
+IF(NOT(USE_CPP_03))
   IF(MSVC)
     IF(MSVC_VERSION GREATER 1700)
       SET(COMPILER_SUPPORTS_CXX11 True)
@@ -130,15 +145,25 @@ IF(USE_CPP_ELEVEN)
       SET(COMPILER_SUPPORTS_CXX11 False)
     ENDIF(COMPILER_SUPPORTS_CXX11)
   ENDIF(MSVC)
-ELSE(USE_CPP_ELEVEN)
+ELSE()
   SET(COMPILER_SUPPORTS_CXX11 False)
-ENDIF(USE_CPP_ELEVEN)
+  IF(APPLE)
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++03 -stdlib=libc++")
+    SET(CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE} "${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}} -std=c++03 -stdlib=libc++")
+    SET(CMAKE_EXE_LINKER_FLAGS "-stdlib=libc++")
+    SET(CXX11_FLAGS " -std=c++03 -stdlib=libc++") #used for precompiled header
+  ELSE(APPLE)
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++03")
+    SET(CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE} "${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}} -std=c++03")
+    SET(CXX11_FLAGS " -std=c++03") #used for precompiled header
+  ENDIF(APPLE)
+ENDIF(NOT(USE_CPP_03))
 
 IF(COMPILER_SUPPORTS_CXX11)
   MESSAGE(STATUS "C++11 support enabled")
-  ADD_DEFINITIONS(-DUSE_CPP_ELEVEN)
 ELSE(COMPILER_SUPPORTS_CXX11)
   MESSAGE(STATUS "C++11 support disabled")
+  ADD_DEFINITIONS(-DUSE_CPP_03)
 ENDIF(COMPILER_SUPPORTS_CXX11)
 
 #Handle static boost linking
@@ -168,10 +193,24 @@ IF(USE_SCOREP)
   MESSAGE(STATUS "ScoreP enabled")
   include_directories(${SCOREP_INCLUDE_DIR})
 ELSE(USE_SCOREP)
-    SET(SCOREP_INCLUDE_ ".")
-    SET(USE_SCOREP_ "OFF")
+  SET(SCOREP_INCLUDE_ ".")
+  SET(USE_SCOREP_ "OFF")
   MESSAGE(STATUS "ScoreP disabled")
 ENDIF(USE_SCOREP)
+
+# Handle dgesv
+IF(USE_DGESV)
+  ADD_DEFINITIONS(-DUSE_DGESV)
+  SET(USE_DGESV_ "ON")
+  FIND_PACKAGE(Dgesv)
+  SET(DGESV_INCLUDE_ ${DGESV_INCLUDE_DIR})
+  MESSAGE(STATUS "Dgesv enabled")
+ELSE(USE_DGESV)
+  SET(DGESV_INCLUDE_ ".")
+  SET(USE_DGESV_ "OFF")
+  MESSAGE(STATUS "Dgesv disabled")
+ENDIF(USE_DGESV)
+
 
 # Handle runtime profiling
 IF(RUNTIME_PROFILING)
@@ -321,16 +360,14 @@ ENDIF(PAPI_FOUND)
 #  - Additionaly the Boost_LIBRARIES variable is overwritten each time find_package(Boost ...) is called, thus it must be rescued
 FIND_PACKAGE(Boost COMPONENTS log log_setup)
 
-#SET(Boost_LIBRARIES_TMP ${Boost_LIBRARIES_TMP} ${Boost_LIBRARIES})
-#IF(Boost_LOG_FOUND AND Boost_LOG_SETUP_FOUND)
-#  ADD_DEFINITIONS(-DUSE_BOOST_LOG)
-#  MESSAGE(STATUS "Using boost log")
-#ELSE(Boost_LOG_FOUND AND Boost_LOG_SETUP_FOUND)
-#  MESSAGE(STATUS "Boost log disabled")
-#  UNSET(Boost_LOG_LIBRARY)
-#ENDIF(Boost_LOG_FOUND AND Boost_LOG_SETUP_FOUND)
-
-FIND_PACKAGE(Boost COMPONENTS thread atomic)
+# Deactivate threading stuff in MSVC release mode, because this produces linker errors to boost::exception_ptr
+IF(MSVC AND (CMAKE_BUILD_TYPE_UPPER STREQUAL "RELEASE"))
+	SET(Boost_THREAD_LIBRARY_RELEASE "NOT_FOUND")
+	SET(Boost_THREAD_LIBRARY_DEBUG "NOT_FOUND")
+	MESSAGE(STATUS "Boost threading disabled because othwerwise the MSVC build produces linker errors in release mode.")
+ELSE(MSVC AND (CMAKE_BUILD_TYPE_UPPER STREQUAL "RELEASE"))
+	FIND_PACKAGE(Boost COMPONENTS thread atomic)
+ENDIF(MSVC AND (CMAKE_BUILD_TYPE_UPPER STREQUAL "RELEASE"))
 
 IF(NOT(COMPILER_SUPPORTS_CXX11))
   SET(Boost_LIBRARIES_TMP ${Boost_LIBRARIES_TMP} ${Boost_LIBRARIES})
@@ -425,7 +462,7 @@ IF(USE_SUNDIALS)
   IF(NOT SUNDIALS_CVODES_LIB)
     MESSAGE(FATAL_ERROR "Could not find libsundials_cvodes!")
   ENDIF()
-  
+
   FIND_LIBRARY(SUNDIALS_CVODE_LIB "sundials_cvode" PATHS ${SUNDIALS_LIBRARY_RELEASE_HOME}  $ENV{SUNDIALS_ROOT}/lib)
   include_directories(${SUNDIALS_INCLUDE_DIR}/cvode ${SUNDIALS_INCLUDE_DIR}/nvector  ${SUNDIALS_INCLUDE_DIR}/sundials ${SUNDIALS_INCLUDE_DIR})
   IF(NOT SUNDIALS_CVODES_LIB)
@@ -460,7 +497,7 @@ IF(USE_SUNDIALS)
 ENDIF(USE_SUNDIALS)
 
 #Handle umfpack
-FIND_PACKAGE(SuiteSparse)
+#FIND_PACKAGE(SuiteSparse)
 IF(SUITESPARSE_UMFPACK_FOUND)
   MESSAGE(STATUS "Using UmfPack include path: ${SUITESPARSE_UMFPACK_INCLUDE_DIR}")
   INCLUDE_DIRECTORIES(${SUITESPARSE_UMFPACK_INCLUDE_DIR})
@@ -504,6 +541,13 @@ include_directories ("Solver")
 #include_directories ("Include/Solver/KLU")
 
 #add_subdirectory (Solver/KLU)
+# Needs to be included before Core/Modelica othwise environment variables are not set.
+IF(USE_DGESV)
+  ADD_SUBDIRECTORY(Solver/Dgesv)
+
+  GET_TARGET_PROPERTY(libDgesv ${DgesvName} LOCATION)
+  GET_FILENAME_COMPONENT(libDgesvName ${libDgesv} NAME)
+ENDIF(USE_DGESV)
 
 add_subdirectory (Core/Modelica)
 add_subdirectory (Core/Math)
@@ -525,6 +569,8 @@ add_subdirectory (Core/SimController)
 
 #add  Euler solver project
 add_subdirectory (Solver/Euler)
+add_subdirectory (Solver/RK12)
+
 
 add_subdirectory (Solver/RTEuler)
 add_subdirectory (Solver/Newton)
@@ -532,6 +578,16 @@ add_subdirectory (Solver/Broyden)
 add_subdirectory (Solver/Hybrj)
 add_subdirectory (Solver/UmfPack)
 add_subdirectory (Solver/Peer)
+IF(OPENMP_FOUND)
+  IF(SUITESPARSE_UMFPACK_FOUND)
+    MESSAGE(STATUS "CppDassl enabled")
+    add_subdirectory (Solver/CppDASSL)
+  ELSE(SUITESPARSE_UMFPACK_FOUND)
+    MESSAGE(STATUS "CppDassl disabled, because of missing UMFPACK support")
+ ENDIF(SUITESPARSE_UMFPACK_FOUND)
+ELSE(OPENMP_FOUND)
+  MESSAGE(STATUS "CppDassl disabled, because of missing OpenMP support")
+ENDIF(OPENMP_FOUND)
 ##add_subdirectory (Solver/RTRK)
 
 add_subdirectory (FMU)
@@ -577,6 +633,11 @@ ENDIF(USE_SUNDIALS)
 GET_TARGET_PROPERTY(libPeer ${PeerName} LOCATION)
 GET_FILENAME_COMPONENT(libPeerName ${libPeer} NAME)
 
+IF(OPENMP_FOUND)
+	GET_TARGET_PROPERTY(libCppDASSL ${CppDASSLName} LOCATION)
+	GET_FILENAME_COMPONENT(libCppDASSLName ${libCppDASSL} NAME)
+ENDIF(OPENMP_FOUND)
+
 GET_TARGET_PROPERTY(libRTRK ${RTRKName} LOCATION)
 GET_FILENAME_COMPONENT(libRTRKName ${libRTRK} NAME)
 
@@ -592,6 +653,9 @@ GET_FILENAME_COMPONENT(libUmfPackName ${libUmfPack} NAME)
 GET_TARGET_PROPERTY(libEuler ${EulerName} LOCATION)
 GET_FILENAME_COMPONENT(libEulerName ${libEuler} NAME)
 
+GET_TARGET_PROPERTY(libRK12 ${RK12Name} LOCATION)
+GET_FILENAME_COMPONENT(libRK12Name ${libRK12} NAME)
+
 #GET_TARGET_PROPERTY(libKlu ${kluName} LOCATION)
 #GET_FILENAME_COMPONENT(libKluName ${libKlu} NAME)
 
@@ -600,7 +664,6 @@ GET_FILENAME_COMPONENT(libRTEulerName ${libRTEuler} NAME)
 
 GET_TARGET_PROPERTY(libHybrj ${HybrjName} LOCATION)
 GET_FILENAME_COMPONENT(libHybrjName ${libHybrj} NAME)
-
 
 GET_TARGET_PROPERTY(libSetFactory ${SimulationSettings} LOCATION)
 GET_FILENAME_COMPONENT(libSetFactoryName ${libSetFactory} NAME)
@@ -634,6 +697,7 @@ GET_FILENAME_COMPONENT(libFMUName ${libFMU} NAME)
 
 #set (KLU_LIB ${libKluName})
 set (EULER_LIB ${libEulerName})
+set (RK12_LIB ${libRK12Name})
 set (RTEULER_LIB ${libRTEulerName})
 set (SETTINGSFACTORY_LIB ${libSetFactoryName})
 set (MODELICASYSTEM_LIB ${libModelicaName})
@@ -641,6 +705,7 @@ set (NEWTON_LIB ${libNewtonName})
 set (BROYDEN_LIB ${libBroydenName})
 set (UMFPACK_LIB ${libUmfPackName})
 set (PEER_LIB ${libPeerName})
+set (CPPDASSL_LIB ${libCppDASSLName})
 set (RTRK_LIB ${libRTRKName})
 set (SYSTEM_LIB ${libSystemName})
 set (SOLVER_LIB ${libSolverName})
@@ -652,6 +717,7 @@ set (SIMCONTROLLER_LIB ${libSimControllerName})
 set (EXTENSIONUTILITIES_LIB ${libExtensionUtilitiesName})
 set (MODELICACOMPILER_LIB ${libModelicaCompilerName})
 set (FMU_LIB ${libFMUName})
+set (DGESV_LIB ${libDgesvName})
 
 # configure a header file to pass some library names
 # to the source code which are used to dynamic load and instantiate

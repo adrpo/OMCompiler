@@ -152,7 +152,6 @@ if true then /* Suppress output */
 
   // "Util";
     "../Util/Array.mo",
-    //"../Util/AvlTree.mo",
     "../Util/AvlTreeString.mo",
     "../Util/BaseHashTable.mo",
     "../Util/BaseHashSet.mo",
@@ -279,6 +278,7 @@ if true then /* Suppress output */
     "../FrontEnd/UnitChecker.mo",
 
     "../Lexers/LexerModelicaDiff.mo",
+    "../Parsers/SimpleModelicaParser.mo",
 
     "../Script/Refactor.mo",
     "../Script/RewriteRules.mo",
@@ -316,6 +316,9 @@ if true then /* Suppress output */
     "../Template/SimCodeDump.mo",
     "../Template/TaskSystemDump.mo",
     "../Template/VisualXMLTpl.mo",
+
+    "../Util/BaseAvlTree.mo",
+    "../Util/AvlTreeString2.mo",
 
     "../Util/DiffAlgorithm.mo",
     "../Util/FMI.mo",

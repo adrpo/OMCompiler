@@ -69,12 +69,8 @@ protected
   BackendDAE.EqSystems eqSysts;
   BackendDAE.Shared shared;
 algorithm
-  if Flags.isSet(Flags.RESOLVE_LOOPS) then
-    (eqSysts, shared, _) := List.mapFold2(inDAE.eqs, resolveLoops_main, inDAE.shared, 1);
-    outDAE := BackendDAE.DAE(eqSysts, shared);
-  else
-    outDAE := inDAE;
-  end if;
+  (eqSysts, shared, _) := List.mapFold2(inDAE.eqs, resolveLoops_main, inDAE.shared, 1);
+  outDAE := BackendDAE.DAE(eqSysts, shared);
 end resolveLoops;
 
 protected function resolveLoops_main "author: Waurich TUD 2014-01
@@ -314,7 +310,7 @@ public function resolveLoops_findLoops "author:Waurich TUD 2014-02
   output list<Integer> crossEqsOut;
   output list<Integer> crossVarsOut;
 algorithm
-  (loopsOut,crossEqsOut,crossVarsOut) := match(partitionsIn,mIn,mTIn,loopsIn,crossEqsIn,crossVarsIn)
+  (loopsOut,crossEqsOut,crossVarsOut) := matchcontinue(partitionsIn,mIn,mTIn,loopsIn,crossEqsIn,crossVarsIn)
     local
       list<Integer> partition, eqCrossLst, varCrossLst, partitionVars;
       list<list<Integer>> loops, rest, eqVars;
@@ -339,7 +335,9 @@ algorithm
        (loops,eqCrossLst,varCrossLst) = resolveLoops_findLoops(rest,mIn,mTIn,loops,eqCrossLst,varCrossLst);
       then
         (loops,eqCrossLst,varCrossLst);
-  end match;
+      else
+       then (loopsIn,crossEqsIn,crossVarsIn);
+  end matchcontinue;
 end resolveLoops_findLoops;
 
 protected function resolveLoops_findLoops2 "author: Waurich TUD 2014-01

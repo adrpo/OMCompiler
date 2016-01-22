@@ -1514,7 +1514,7 @@ algorithm
 end createVar;
 
 public function createCSEVar "Creates a cse variable with the name of inCref.
-  TODO: discrete real varaibales are not treated correctly"
+  TODO: discrete real variables are not treated correctly"
   input DAE.ComponentRef inCref;
   input DAE.Type inType;
   output BackendDAE.Var outVar;
@@ -1530,15 +1530,43 @@ algorithm
       DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path), source=typeLst) = inType;
       source = DAE.SOURCE(Absyn.dummyInfo, {}, NONE(), {}, path::typeLst, {}, {});
       varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
-      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), {}, source, NONE(), SOME(BackendDAE.AVOID()), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), {}, source, NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
     then outVar;
 
-    case (_) equation
+    else equation
       varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
-      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), SOME(BackendDAE.AVOID()), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
     then outVar;
   end match;
 end createCSEVar;
+
+public function createCSEArrayVar "Creates a cse array variable with the name of inCref.
+  TODO: discrete real variables are not treated correctly"
+  input DAE.ComponentRef inCref;
+  input DAE.Type inType;
+  input DAE.InstDims inArryDim;
+  output BackendDAE.Var outVar;
+algorithm
+  outVar := match (inCref)
+    local
+      DAE.ElementSource source;
+      list<Absyn.Path> typeLst;
+      Absyn.Path path;
+      BackendDAE.VarKind varKind;
+
+    case (_) guard(ComponentReference.traverseCref(inCref, ComponentReference.crefIsRec, false)) equation
+      DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path), source=typeLst) = inType;
+      source = DAE.SOURCE(Absyn.dummyInfo, {}, NONE(), {}, path::typeLst, {}, {});
+      varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), inArryDim, source, NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
+    then outVar;
+
+    else equation
+      varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), inArryDim, DAE.emptyElementSource, NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
+    then outVar;
+  end match;
+end createCSEArrayVar;
 
 public function copyVarNewName "author: Frenkel TUD 2012-5
   Create variable with new name as cref from other var."
@@ -2879,6 +2907,7 @@ algorithm
   for var in inVars loop
     (_, outIndices) := traversingVarIndexFinder(var, inVariables, outIndices);
   end for;
+  outIndices := listReverse(outIndices);
 end getVarIndexFromVars;
 
 public function getVarIndexFromVariables
@@ -2886,8 +2915,8 @@ public function getVarIndexFromVariables
   input BackendDAE.Variables inVariables2;
   output list<Integer> v_lst;
 algorithm
-  v_lst := traverseBackendDAEVars(inVariables,
-    function traversingVarIndexFinder(inVars = inVariables2), {});
+  v_lst := listReverse(traverseBackendDAEVars(inVariables,
+    function traversingVarIndexFinder(inVars = inVariables2), {}));
 end getVarIndexFromVariables;
 
 protected function traversingVarIndexFinder
@@ -2904,11 +2933,47 @@ algorithm
   try
     cr := varCref(inVar);
     (_, indices) := getVar(cr, inVars);
-    outIndices := listAppend(inIndices, indices);
+    outIndices := listAppend(listReverse(indices), inIndices);
   else
     outIndices := inIndices;
   end try;
 end traversingVarIndexFinder;
+
+public function getVarIndexFromVariablesIndexInFirstSet
+  input BackendDAE.Variables inVariables;
+  input BackendDAE.Variables inVariables2;
+  output list<Integer> v_lst;
+protected
+  array<list<Integer>> a;
+algorithm
+  (a,_) := traverseBackendDAEVars(inVariables,
+    function traversingVarIndexInFirstSetFinder(inVars = inVariables2), (arrayCreate(1,{}),arrayCreate(1,1)));
+  v_lst := listReverse(a[1]);
+end getVarIndexFromVariablesIndexInFirstSet;
+
+protected function traversingVarIndexInFirstSetFinder
+"author: Frenkel TUD 2010-11"
+  input BackendDAE.Var inVar;
+  input BackendDAE.Variables inVars;
+  input tuple<array<list<Integer>>,array<Integer>> inIndices;
+  output BackendDAE.Var outVar = inVar;
+  output tuple<array<list<Integer>>,array<Integer>> outIndices;
+protected
+  DAE.ComponentRef cr;
+  list<Integer> indices1,indices2;
+  array<list<Integer>> l;
+  array<Integer> i;
+algorithm
+  (l,i) := inIndices;
+  outIndices := inIndices;
+  try
+    cr := varCref(inVar);
+    getVar(cr, inVars);
+    l[1] := i[1]::l[1];
+  else
+  end try;
+  i[1] := i[1]+1;
+end traversingVarIndexInFirstSetFinder;
 
 public function mergeVariables
   "Merges two sets of Variables, where the variables of the first set takes

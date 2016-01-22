@@ -173,31 +173,23 @@ end detectSparsePatternODE;
 public function generateSymbolicJacobianPast
   input BackendDAE.BackendDAE inBackendDAE;
   output BackendDAE.BackendDAE outBackendDAE;
+protected
+  BackendDAE.EqSystems eqs;
+  BackendDAE.Shared shared;
+  BackendDAE.SymbolicJacobian symJacA;
+  BackendDAE.SparsePattern sparsePattern;
+  BackendDAE.SparseColoring sparseColoring;
+  DAE.FunctionTree funcs, functionTree;
 algorithm
-  outBackendDAE := matchcontinue(inBackendDAE)
-  local
-    BackendDAE.EqSystems eqs;
-    BackendDAE.Shared shared;
-    BackendDAE.SymbolicJacobian symJacA;
-    BackendDAE.SparsePattern sparsePattern;
-    BackendDAE.SparseColoring sparseColoring;
-    DAE.FunctionTree funcs, functionTree;
-
-  case(_) equation
-    true = Flags.getConfigBool(Flags.GENERATE_SYMBOLIC_JACOBIAN);
-    System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT_JACOBIANS);
-    BackendDAE.DAE(eqs=eqs,shared=shared) = inBackendDAE;
-    (symJacA , sparsePattern, sparseColoring, funcs) = createSymbolicJacobianforStates(inBackendDAE);
-    shared = addBackendDAESharedJacobian(symJacA, sparsePattern, sparseColoring, shared);
-    functionTree = BackendDAEUtil.getFunctions(shared);
-    functionTree = DAEUtil.joinAvlTrees(functionTree, funcs);
-    shared = BackendDAEUtil.setSharedFunctionTree(shared, functionTree);
-    outBackendDAE = BackendDAE.DAE(eqs,shared);
-    _ = System.realtimeTock(ClockIndexes.RT_CLOCK_EXECSTAT_JACOBIANS);
-  then outBackendDAE;
-
-  else inBackendDAE;
-  end matchcontinue;
+  System.realtimeTick(ClockIndexes.RT_CLOCK_EXECSTAT_JACOBIANS);
+  BackendDAE.DAE(eqs=eqs,shared=shared) := inBackendDAE;
+  (symJacA , sparsePattern, sparseColoring, funcs) := createSymbolicJacobianforStates(inBackendDAE);
+  shared := addBackendDAESharedJacobian(symJacA, sparsePattern, sparseColoring, shared);
+  functionTree := BackendDAEUtil.getFunctions(shared);
+  functionTree := DAEUtil.joinAvlTrees(functionTree, funcs);
+  shared := BackendDAEUtil.setSharedFunctionTree(shared, functionTree);
+  outBackendDAE := BackendDAE.DAE(eqs,shared);
+  System.realtimeTock(ClockIndexes.RT_CLOCK_EXECSTAT_JACOBIANS);
 end generateSymbolicJacobianPast;
 
 protected function createSymbolicJacobianforStates "author: wbraun
@@ -1035,7 +1027,8 @@ algorithm
       array<Integer> colored, colored1, ass1, ass2;
       array<list<Integer>> coloredArray;
 
-      list<DAE.ComponentRef> diffCompRefs, diffedCompRefs;
+      list<DAE.ComponentRef> diffCompRefsLst, diffedCompRefsLst;
+      array<DAE.ComponentRef> diffCompRefs, diffedCompRefs;
 
       array<list<Integer>> eqnSparse, varSparse, sparseArray, sparseArrayT;
       array<Integer> mark, usedvar;
@@ -1044,19 +1037,21 @@ algorithm
       list<list<DAE.ComponentRef>> translated;
       list<tuple<DAE.ComponentRef,list<DAE.ComponentRef>>> sparsetuple, sparsetupleT;
 
-    case (_,{},_) then (({},{},({},{})),{});
-    case (_,_,{}) then (({},{},({},{})),{});
+    case (_,{},_) then (({},{},({},{}), -1),{});
+    case (_,_,{}) then (({},{},({},{}), -1),{});
     case(BackendDAE.DAE(eqs = (syst as BackendDAE.EQSYSTEM(matching=bdaeMatching as BackendDAE.MATCHING(comps=comps, ass1=ass1)))::{}),indiffVars,indiffedVars)
       equation
         if Flags.isSet(Flags.DUMP_SPARSE_VERBOSE) then
           print(" start getting sparsity pattern diff Vars : " + intString(listLength(indiffedVars))  + " diffed vars: " + intString(listLength(indiffVars)) +"\n");
         end if;
         // prepare crefs
-        diffCompRefs = List.map(indiffVars, BackendVariable.varCref);
-        diffedCompRefs = List.map(indiffedVars, BackendVariable.varCref);
+        diffCompRefsLst = List.map(indiffVars, BackendVariable.varCref);
+        diffedCompRefsLst = List.map(indiffedVars, BackendVariable.varCref);
+        diffCompRefs = listArray(diffCompRefsLst);
+        diffedCompRefs = listArray(diffedCompRefsLst);
         // create jacobian vars
-        jacDiffVars =  List.map(indiffVars,BackendVariable.createpDerVar);
-        sizeN = listLength(jacDiffVars);
+        jacDiffVars =  list(BackendVariable.createpDerVar(v) for v in indiffVars);
+        sizeN = arrayLength(diffCompRefs);
 
         // generate adjacency matrix including diff vars
         (syst1 as BackendDAE.EQSYSTEM(orderedVars=varswithDiffs,orderedEqs=orderedEqns)) = BackendDAEUtil.addVarsToEqSystem(syst,jacDiffVars);
@@ -1114,20 +1109,20 @@ algorithm
         sparsepatternT = arrayList(sparseArrayT);
         //execStat("generateSparsePattern -> postProcess2 " ,ClockIndexes.RT_CLOCK_EXECSTAT_BACKEND_MODULES);
 
-        // dump statistics
         nonZeroElements = List.lengthListElements(sparsepattern);
-        dumpSparsePatternStatistics(Flags.isSet(Flags.DUMP_SPARSE),nonZeroElements,sparsepatternT);
         if Flags.isSet(Flags.DUMP_SPARSE) then
+          // dump statistics
+          dumpSparsePatternStatistics(nonZeroElements,sparsepatternT);
           BackendDump.dumpSparsePattern(sparsepattern);
           BackendDump.dumpSparsePattern(sparsepatternT);
+          //execStat("generateSparsePattern -> nonZeroElements: " + intString(nonZeroElements) + " " ,ClockIndexes.RT_CLOCK_EXECSTAT_BACKEND_MODULES);
         end if;
-        //execStat("generateSparsePattern -> nonZeroElements: " + intString(nonZeroElements) + " " ,ClockIndexes.RT_CLOCK_EXECSTAT_BACKEND_MODULES);
 
         // translated to DAE.ComRefs
-        translated = List.mapList1_1(sparsepattern, List.getIndexFirst, diffCompRefs);
-        sparsetuple = List.threadTuple(diffedCompRefs, translated);
-        translated = List.mapList1_1(sparsepatternT, List.getIndexFirst, diffedCompRefs);
-        sparsetupleT = List.threadTuple(diffCompRefs, translated);
+        translated = list(list(arrayGet(diffCompRefs, i) for i in lst) for lst in sparsepattern);
+        sparsetuple = list((cr,t) threaded for cr in diffedCompRefs, t in translated);
+        translated = list(list(arrayGet(diffedCompRefs, i) for i in lst) for lst in sparsepatternT);
+        sparsetupleT = list((cr,t) threaded for cr in diffCompRefs, t in translated);
 
         // build up a bi-partied graph of pattern
         if Flags.isSet(Flags.DUMP_SPARSE_VERBOSE) then
@@ -1158,46 +1153,36 @@ algorithm
         maxColor = Array.fold(colored1, intMax, 0);
 
         // map index of that array into colors
-        coloredArray = arrayCreate(maxColor, {});
-        coloredlist = arrayList(mapIndexColors(colored1, listLength(diffCompRefs), coloredArray));
+        coloredArray = mapIndexColors(colored1, arrayLength(diffCompRefs), arrayCreate(maxColor, {}));
 
         if Flags.isSet(Flags.DUMP_SPARSE) then
           print("Print Coloring Cols: \n");
-          BackendDump.dumpSparsePattern(coloredlist);
+          BackendDump.dumpSparsePattern(arrayList(coloredArray));
         end if;
 
-        coloring = List.mapList1_1(coloredlist, List.getIndexFirst, diffCompRefs);
+        coloring = list(list(arrayGet(diffCompRefs, i) for i in lst) for lst in coloredArray);
 
         //without coloring
         //coloring = List.transposeList({diffCompRefs});
         if Flags.isSet(Flags.DUMP_SPARSE_VERBOSE) then
           print("analytical Jacobians[SPARSE] -> ready! " + realString(clock()) + "\n");
         end if;
-      then ((sparsetupleT, sparsetuple, (diffCompRefs, diffedCompRefs)), coloring);
-        else
-      equation
+      then ((sparsetupleT, sparsetuple, (diffCompRefsLst, diffedCompRefsLst), nonZeroElements), coloring);
+    else
+      algorithm
         Error.addInternalError("function generateSparsePattern failed", sourceInfo());
       then fail();
   end matchcontinue;
 end generateSparsePattern;
 
 protected function dumpSparsePatternStatistics
-  input Boolean dump;
   input Integer nonZeroElements;
   input list<list<Integer>> sparsepatternT;
+protected
+  Integer maxDegree;
 algorithm
-  _ := match(dump,nonZeroElements,sparsepatternT)
-    local
-      Integer maxdegree;
-      list<Integer> alldegrees;
-    // dump statistics
-    case (true,_,_)
-      equation
-        (_, maxdegree) = List.mapFold(sparsepatternT, findDegrees, 1);
-        print("analytical Jacobians[SPARSE] -> got sparse pattern nonZeroElements: "+ intString(nonZeroElements) + " maxNodeDegree: " + intString(maxdegree) + " time : " + realString(clock()) + "\n");
-      then ();
-    else ();
-  end match;
+  (_, maxDegree) := List.mapFold(sparsepatternT, findDegrees, 1);
+  print("analytical Jacobians[SPARSE] -> got sparse pattern nonZeroElements: "+ String(nonZeroElements) + " maxNodeDegree: " + String(maxDegree) + " time : " + String(clock()) + "\n");
 end dumpSparsePatternStatistics;
 
 protected function findDegrees<T>
@@ -1830,21 +1815,21 @@ algorithm
           end if;
 
           backendDAE2 = BackendDAEUtil.getSolvedSystemforJacobians(backendDAE,
-                                                                   SOME({"simplifyAllExpressions",
-                                                                         "evalFunc",
-                                                                         "removeEqualFunctionCalls",
-                                                                         "removeSimpleEquations"}),
+                                                                   {"removeEqualFunctionCalls",
+                                                                    "removeSimpleEquations",
+                                                                    "evalFunc",
+                                                                    "simplifyAllExpressions"},
                                                                    NONE(),
                                                                    NONE(),
-                                                                   SOME({"inlineArrayEqn",
-                                                                         "constantLinearSystem",
-                                                                         "removeSimpleEquations",
-                                                                         "removeConstants",
-                                                                         "tearingSystem",
-                                                                         "solveSimpleEquations",
-                                                                         "simplifyTimeIndepFuncCalls",
-                                                                         "calculateStrongComponentJacobians",
-                                                                         "simplifyAllExpressions"}));
+                                                                   {"inlineArrayEqn",
+                                                                    "constantLinearSystem",
+                                                                    "removeSimpleEquations",
+                                                                    "tearingSystem",
+                                                                    "calculateStrongComponentJacobians",
+                                                                    "removeConstants",
+                                                                    "solveSimpleEquations",
+                                                                    "simplifyTimeIndepFuncCalls",
+                                                                    "simplifyAllExpressions"});
           _ = Flags.set(Flags.EXEC_STAT, b);
           if Flags.isSet(Flags.JAC_DUMP) then
             BackendDump.bltdump("Symbolic Jacobian",backendDAE2);
@@ -3139,8 +3124,8 @@ protected
   BackendDAE.SymbolicJacobians symjacs;
   BackendDAE.ExtraInfo ei;
 algorithm
-  symjacs := { (SOME(inSymJac), inSparsePattern, inSparseColoring), (NONE(), ({}, {}, ({}, {})), {}),
-               (NONE(), ({}, {}, ({}, {})), {}), (NONE(), ({}, {}, ({}, {})), {}) };
+  symjacs := { (SOME(inSymJac), inSparsePattern, inSparseColoring), (NONE(), ({}, {}, ({}, {}), -1), {}),
+               (NONE(), ({}, {}, ({}, {}), -1), {}), (NONE(), ({}, {}, ({}, {}), -1), {}) };
   outShared := BackendDAEUtil.setSharedSymJacs(inShared, symjacs);
 end addBackendDAESharedJacobian;
 
@@ -3218,27 +3203,24 @@ protected function jacobianNonlinear "author: PA
   TODO: Algorithms and array equations"
   input BackendDAE.Variables vars;
   input list<tuple<Integer, Integer, BackendDAE.Equation>> inTplIntegerIntegerEquationLst;
-  output Boolean outBoolean;
+  output Boolean isNonLinear = false;
+protected
+  DAE.Exp e1,e2,e;
+  BackendDAE.Equation eq;
+  tuple<Integer, Integer, BackendDAE.Equation> tpl;
 algorithm
-  outBoolean := matchcontinue (vars,inTplIntegerIntegerEquationLst)
-    local
-      DAE.Exp e1,e2,e;
-      list<tuple<Integer, Integer, BackendDAE.Equation>> xs;
-
-    case (_,((_,_,BackendDAE.EQUATION(exp = e1,scalar = e2))::xs))
-      equation
-        false = jacobianNonlinearExp(vars, e1);
-        false = jacobianNonlinearExp(vars, e2);
-      then
-        jacobianNonlinear(vars, xs);
-    case (_,((_,_,BackendDAE.RESIDUAL_EQUATION(exp = e))::xs))
-      equation
-        false = jacobianNonlinearExp(vars, e);
-      then
-        jacobianNonlinear(vars, xs);
-    case (_,{}) then false;
-    else true;
-  end matchcontinue;
+  for tpl in inTplIntegerIntegerEquationLst loop
+    (_,_,eq) := tpl;
+    isNonLinear := match(vars,eq)
+      case(_,BackendDAE.EQUATION(exp = e1,scalar = e2))
+        then jacobianNonlinearExp(vars, e1) or jacobianNonlinearExp(vars, e2);
+      case(_,BackendDAE.RESIDUAL_EQUATION(exp = e))
+        then jacobianNonlinearExp(vars, e);
+      end match;
+    if isNonLinear then
+      return;
+    end if;
+  end for;
 end jacobianNonlinear;
 
 protected function jacobianNonlinearExp "author: PA

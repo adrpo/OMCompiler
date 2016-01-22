@@ -37,7 +37,19 @@ public:
     {
 
         string solver_settings_key;
-        if(solvername.compare("euler")==0)
+        if(solvername.compare("cppdassl")==0)
+        {
+            fs::path cppdassl_path = ObjectFactory<CreationPolicy>::_library_path;
+            fs::path cppdassl_name(CPPDASSL_LIB);
+            cppdassl_path/=cppdassl_name;
+            LOADERRESULT result = ObjectFactory<CreationPolicy>::_factory->LoadLibrary(cppdassl_path.string(),*_solver_type_map);
+            if (result != LOADER_SUCCESS)
+            {
+                throw ModelicaSimulationError(MODEL_FACTORY,"Failed loading CppDASSL solver library!");
+            }
+            solver_settings_key.assign("createCppDASSLSettings");
+        }
+        else if(solvername.compare("euler")==0)
         {
             fs::path euler_path = ObjectFactory<CreationPolicy>::_library_path;
             fs::path euler_name(EULER_LIB);
@@ -48,6 +60,18 @@ public:
                 throw ModelicaSimulationError(MODEL_FACTORY,"Failed loading Euler solver library!");
             }
             solver_settings_key.assign("createEulerSettings");
+        }
+        else if(solvername.compare("rk12")==0)
+        {
+            fs::path rk12_path = ObjectFactory<CreationPolicy>::_library_path;
+            fs::path rk12_name(RK12_LIB);
+            rk12_path/=rk12_name;
+            LOADERRESULT result = ObjectFactory<CreationPolicy>::_factory->LoadLibrary(rk12_name.string(),*_solver_type_map);
+            if (result != LOADER_SUCCESS)
+            {
+                throw ModelicaSimulationError(MODEL_FACTORY,"Failed loading RK12 solver library!");
+            }
+            solver_settings_key.assign("createRK12Settings");
         }
         else if(solvername.compare("peer")==0)
         {

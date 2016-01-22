@@ -115,11 +115,63 @@ void create_array_from_shape(const spec_type& sp,BaseArray<T>& s,BaseArray<T>& d
                shape.push_back(*iter);
 
      }
-     d.setDims(shape);
+    d.setDims(shape);
 
      //Check if the dimension of passed indices match the dimension of target array
    if(sp.second.size()!=s.getNumDims())
      throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,"Erro in create array from shape, number of dimensions does not match");
+
+   T* data = new T[d.getNumElems()];
+
+   idx_type::const_iterator spec_iter;
+   //calc number of indeces
+   size_t n =1;
+   for(spec_iter = sp.second.begin();spec_iter!=sp.second.end();++spec_iter)
+     {
+
+        n*=spec_iter->size();
+   }
+   size_t k =0;
+     size_t index=0;
+   vector<size_t>::const_iterator indeces_iter;
+
+   //initialize target array with elements of source array using passed indices
+   vector<size_t> idx;
+   for(int i=0;i<n;i++)
+   {
+    spec_iter = sp.second.begin();
+        for(int dim=0;dim<s.getNumDims();dim++)
+    {
+      size_t idx1 = getNextIndex(*spec_iter,i);
+      idx.push_back(idx1);
+      spec_iter++;
+    }
+    if(index>(d.getNumElems()-1))
+    {
+      throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,"Erro in create array from shape, number of dimensions does not match");
+    }
+    data[index] = s(idx);
+    idx.clear();
+    index++;
+   }
+   //assign elemets to target array
+   d.assign( data );
+     delete [] data;
+}
+
+
+
+
+/*
+fills an array (d) with passed multi array  shape (sp) and initialized it with elements from passed source array (s)
+s source array
+d destination array
+sp (shape,indices) of source array
+*/
+template < typename T >
+void fill_array_from_shape(const spec_type& sp,BaseArray<T>& s,BaseArray<T>& d)
+{
+
 
    T* data = new T[d.getNumElems()];
 
@@ -406,7 +458,7 @@ std::pair<T,T> min_max(const BaseArray<T>& x)
 {
   const T* data = x.getData();
   std::pair<const T*, const T*>
-    ret = minmax_element(data, data + x.getNumElems());
+  ret = minmax_element(data, data + x.getNumElems());
   return std::make_pair(*(ret.first), *(ret.second));
 }
 
@@ -465,22 +517,6 @@ static void convertArrayDim(size_t dim,
   }
 }
 
-/**
-Special case to convert std string array to c-string array
-*/
-static void convertArrayDim(size_t dim,
-                            const BaseArray<string> &s, vector<size_t> &sidx,
-                            BaseArray<const char*> &d, vector<size_t> &didx) {
-  size_t ndims = s.getNumDims();
-  size_t size = s.getDim(dim);
-  for (size_t i = 1; i <= size; i++) {
-    didx[ndims - dim] = sidx[dim - 1] = i;
-    if (dim < sidx.size())
-      convertArrayDim(dim + 1, s, sidx, d, didx);
-    else
-      d(didx) = s(sidx).c_str();
-  }
-}
 
 /**
  * permutes dims between row and column major storage layout,
@@ -527,6 +563,11 @@ promote_array(size_t n, const BaseArray<bool>& s, BaseArray<bool>& d);
 template void BOOST_EXTENSION_EXPORT_DECL create_array_from_shape(const spec_type& sp, BaseArray<double>& s, BaseArray<double>& d);
 template void BOOST_EXTENSION_EXPORT_DECL create_array_from_shape(const spec_type& sp, BaseArray<int>& s, BaseArray<int>& d);
 template void BOOST_EXTENSION_EXPORT_DECL create_array_from_shape(const spec_type& sp, BaseArray<bool>& s, BaseArray<bool>& d);
+
+
+template void BOOST_EXTENSION_EXPORT_DECL fill_array_from_shape(const spec_type& sp, BaseArray<double>& s, BaseArray<double>& d);
+template void BOOST_EXTENSION_EXPORT_DECL fill_array_from_shape(const spec_type& sp, BaseArray<int>& s, BaseArray<int>& d);
+template void BOOST_EXTENSION_EXPORT_DECL fill_array_from_shape(const spec_type& sp, BaseArray<bool>& s, BaseArray<bool>& d);
 
 template void BOOST_EXTENSION_EXPORT_DECL
 multiply_array(const BaseArray<double>& inputArray, const double &b, BaseArray<double>& outputArray);
@@ -641,9 +682,7 @@ template void BOOST_EXTENSION_EXPORT_DECL
 convertArrayLayout(const BaseArray<int> &s, BaseArray<bool> &d);
 template void BOOST_EXTENSION_EXPORT_DECL
 convertArrayLayout(const BaseArray<string> &s, BaseArray<string> &d);
-///Special case for Modelica external C string arrays. Modelica strings are mapped to const char*
-template void BOOST_EXTENSION_EXPORT_DECL
-convertArrayLayout(const BaseArray<string> &s, BaseArray<const char*> &d);
+
 
 template void BOOST_EXTENSION_EXPORT_DECL
 assignRowMajorData(const double *data, BaseArray<double> &d);

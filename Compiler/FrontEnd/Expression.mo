@@ -2694,6 +2694,137 @@ algorithm
   end matchcontinue;
 end allTerms;
 
+public function allTermsForCref
+"simliar to terms, but also perform expansion of
+ multiplications to reveal more terms, like for instance:
+ allTerms((a(x)+b(x))*(c+d)) => {a(x)*(c+d),b(x)*(c+d)}"
+  input DAE.Exp inExp;
+  input DAE.ComponentRef cr "x";
+  input MapFunc inFunc;
+  output list<DAE.Exp> outExpLstWithX;
+  output list<DAE.Exp> outExpLstWithoutX;
+
+  partial function MapFunc
+    input DAE.Exp inElement;
+    input DAE.ComponentRef inCr;
+    output Boolean outElement;
+  end MapFunc;
+
+algorithm
+  (outExpLstWithX,outExpLstWithoutX) := matchcontinue (inExp)
+    local
+      list<DAE.Exp> f1,f2,fx1,fx2,res,resx;
+      DAE.Exp e1,e2,e;
+      Type tp;
+
+    case (DAE.BINARY(exp1 = e1,operator = DAE.ADD(),exp2 = e2))
+      equation
+        (fx1,f1) = allTermsForCref(e1, cr, inFunc);
+        (fx2,f2) = allTermsForCref(e2, cr, inFunc);
+        res = listAppend(f1, f2);
+        resx = listAppend(fx1, fx2);
+      then
+        (resx, res);
+
+    case (DAE.BINARY(exp1 = e1,operator = DAE.SUB(),exp2 = e2))
+      equation
+        (fx1,f1) = allTermsForCref(e1, cr, inFunc);
+        (fx2,f2) = allTermsForCref(e2, cr, inFunc);
+        f2 = List.map(f2, negate);
+        fx2 = List.map(fx2, negate);
+        res = listAppend(f1, f2);
+        resx = listAppend(fx1, fx2);
+      then
+        (resx,res);
+
+    // terms( a*(b+c)) => {a*b, c*b}
+    case (DAE.BINARY(e1,DAE.MUL(_),e2))
+      guard inFunc(e2,cr)
+      equation
+        (fx1, f1) = allTermsForCref(e2, cr, inFunc);
+        (fx1, f2) = List.split1OnTrue(fx1, inFunc, cr);
+        res = listAppend(f1, f2);
+        e = makeSum1(res);
+        e = expMul(e, e1);
+        fx1 = List.map1(fx1,expMul,e1);
+        if not isZero(e) then
+	        if expHasCrefNoPreOrStart(e1,cr) then
+	          fx1 = e :: fx1;
+	          f1 = {};
+	        else
+	          f1 = {e};
+	        end if;
+        end if;
+        //f1 = List.flatten(List.map1(fx1,allTermsForCref, cr));
+      then
+        (fx1, f1);
+
+    // terms( (b+c)*a) => {b*a, c*a}
+    case (DAE.BINARY(e1,DAE.MUL(_),e2))
+      guard inFunc(e1,cr)
+      equation
+        (fx1, f1) = allTermsForCref(e1, cr, inFunc);
+        (fx1, f2) = List.split1OnTrue(fx1, inFunc, cr);
+        res = listAppend(f1, f2);
+        e = makeSum1(res);
+        e = expMul(e, e2);
+        fx1 = List.map1(fx1,expMul,e2);
+        if not isZero(e) then
+	        if expHasCrefNoPreOrStart(e1,cr) then
+	          fx1 = e :: fx1;
+	          f1 = {};
+	        else
+	          f1 = {e};
+	        end if;
+        end if;
+        //fx1 = List.flatten(List.map1(fx1,allTermsForCref, cr));
+      then
+        (fx1, f1);
+
+    // terms( (b+c)/a) => {b/a, c/a}
+    case (DAE.BINARY(e1,DAE.DIV(_),e2))
+      guard inFunc(e1,cr)
+      equation
+        (fx1, f1) = allTermsForCref(e1, cr, inFunc);
+        (fx1, f2) = List.split1OnTrue(fx1, inFunc, cr);
+        res = listAppend(f1, f2);
+        e = makeSum1(res);
+        e = makeDiv(e, e2);
+        fx1 = List.map1(fx1,makeDiv,e2);
+        if not isZero(e) then
+	        if expHasCrefNoPreOrStart(e1,cr) then
+	          fx1 = e :: fx1;
+	          f1 = {};
+	        else
+	          f1 = {e};
+	        end if;
+        end if;
+        //fx1 = List.flatten(List.map1(fx1,allTermsForCref, cr));
+      then
+        (fx1, f1);
+
+    // -()
+    case (DAE.UNARY(operator = DAE.UMINUS(),exp=e1))
+      equation
+        (fx1,f1) = allTermsForCref(e1, cr, inFunc);
+        f1 = List.map(f1,negate);
+        fx1 = List.map(fx1,negate);
+      then
+        (fx1, f1);
+
+    else
+      equation
+        if inFunc(inExp,cr) then
+          res = {};
+          resx = {inExp};
+        else
+          resx = {};
+          res = {inExp};
+        end if;
+        then (resx, res);
+  end matchcontinue;
+end allTermsForCref;
+
 
 public function termsExpandUnary
   "Returns the terms of the expression if any as a list of expressions"
@@ -4024,6 +4155,21 @@ algorithm
   outExp := DAE.CALL(Absyn.IDENT("max"),{e1,e2},DAE.CALL_ATTR(tp,false,true,false,false,DAE.NO_INLINE(),DAE.NO_TAIL()));
 end expMaxScalar;
 
+public function expOptMaxScalar
+  input Option<DAE.Exp> e1;
+  input Option<DAE.Exp> e2;
+  output Option<DAE.Exp> outExp;
+protected
+algorithm
+  outExp := match(e1,e2)
+            local DAE.Exp e11, e22;
+            case(_, NONE()) then e1;
+            case(NONE(), ) then e2;
+            case(SOME(e11), SOME(e22)) then SOME(expMaxScalar(e11, e22));
+            end match;
+end expOptMaxScalar;
+
+
 public function expMinScalar "author: Frenkel TUD 2011-04
   returns min(e1,e2)."
   input DAE.Exp e1;
@@ -4036,6 +4182,21 @@ algorithm
   tp := typeof(e1);
   outExp := DAE.CALL(Absyn.IDENT("min"),{e1,e2},DAE.CALL_ATTR(tp, false, true, false, false, DAE.NO_INLINE(), DAE.NO_TAIL()));
 end expMinScalar;
+
+public function expOptMinScalar
+  input Option<DAE.Exp> e1;
+  input Option<DAE.Exp> e2;
+  output Option<DAE.Exp> outExp;
+protected
+algorithm
+  outExp := match(e1,e2)
+            local DAE.Exp e11, e22;
+            case(_, NONE()) then e1;
+            case(NONE(), ) then e2;
+            case(SOME(e11), SOME(e22)) then SOME(expMinScalar(e11, e22));
+            end match;
+end expOptMinScalar;
+
 
 public function makeProductVector "takes and expression e1 and a list of expressisions {v1,v2,...,vn} and returns
 {e1*v1,e1*v2,...,e1*vn}"
@@ -7648,6 +7809,18 @@ algorithm
   end match;
 end isSub;
 
+public function isAddOrSubBinary "returns true if BINARY is a+b or a-b"
+  input DAE.Exp iExp;
+  output Boolean res;
+protected
+  DAE.Operator op;
+algorithm
+  res := match(iExp)
+         case(DAE.BINARY(_,op,_)) then isAddOrSub(op);
+         else false;
+         end match;
+end isAddOrSubBinary;
+
 public function isMulOrDiv "returns true if operator is MUL or DIV"
   input DAE.Operator op;
   output Boolean res = isMul(op) or isDiv(op);
@@ -7686,6 +7859,19 @@ algorithm
          else false;
          end match;
 end isDivBinary;
+
+
+public function isMulorDivBinary "returns true if BINARY is a/b or a*b"
+  input DAE.Exp iExp;
+  output Boolean res;
+protected
+  DAE.Operator op;
+algorithm
+  res := match(iExp)
+         case(DAE.BINARY(_,op,_)) then isMulOrDiv(op);
+         else false;
+         end match;
+end isMulorDivBinary;
 
 public function isPow "returns true if operator is POW"
   input DAE.Operator op;
@@ -8414,6 +8600,24 @@ algorithm
     else false;
   end match;
 end isCall;
+
+public function isPureCall
+  "Returns true if the given expression is a pure function call,
+   otherwise false."
+  input DAE.Exp inExp;
+  output Boolean outIsPureCall;
+algorithm
+  outIsPureCall := isCall(inExp) and not isImpure(inExp);
+end isPureCall;
+
+public function isImpureCall
+  "Returns true if the given expression is a pure function call,
+   otherwise false."
+  input DAE.Exp inExp;
+  output Boolean outIsPureCall;
+algorithm
+  outIsPureCall := isCall(inExp) and isImpure(inExp);
+end isImpureCall;
 
 public function isRecordCall
   "Returns true if the given expression is a record call,i.e. a function call without elements
@@ -11950,7 +12154,7 @@ algorithm
         cr = ComponentReference.crefStripLastSubs(cr);
         crlst = List.map1r(subslst1,ComponentReference.subscriptCref,cr);
         expl = List.map1(crlst,makeCrefExp,ty);
-        mat = makeMatrix(expl,j,j,{});
+        mat = makeMatrix(expl,j);
         e_new = DAE.MATRIX(t,i,mat);
         (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
       then
@@ -11967,7 +12171,7 @@ algorithm
         subslst1 = rangesToSubscripts(subslst);
         crlst = List.map1r(subslst1,ComponentReference.subscriptCref,cr);
         expl = List.map1(crlst,makeCrefExp,ty);
-        mat = makeMatrix(expl,j,j,{});
+        mat = makeMatrix(expl,j);
         e_new = DAE.MATRIX(t,i,mat);
         (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
       then
@@ -12057,34 +12261,27 @@ end insertSubScripts;
 
 protected function makeMatrix
   input list<DAE.Exp> expl;
-  input Integer r;
   input Integer n;
-  input list<DAE.Exp> incol;
-  output list<list<DAE.Exp>> scalar;
+  output list<list<DAE.Exp>> res;
+protected
+  list<DAE.Exp> col;
+  Integer r;
+  import listReverse = MetaModelica.Dangerous.listReverseInPlace;
 algorithm
-  scalar := matchcontinue (expl, r, n, incol)
-    local
-      DAE.Exp e;
-      list<DAE.Exp> rest;
-      list<list<DAE.Exp>> res;
-      list<DAE.Exp> col;
-  case({},_,_,_)
-    equation
-      col = listReverse(incol);
-    then {col};
-  case(e::rest,_,_,_)
-    equation
-      true = intEq(r,0);
-      col = listReverse(incol);
-      res = makeMatrix(e::rest,n,n,{});
-    then
-      (col::res);
-  case(e::rest,_,_,_)
-    equation
-      res = makeMatrix(rest,r-1,n,e::incol);
-    then
-      res;
-  end matchcontinue;
+  res := {};
+  col := {};
+  r := n;
+  for e in expl loop
+    r := r-1;
+    col := e::col;
+    if r==0 then
+      res := listReverse(col)::res;
+      col := {};
+      r := n;
+    end if;
+  end for;
+  Error.assertionOrAddSourceMessage(listEmpty(col), Error.INTERNAL_ERROR, {"Expression.makeMatrix failed"}, sourceInfo());
+  res := listReverse(res);
 end makeMatrix;
 
 public function rangesToSubscripts

@@ -89,30 +89,24 @@ partial constant outputs are added as extra equations. Therefore removeSimpleEqu
 author:Waurich TUD 2014-04"
   input BackendDAE.BackendDAE inDAE;
   output BackendDAE.BackendDAE outDAE;
+protected
+  Boolean changed;
+  BackendDAE.EqSystems eqSysts;
+  BackendDAE.Shared shared;
 algorithm
-  outDAE := matchcontinue(inDAE)
-    local
-      Boolean changed;
-      BackendDAE.EqSystems eqSysts;
-      BackendDAE.Shared shared;
-    case(_)
-      equation
-        true = Flags.isSet(Flags.EVALUATE_CONST_FUNCTIONS);
-        BackendDAE.DAE(eqs = eqSysts,shared = shared) = inDAE;
-        (eqSysts,(shared,_,changed)) = List.mapFold(eqSysts,evalFunctions_main,(shared,1,false));
-        //shared = evaluateShared(shared);
+  try
+    BackendDAE.DAE(eqs=eqSysts, shared=shared) := inDAE;
+    (eqSysts, (shared, _, changed)) := List.mapFold(eqSysts, evalFunctions_main, (shared, 1, false));
+    //shared = evaluateShared(shared);
 
-        if changed then
-          outDAE = updateVarKinds(RemoveSimpleEquations.fastAcausal(BackendDAE.DAE(eqSysts,shared)));
-        else
-          outDAE = inDAE;
-        end if;
-      then
-        outDAE;
+    if changed then
+      outDAE := updateVarKinds(RemoveSimpleEquations.fastAcausal(BackendDAE.DAE(eqSysts, shared)));
     else
-      then
-        inDAE;
-  end matchcontinue;
+      outDAE := inDAE;
+    end if;
+  else
+    outDAE := inDAE;
+  end try;
 end evalFunctions;
 
 protected function evaluateShared "evaluate objects in the shared structure that could be dependent of a function. i.e. parameters
@@ -1338,7 +1332,7 @@ algorithm
         ({stmt},_) = BackendVarTransform.replaceStatementLst({stmtIn},repl,NONE(),{},false);
         DAE.STMT_ASSIGN(exp1=e1,exp=e2) = stmt;
         b1 = Expression.isConst(e1);
-        b2 = Expression.isConst(e2) and b1;
+        b2 = Expression.isConst(e2);
         //stmt = if_(b1,stmtIn,stmt);
         stmt = stmtIn;
       then

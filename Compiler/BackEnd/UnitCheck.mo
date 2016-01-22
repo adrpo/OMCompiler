@@ -87,20 +87,17 @@ public function unitChecking "author: jhagemann"
   input BackendDAE.BackendDAE inDAE;
   output BackendDAE.BackendDAE outDAE;
 protected
+  BackendDAE.EqSystem syst;
   BackendDAE.Shared shared;
   BackendDAE.Variables orderedVars, knownVars, aliasVars;
-  BackendDAE.EqSystem syst;
-
-  list<BackendDAE.Var> varList, paraList, aliasList;
-  list<BackendDAE.Equation> eqList;
-
   HashTableCrToUnit.HashTable HtCr2U1, HtCr2U2;
   HashTableStringToUnit.HashTable HtS2U;
   HashTableUnitToString.HashTable HtU2S;
+  list<BackendDAE.Equation> eqList;
+  list<BackendDAE.Var> varList, paraList, aliasList;
 algorithm
   try
     BackendDAE.DAE({syst}, shared) := inDAE;
-    true := Flags.getConfigBool(Flags.NEW_UNIT_CHECKING);
 
     varList := BackendVariable.varList(syst.orderedVars);
     paraList := BackendVariable.varList(shared.knownVars);
@@ -1157,6 +1154,7 @@ algorithm
     HashTableCrToUnit.HashTable HtCr2U;
 
   case (BackendDAE.VAR(varType=DAE.T_REAL(), values = SOME(DAE.VAR_ATTR_REAL(unit=SOME(DAE.SCONST(unitString))))), (HtCr2U, HtS2U, HtU2S))
+    guard(unitString <> "")
     equation
       cr = BackendVariable.varCref(var);
       (ut, HtS2U, HtU2S) = parse(unitString, cr, HtS2U, HtU2S);

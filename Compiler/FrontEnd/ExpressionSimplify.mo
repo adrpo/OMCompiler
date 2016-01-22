@@ -144,6 +144,17 @@ algorithm
   (exp,_) := simplify(inExp);
 end simplifyTraverseHelper;
 
+public function simplify1TraverseHelper
+  input DAE.Exp inExp;
+  input A inA;
+  output DAE.Exp outExp;
+  output A a;
+  replaceable type A subtypeof Any;
+algorithm
+  a := inA;
+  outExp := simplify1(inExp);
+end simplify1TraverseHelper;
+
 public function simplify1time "simplify1 with timing"
   input DAE.Exp e;
   output DAE.Exp outE;
@@ -1878,24 +1889,85 @@ public function simplify2
 "Advanced simplifications covering several
  terms or factors, like a +2a +3a = 5a "
   input DAE.Exp inExp;
+  input Boolean simplifyAddOrSub = true;
+  input Boolean simplifyMulOrDiv = true;
   output DAE.Exp outExp;
 algorithm
-  outExp := matchcontinue(inExp)
+  outExp := match(inExp)
     local
-      DAE.Exp e,exp,e1,e2,exp_2,exp_3;
+      DAE.Exp e1,e2,exp_2,exp_3, resConst;
+      list<DAE.Exp> lstConstExp, lstExp;
       Operator op;
+      Boolean hasConst;
 
-    case ((exp as DAE.BINARY(exp1 = e1,operator = op,exp2 = e2))) /* multiple terms/factor simplifications */
+    // global simplify ADD and SUB
+    case DAE.BINARY(operator = op) /* multiple terms simplifications */
+      guard  simplifyAddOrSub and Expression.isIntegerOrReal(Expression.typeof(inExp)) and Expression.isAddOrSub(op)
       equation
-        true = Expression.isIntegerOrReal(Expression.typeof(exp));
-        e1 = simplify2(e1);
-        e2 = simplify2(e2);
         /* Sorting constants, 1+a+2+b => 3+a+b */
-        exp_2 = simplifyBinarySortConstants(DAE.BINARY(e1,op,e2));
+        lstExp = Expression.terms(inExp);
+        (lstConstExp, lstExp) = List.splitOnTrue(lstExp, Expression.isConstValue);
+        hasConst =  not listEmpty(lstConstExp);
+        resConst =  if hasConst then  simplifyBinaryAddConstants(lstConstExp) else DAE.RCONST(0.0);
+        exp_2 = if hasConst then Expression.makeSum1(lstExp) else inExp;
         /* Merging coefficients 2a+4b+3a+b => 5a+5b */
         exp_3 = simplifyBinaryCoeff(exp_2);
+        exp_3 = if hasConst then Expression.expAdd(resConst,simplify2(exp_3, false, true)) else simplify2(exp_3, false, true);
       then
         exp_3;
+
+    //locked global simplify ADD and SUB
+    //unlocked global simplify MUL and DIV
+     case DAE.BINARY(exp1 = e1,operator = op,exp2 = e2) /* multiple factors simplifications */
+      guard  Expression.isIntegerOrReal(Expression.typeof(inExp)) and Expression.isAddOrSub(op)
+      equation
+        e1 = simplify2(e1, false, true);
+        e2 = simplify2(e2, false, true);
+      then
+        DAE.BINARY(e1,op,e2);
+
+    //global simplify MUL and DIV
+     case DAE.BINARY(operator = op) /* multiple factors simplifications */
+      guard  simplifyMulOrDiv and Expression.isIntegerOrReal(Expression.typeof(inExp)) and Expression.isMulOrDiv(op)
+      equation
+        /* Sorting constants, 1+a+2+b => 3+a+b */
+        lstExp = Expression.factors(inExp);
+        (lstConstExp, lstExp) = List.splitOnTrue(lstExp, Expression.isConst);
+        if not listEmpty(lstConstExp) then
+          resConst = simplifyBinaryMulConstants(lstConstExp);
+          exp_2 = Expression.makeProductLst(simplifyMul(lstExp));
+          if Expression.isConstOne(resConst) then
+            exp_3 = simplify2(exp_2, true, false);
+          elseif Expression.isConstMinusOne(resConst) then
+            exp_3 = Expression.negate(simplify2(exp_2, true, false));
+          else
+            exp_3 = Expression.expMul(resConst,simplify2(exp_2, true, false));
+          end if;
+        else
+          exp_2 =  simplifyBinaryCoeff(inExp);
+          exp_3 =  simplify2(exp_2, true, false);
+        end if;
+      then
+        exp_3;
+
+    //unlocked global simplify ADD and SUB
+    //locked global simplify MUL and DIV
+     case DAE.BINARY(exp1 = e1,operator = op,exp2 = e2) /* multiple terms simplifications */
+      guard  Expression.isIntegerOrReal(Expression.typeof(inExp)) and Expression.isMulOrDiv(op)
+      equation
+        e1 = simplify2(e1, true, false);
+        e2 = simplify2(e2, true, false);
+      then
+        DAE.BINARY(e1,op,e2);
+
+    //others operators
+    case DAE.BINARY(exp1 = e1,operator = op,exp2 = e2) /* multiple terms/factor simplifications */
+      guard  Expression.isIntegerOrReal(Expression.typeof(inExp))
+      equation
+        e1 = simplify2(e1);
+        e2 = simplify2(e2);
+      then
+        DAE.BINARY(e1,op,e2);
 
     case(DAE.UNARY(op,e1))
       equation
@@ -1905,7 +1977,7 @@ algorithm
 
     else inExp;
 
-  end matchcontinue;
+  end match;
 end simplify2;
 
 protected function simplifyBinaryArray "Simplifies binary array expressions,
@@ -2503,11 +2575,14 @@ algorithm
         e_lst = Expression.terms(e);
         //e_lst_1 = List.map(e_lst,simplify2);
         (const_es1, notconst_es1) =
-          List.splitOnTrue(e_lst, Expression.isConst);
-        const_es1_1 = simplifyBinaryAddConstants(const_es1);
-        res1 = Expression.makeSum(const_es1_1);
-        res2 = Expression.makeSum(notconst_es1); // Cannot simplify this, if const_es1_1 empty => infinite recursion.
-        res = Expression.makeSum({res1,res2});
+          List.splitOnTrue(e_lst, Expression.isConstValue);
+        if not listEmpty(const_es1) then
+          res1 = simplifyBinaryAddConstants(const_es1);
+          res2 = Expression.makeSum1(notconst_es1); // Cannot simplify this, if const_es1_1 empty => infinite recursion.
+          res = Expression.expAdd(res1, res2);
+        else
+          res = inExp;
+        end if;
       then
         res;
 
@@ -2577,57 +2652,33 @@ protected function simplifyBinaryAddConstants
 "author: PA
   Adds all expressions in the list, given that they are constant."
   input list<DAE.Exp> inExpLst;
-  output list<DAE.Exp> outExpLst;
+  output DAE.Exp outExp;
+protected
+  Type tp;
+  list<DAE.Exp> es;
 algorithm
-  outExpLst := matchcontinue (inExpLst)
-    local
-      DAE.Exp e,e_1,e1;
-      list<DAE.Exp> es;
+  outExp :: es := inExpLst;
+  tp := Expression.typeof(outExp);
+  for e in es loop
+    outExp := simplifyBinaryConst(DAE.ADD(tp), outExp, e);
+  end for;
 
-    case ({}) then {};
-
-    case ({e}) then {e};
-
-    case ((e1 :: es))
-      equation
-        {e} = simplifyBinaryAddConstants(es);
-        e_1 = simplifyBinaryConst(DAE.ADD(DAE.T_REAL_DEFAULT), e1, e);
-      then
-        {e_1};
-
-    else
-      equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.trace("- ExpressionSimplify.simplifyBinaryAddConstants failed\n");
-      then
-        fail();
-  end matchcontinue;
 end simplifyBinaryAddConstants;
 
 protected function simplifyBinaryMulConstants
 "author: PA
   Multiplies all expressions in the list, given that they are constant."
   input list<DAE.Exp> inExpLst;
-  output list<DAE.Exp> outExpLst;
+  output DAE.Exp outExp;
+protected
+  list<DAE.Exp> es;
+  Type tp;
 algorithm
-  outExpLst := matchcontinue (inExpLst)
-    local
-      DAE.Exp e,e_1,e1;
-      list<DAE.Exp> es;
-      Type tp;
-
-    case ({}) then {};
-
-    case ({e}) then {e};
-
-    case ((e1 :: es))
-      equation
-        {e} = simplifyBinaryMulConstants(es);
-        tp = Expression.typeof(e);
-        e_1 = simplifyBinaryConst(DAE.MUL(tp), e1, e);
-      then
-        {e_1};
-  end matchcontinue;
+  outExp :: es := inExpLst;
+  tp := Expression.typeof(outExp);
+  for e in es loop
+    outExp := simplifyBinaryConst(DAE.MUL(tp), outExp, e);
+  end for;
 end simplifyBinaryMulConstants;
 
 protected function simplifyMul
@@ -2649,24 +2700,22 @@ protected function simplifyMulJoinFactors
   Joins expressions that have the same base.
   E.g. {(a,2), (a,4), (b,2)} => {(a,6), (b,2)}"
   input list<tuple<DAE.Exp, Real>> inTplExpRealLst;
-  output list<tuple<DAE.Exp, Real>> outTplExpRealLst;
+  output list<tuple<DAE.Exp, Real>> outTplExpRealLst = {};
+protected
+  list<tuple<DAE.Exp, Real>> tplExpRealLst = inTplExpRealLst;
+  DAE.Exp e;
+  Real coeff, coeff2;
 algorithm
-  outTplExpRealLst := match (inTplExpRealLst)
-    local
-      Real coeff2,coeff_1,coeff;
-      list<tuple<DAE.Exp, Real>> rest_1,res,rest;
-      DAE.Exp e;
 
-    case ({}) then {};
+  while not listEmpty(tplExpRealLst) loop
+    (e, coeff) :: tplExpRealLst := tplExpRealLst;
+    (coeff2, tplExpRealLst) := simplifyMulJoinFactorsFind(e, tplExpRealLst);
+    coeff := coeff + coeff2;
+    outTplExpRealLst := (e, coeff) :: outTplExpRealLst;
+  end while;
 
-    case (((e,coeff) :: rest))
-      equation
-        (coeff2,rest_1) = simplifyMulJoinFactorsFind(e, rest);
-        res = simplifyMulJoinFactors(rest_1);
-        coeff_1 = coeff + coeff2;
-      then
-        ((e,coeff_1) :: res);
-  end match;
+ // outTplExpRealLst := listReverse(outTplExpRealLst);
+
 end simplifyMulJoinFactors;
 
 protected function simplifyMulJoinFactorsFind
@@ -2675,40 +2724,36 @@ protected function simplifyMulJoinFactorsFind
   Searches rest of list to find all occurences of a base."
   input DAE.Exp inExp;
   input list<tuple<DAE.Exp, Real>> inTplExpRealLst;
-  output Real outReal;
-  output list<tuple<DAE.Exp, Real>> outTplExpRealLst;
+  output Real outReal = 0.0;
+  output list<tuple<DAE.Exp, Real>> outTplExpRealLst = {};
+protected
+   tuple<DAE.Exp, Real> tplExpReal;
 algorithm
-  (outReal,outTplExpRealLst) := matchcontinue (inExp,inTplExpRealLst)
+  for tplExpReal in inTplExpRealLst loop
+
+   (outReal,outTplExpRealLst) := match (tplExpReal)
     local
-      Real coeff2,coeff3,coeff;
-      list<tuple<DAE.Exp, Real>> res,rest;
-      DAE.Exp e,e2,e1;
+      Real coeff;
+      DAE.Exp e2,e1;
       DAE.Operator op;
 
-    case (_,{}) then (0.0,{});
-
-    case (e,((e2,coeff) :: rest)) /* e1 == e2 */
-      equation
-        true = Expression.expEqual(e, e2);
-        (coeff2,res) = simplifyMulJoinFactorsFind(e, rest);
-        coeff3 = coeff + coeff2;
+    case (e2,coeff) /* e1 == e2 */
+      guard Expression.expEqual(inExp, e2)
       then
-        (coeff3,res);
+        (coeff + outReal, outTplExpRealLst);
 
-    case (e,((DAE.BINARY(exp1 = e1,operator = op as DAE.DIV(),exp2 = e2),coeff) :: rest)) // pow(a/b,n) * pow(b/a,m) = pow(a/b,n-m)
-      equation
-        true = if Expression.isOne(e1) then Expression.expEqual(e, e2) else Expression.expEqual(e, DAE.BINARY(e2, op, e1));
-        (coeff2,res) = simplifyMulJoinFactorsFind(e, rest);
-        coeff3 = coeff2 - coeff;
+    case (DAE.BINARY(exp1 = e1,operator = op as DAE.DIV(),exp2 = e2),coeff) // pow(a/b,n) * pow(b/a,m) = pow(a/b,n-m)
+    guard if Expression.isOne(e1) then Expression.expEqual(inExp, e2) else Expression.expEqual(inExp, DAE.BINARY(e2, op, e1))
       then
-        (coeff3,res);
+        (outReal - coeff, outTplExpRealLst);
 
-    case (e,((e2,coeff) :: rest)) /* not Expression.expEqual */
-      equation
-        (coeff2,res) = simplifyMulJoinFactorsFind(e, rest);
-      then
-        (coeff2,((e2,coeff) :: res));
-  end matchcontinue;
+    else /* not Expression.expEqual */
+        (outReal, tplExpReal :: outTplExpRealLst);
+    end match;
+
+  end for;
+
+ outTplExpRealLst := listReverse(outTplExpRealLst);
 end simplifyMulJoinFactorsFind;
 
 protected function simplifyMulMakePow
@@ -2717,30 +2762,16 @@ protected function simplifyMulMakePow
   Makes each item in the list into a pow
   expression, except when exponent is 1.0."
   input list<tuple<DAE.Exp, Real>> inTplExpRealLst;
-  output list<DAE.Exp> outExpLst;
+  output list<DAE.Exp> outExpLst = {};
+protected
+  tuple<DAE.Exp, Real> tplExpReal;
+  DAE.Exp e;
+  Real r;
 algorithm
-  outExpLst := matchcontinue (inTplExpRealLst)
-    local
-      list<DAE.Exp> res;
-      DAE.Exp e;
-      Real r;
-      list<tuple<DAE.Exp, Real>> xs;
-
-    case ({}) then {};
-
-    case (((e,r) :: xs))
-      equation
-        (r == 1.0) = true;
-        res = simplifyMulMakePow(xs);
-      then
-        (e :: res);
-
-    case (((e,r) :: xs))
-      equation
-        res = simplifyMulMakePow(xs);
-      then
-        (DAE.BINARY(e,DAE.POW(DAE.T_REAL_DEFAULT),DAE.RCONST(r)) :: res);
-  end matchcontinue;
+  for tplExpReal in inTplExpRealLst loop
+    (e,r) := tplExpReal;
+    outExpLst := if r == 1.0 then e :: outExpLst else DAE.BINARY(e,DAE.POW(DAE.T_REAL_DEFAULT),DAE.RCONST(r)) :: outExpLst;
+  end for;
 end simplifyMulMakePow;
 
 protected function simplifyAdd
@@ -2777,24 +2808,20 @@ protected function simplifyAddJoinTerms
   Join all terms with the same expression.
   i.e. 2a+4a gives an element (a,6) in the list."
   input list<tuple<DAE.Exp, Real>> inTplExpRealLst;
-  output list<tuple<DAE.Exp, Real>> outTplExpRealLst;
+  output list<tuple<DAE.Exp, Real>> outTplExpRealLst = {};
+protected
+  list<tuple<DAE.Exp, Real>> tplExpRealLst = inTplExpRealLst;
+  DAE.Exp e;
+  Real coeff, coeff2;
 algorithm
-  outTplExpRealLst := match (inTplExpRealLst)
-    local
-      Real coeff2,coeff3,coeff;
-      list<tuple<DAE.Exp, Real>> rest_1,res,rest;
-      DAE.Exp e;
 
-    case ({}) then {};
-
-    case (((e,coeff) :: rest))
-      equation
-        (coeff2,rest_1) = simplifyAddJoinTermsFind(e, rest);
-        res = simplifyAddJoinTerms(rest_1);
-        coeff3 = coeff + coeff2;
-      then
-        ((e,coeff3) :: res);
-  end match;
+  while not listEmpty(tplExpRealLst) loop
+    (e, coeff) :: tplExpRealLst := tplExpRealLst;
+    (coeff2, tplExpRealLst) := simplifyAddJoinTermsFind(e, tplExpRealLst);
+    coeff := coeff + coeff2;
+    outTplExpRealLst := (e, coeff) :: outTplExpRealLst;
+  end while;
+//outTplExpRealLst := listReverse(outTplExpRealLst);
 end simplifyAddJoinTerms;
 
 protected function simplifyAddJoinTermsFind
@@ -2834,39 +2861,36 @@ protected function simplifyAddMakeMul
   Makes multiplications of each element
   in the list, except for coefficient 1.0"
   input list<tuple<DAE.Exp, Real>> inTplExpRealLst;
-  output list<DAE.Exp> outExpLst;
+  output list<DAE.Exp> outExpLst = {};
+protected
+  tuple<DAE.Exp, Real> tplExpReal;
 algorithm
-  outExpLst := matchcontinue (inTplExpRealLst)
+  for tplExpReal in inTplExpRealLst loop
+
+    outExpLst := matchcontinue (tplExpReal)
     local
-      list<DAE.Exp> res;
       DAE.Exp e;
       Real r;
-      list<tuple<DAE.Exp, Real>> xs;
       Integer tmpInt;
 
-    case ({}) then {};
-
-    case (((e,r) :: xs))
-      equation
-        (r == 1.0) = true;
-        res = simplifyAddMakeMul(xs);
+    case (e,r)
+      guard (r == 1.0)
       then
-        (e :: res);
+        (e :: outExpLst);
 
-    case (((e,r) :: xs))
+    case (e,r)
       equation
         DAE.T_INTEGER() = Expression.typeof(e);
-        res = simplifyAddMakeMul(xs);
         tmpInt = realInt(r);
       then
-        (DAE.BINARY(DAE.ICONST(tmpInt),DAE.MUL(DAE.T_INTEGER_DEFAULT),e) :: res);
+        (DAE.BINARY(DAE.ICONST(tmpInt),DAE.MUL(DAE.T_INTEGER_DEFAULT),e) :: outExpLst);
 
-    case (((e,r) :: xs))
-      equation
-        res = simplifyAddMakeMul(xs);
+    case (e,r)
       then
-        (DAE.BINARY(DAE.RCONST(r),DAE.MUL(DAE.T_REAL_DEFAULT),e) :: res);
-  end matchcontinue;
+        (DAE.BINARY(DAE.RCONST(r),DAE.MUL(DAE.T_REAL_DEFAULT),e) :: outExpLst);
+    end matchcontinue;
+
+  end for;
 end simplifyAddMakeMul;
 
 protected function simplifyBinaryAddCoeff2
@@ -2924,7 +2948,7 @@ protected function simplifyBinaryMulCoeff2
   input DAE.Exp inExp;
   output tuple<DAE.Exp, Real> outRes;
 algorithm
-  outRes := matchcontinue (inExp)
+  outRes := match (inExp)
     local
       DAE.Exp e,e1,e2;
       ComponentRef cr;
@@ -2957,14 +2981,13 @@ algorithm
         ((e1,coeff_1));
 
     case (DAE.BINARY(exp1 = e1,operator = DAE.MUL(),exp2 = e2))
-      equation
-        true = Expression.expEqual(e1, e2);
+      guard Expression.expEqual(e1, e2)
       then
         ((e1,2.0));
 
     else ((inExp,1.0));
 
-  end matchcontinue;
+  end match;
 end simplifyBinaryMulCoeff2;
 
 public function simplifySumOperatorExpression
@@ -5102,10 +5125,16 @@ algorithm
   //e_lst_1 := List.map(e_lst,simplify2); // simplify2 for recursive
   (const_es1, notconst_es1) :=
     List.splitOnTrue(e_lst, Expression.isConst);
-  const_es1_1 := simplifyBinaryMulConstants(const_es1);
-  (res1,_) := simplify1(Expression.makeProductLst(const_es1_1)); // simplify1 for basic constant evaluation.
-  res2 := Expression.makeProductLst(notconst_es1); // Cannot simplify this, if const_es1_1 empty => infinite recursion.
-  outExp := Expression.makeProductLst({res1,res2});
+
+  if not listEmpty(const_es1) then
+    res1 := simplifyBinaryMulConstants(const_es1);
+    (res1,_) := simplify1(res1); // simplify1 for basic constant evaluation.
+    res2 := Expression.makeProductLst(notconst_es1); // Cannot simplify this, if const_es1_1 empty => infinite recursion.
+    outExp := Expression.expMul(res1,res2);
+  else
+    outExp := inExp;
+  end if;
+
 end simplifyBinarySortConstantsMul;
 
 protected function simplifyBuiltinConstantDer
