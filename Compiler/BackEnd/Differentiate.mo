@@ -738,183 +738,238 @@ algorithm
   end match;
 end differentiateExp;
 
-protected function differentiateStatements
-  input list<DAE.Statement> inStmts;
-  input DAE.ComponentRef inDiffwrtCref;
-  input BackendDAE.DifferentiateInputData inInputData;
-  input BackendDAE.DifferentiationType inDiffType;
-  input list<DAE.Statement> inStmtsAccum;
-  input DAE.FunctionTree inFunctionTree;
-  input Integer maxIter;
-  input list<DAE.Exp> expStack;
-  output list<DAE.Statement> outDiffedStmts;
-  output DAE.FunctionTree outFunctionTree;
+  protected function differentiateStatements
+    input list<DAE.Statement> inStmts;
+    input DAE.ComponentRef inDiffwrtCref;
+    input BackendDAE.DifferentiateInputData inInputData;
+    input BackendDAE.DifferentiationType inDiffType;
+    input list<DAE.Statement> inStmtsAccum;
+    input DAE.FunctionTree inFunctionTree;
+    input Integer maxIter;
+    input list<DAE.Exp> expStack;
+    output list<DAE.Statement> outDiffedStmts;
+    output DAE.FunctionTree outFunctionTree;
+  algorithm
+    (outDiffedStmts, outFunctionTree) := matchcontinue inStmts
+      local
+        DAE.ComponentRef cref;
+        DAE.ElementSource source;
+        DAE.Exp lhs, rhs, derivedLHS, derivedRHS;
+        DAE.FunctionTree functions;
+        DAE.Statement currStatement, stmt, dstmt;
+        DAE.Type type_;
+        BackendDAE.DifferentiateInputData inputData;
+        BackendDAE.Var controlVar;
+        Boolean iterIsArray,initialCall;
+        DAE.Ident ident;
+        DAE.Exp exp;
+        DAE.Exp elseif_exp;
+        DAE.Else elseif_else_;
+        list<DAE.Exp> expLst, dexpLst, expLstRHS;
+        Integer index;
+        list<tuple<DAE.Exp, DAE.Exp>> exptl;
+        list<DAE.Statement> statementLst, restStatements, derivedStatements1, derivedStatements2, else_statementLst, elseif_statementLst;
+        String s1,s2;
+        list<Option<DAE.Statement>> optDerivedStatements1;
+
+      case {} then (listReverse(inStmtsAccum), inFunctionTree);
+
+      // skip discrete statements
+      case currStatement::restStatements guard( isDiscreteAssignStatment(currStatement) )
+        equation
+          derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case (currStatement as DAE.STMT_ASSIGN(type_=type_, exp1=lhs, exp=rhs, source=source))::restStatements
+        equation
+          (derivedLHS, functions) = differentiateExp(lhs, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
+          (derivedRHS, functions) = differentiateExp(rhs, inDiffwrtCref, inInputData, inDiffType, functions, maxIter, expStack);
+          (derivedRHS,_) = ExpressionSimplify.simplify(derivedRHS);
+          derivedStatements1 = {DAE.STMT_ASSIGN(type_, derivedLHS, derivedRHS, source), currStatement};
+          derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case (currStatement as DAE.STMT_TUPLE_ASSIGN(expExpLst= expLst, exp=rhs, source=source))::restStatements
+        equation
+          (dexpLst,functions) = List.map3Fold(expLst, function differentiateExp(maxIter=maxIter, inExpStack=expStack), inDiffwrtCref, inInputData, inDiffType, inFunctionTree);
+          (derivedRHS as DAE.TUPLE(expLstRHS), functions) = differentiateExp(rhs, inDiffwrtCref, inInputData, inDiffType, functions, maxIter, expStack);
+          (DAE.TUPLE(expLstRHS),_) = ExpressionSimplify.simplify(derivedRHS);
+          exptl = List.threadTuple(dexpLst, expLstRHS);
+          optDerivedStatements1 = List.map2(exptl, makeAssignmentfromTuple, source, inFunctionTree);
+          derivedStatements1 = List.flatten(List.map(optDerivedStatements1, List.fromOption));
+          derivedStatements1 = listAppend(derivedStatements1, {currStatement});
+          derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case (currStatement as DAE.STMT_ASSIGN_ARR(lhs=lhs, exp=rhs, type_=type_, source=source))::restStatements
+        equation
+          (derivedLHS, functions) = differentiateExp(lhs, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
+          (derivedRHS, functions) = differentiateExp(rhs, inDiffwrtCref, inInputData, inDiffType, functions, maxIter, expStack);
+          (derivedRHS,_) = ExpressionSimplify.simplify(derivedRHS);
+          derivedStatements1 = {DAE.STMT_ASSIGN_ARR(type_, derivedLHS, derivedRHS, source), currStatement};
+          derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case DAE.STMT_FOR(type_=type_, iterIsArray=iterIsArray, iter=ident, index=index, range=exp, statementLst=statementLst, source=source)::restStatements
+        equation
+          cref = ComponentReference.makeCrefIdent(ident, DAE.T_INTEGER_DEFAULT, {});
+          controlVar = BackendDAE.VAR(cref, BackendDAE.DISCRETE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+          inputData = addAllVars({controlVar}, inInputData);
+          (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
+
+          derivedStatements1 = {DAE.STMT_FOR(type_, iterIsArray, ident, index, exp, derivedStatements1, source)};
+
+          derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case DAE.STMT_IF(exp=exp, statementLst=statementLst, else_=DAE.NOELSE(), source=source)::restStatements
+        equation
+          (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
+          derivedStatements1 = {DAE.STMT_IF(exp, derivedStatements1, DAE.NOELSE(), source)};
+          derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case DAE.STMT_IF(exp=exp, statementLst=statementLst, else_=DAE.ELSEIF(exp=elseif_exp, statementLst=elseif_statementLst, else_=elseif_else_), source=source)::restStatements
+        equation
+          (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
+          (derivedStatements2, functions) = differentiateStatements({DAE.STMT_IF(elseif_exp, elseif_statementLst, elseif_else_, source)}, inDiffwrtCref, inInputData, inDiffType, {}, functions, maxIter, expStack);
+          derivedStatements1 = {DAE.STMT_IF(exp, derivedStatements1, DAE.ELSE(derivedStatements2), source)};
+          derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case DAE.STMT_IF(exp=exp, statementLst=statementLst, else_=DAE.ELSE(statementLst=else_statementLst), source=source)::restStatements
+        equation
+          (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
+          (derivedStatements2, functions) = differentiateStatements(else_statementLst, inDiffwrtCref, inInputData, inDiffType, {}, functions, maxIter, expStack);
+          derivedStatements1 = {DAE.STMT_IF(exp, derivedStatements1, DAE.ELSE(derivedStatements2), source)};
+          derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case DAE.STMT_WHILE(exp=exp, statementLst=statementLst, source=source)::restStatements
+        equation
+          (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
+          derivedStatements1 = {DAE.STMT_WHILE(exp, derivedStatements1, source)};
+          derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case DAE.STMT_WHEN(exp=exp, initialCall=initialCall, statementLst=statementLst, elseWhen= NONE(), source=source)::restStatements
+        equation
+          (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
+          derivedStatements1 = {DAE.STMT_WHEN(exp, {}, initialCall, derivedStatements1, NONE(), source)};
+          derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case DAE.STMT_WHEN(exp=exp, initialCall=initialCall, statementLst=statementLst, elseWhen= SOME(stmt), source=source)::restStatements
+        equation
+          (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
+          ({dstmt}, functions) = differentiateStatements({stmt}, inDiffwrtCref, inInputData, inDiffType, {}, functions, maxIter, expStack);
+          derivedStatements1 = {DAE.STMT_WHEN(exp, {}, initialCall, derivedStatements1, SOME(dstmt), source)};
+          derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case (DAE.STMT_ASSERT())::restStatements
+        equation
+          (derivedStatements1, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, inStmtsAccum, inFunctionTree, maxIter, expStack);
+        then (derivedStatements1, functions);
+
+      case (currStatement as DAE.STMT_TERMINATE())::restStatements
+        equation
+          derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
+          (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
+        then (derivedStatements2, functions);
+
+      case (currStatement as DAE.STMT_REINIT())::restStatements
+        equation
+          derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
+          (derivedStatements1, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
+        then (derivedStatements1, functions);
+
+      case (currStatement as DAE.STMT_NORETCALL())::restStatements
+        equation
+          derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
+          (derivedStatements1, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
+        then (derivedStatements1, functions);
+
+      case (currStatement as DAE.STMT_RETURN())::restStatements
+        equation
+          derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
+          (derivedStatements1, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
+        then (derivedStatements1, functions);
+
+      case (currStatement as DAE.STMT_BREAK())::restStatements
+        equation
+          derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
+          (derivedStatements1, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
+        then (derivedStatements1, functions);
+
+      else
+        equation
+          if Flags.isSet(Flags.FAILTRACE) then
+            (currStatement::_) = inStmts;
+            s1 = DAEDump.ppStatementStr(currStatement);
+            s2 = ComponentReference.printComponentRefStr(inDiffwrtCref);
+            Debug.trace("- differentiateStatements " + s1 + " w.r.t: " + s2 + " failed\n");
+          end if;
+        then fail();
+    end matchcontinue;
+  end differentiateStatements;
+
+protected function isDiscreteAssignStatment
+  input DAE.Statement inStmt;
+  output Boolean out;
 algorithm
-  (outDiffedStmts, outFunctionTree) := match inStmts
-    local
-      DAE.ComponentRef cref;
-      DAE.ElementSource source;
-      DAE.Exp lhs, rhs, derivedLHS, derivedRHS;
-      DAE.FunctionTree functions;
-      DAE.Statement currStatement, stmt, dstmt;
-      DAE.Type type_;
-      BackendDAE.DifferentiateInputData inputData;
-      BackendDAE.Var controlVar;
-      Boolean iterIsArray,initialCall;
-      DAE.Ident ident;
-      DAE.Exp exp;
-      DAE.Exp elseif_exp;
-      DAE.Else elseif_else_;
-      list<DAE.Exp> expLst, dexpLst, expLstRHS;
-      Integer index;
-      list<tuple<DAE.Exp, DAE.Exp>> exptl;
-      list<DAE.Statement> statementLst, restStatements, derivedStatements1, derivedStatements2, else_statementLst, elseif_statementLst;
-      String s1,s2;
-
-    case {} then (listReverse(inStmtsAccum), inFunctionTree);
-
-    case (currStatement as DAE.STMT_ASSIGN(type_=type_, exp1=lhs, exp=rhs, source=source))::restStatements
-      equation
-        (derivedLHS, functions) = differentiateExp(lhs, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
-        (derivedRHS, functions) = differentiateExp(rhs, inDiffwrtCref, inInputData, inDiffType, functions, maxIter, expStack);
-        (derivedRHS,_) = ExpressionSimplify.simplify(derivedRHS);
-        derivedStatements1 = {DAE.STMT_ASSIGN(type_, derivedLHS, derivedRHS, source), currStatement};
-        derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
-        (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case (currStatement as DAE.STMT_TUPLE_ASSIGN(expExpLst= expLst, exp=rhs,  source=source))::restStatements
-      equation
-        (dexpLst,functions) = List.map3Fold(expLst, function differentiateExp(maxIter=maxIter, inExpStack=expStack), inDiffwrtCref, inInputData, inDiffType, inFunctionTree);
-        (derivedRHS as DAE.TUPLE(expLstRHS), functions) = differentiateExp(rhs, inDiffwrtCref, inInputData, inDiffType, functions, maxIter, expStack);
-        (DAE.TUPLE(expLstRHS),_) = ExpressionSimplify.simplify(derivedRHS);
-        exptl = List.threadTuple(dexpLst, expLstRHS);
-        derivedStatements1 = List.map1(exptl, Algorithm.makeSimpleAssignment, source);
-        derivedStatements1 = listAppend(derivedStatements1, {currStatement});
-        derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
-        (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case (currStatement as DAE.STMT_ASSIGN_ARR(lhs=lhs, exp=rhs, type_=type_, source=source))::restStatements
-      equation
-        (derivedLHS, functions) = differentiateExp(lhs, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
-        (derivedRHS, functions) = differentiateExp(rhs, inDiffwrtCref, inInputData, inDiffType, functions, maxIter, expStack);
-        (derivedRHS,_) = ExpressionSimplify.simplify(derivedRHS);
-        derivedStatements1 = {DAE.STMT_ASSIGN_ARR(type_, derivedLHS, derivedRHS, source), currStatement};
-        derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
-        (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case DAE.STMT_FOR(type_=type_, iterIsArray=iterIsArray, iter=ident, index=index, range=exp, statementLst=statementLst, source=source)::restStatements
-      equation
-        cref = ComponentReference.makeCrefIdent(ident, DAE.T_INTEGER_DEFAULT, {});
-        controlVar = BackendDAE.VAR(cref, BackendDAE.DISCRETE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
-        inputData = addAllVars({controlVar}, inInputData);
-        (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
-
-        derivedStatements1 = {DAE.STMT_FOR(type_, iterIsArray, ident, index, exp, derivedStatements1, source)};
-
-        derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
-        (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case DAE.STMT_IF(exp=exp, statementLst=statementLst, else_=DAE.NOELSE(), source=source)::restStatements
-    equation
-      (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
-      derivedStatements1 = {DAE.STMT_IF(exp, derivedStatements1, DAE.NOELSE(), source)};
-      derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
-      (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case DAE.STMT_IF(exp=exp, statementLst=statementLst, else_=DAE.ELSEIF(exp=elseif_exp, statementLst=elseif_statementLst, else_=elseif_else_), source=source)::restStatements
-    equation
-      (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
-      (derivedStatements2, functions) = differentiateStatements({DAE.STMT_IF(elseif_exp, elseif_statementLst, elseif_else_, source)}, inDiffwrtCref, inInputData, inDiffType, {}, functions, maxIter, expStack);
-      derivedStatements1 = {DAE.STMT_IF(exp, derivedStatements1, DAE.ELSE(derivedStatements2), source)};
-      derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
-      (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case DAE.STMT_IF(exp=exp, statementLst=statementLst, else_=DAE.ELSE(statementLst=else_statementLst), source=source)::restStatements
-    equation
-      (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
-      (derivedStatements2, functions) = differentiateStatements(else_statementLst, inDiffwrtCref, inInputData, inDiffType, {}, functions, maxIter, expStack);
-      derivedStatements1 = {DAE.STMT_IF(exp, derivedStatements1, DAE.ELSE(derivedStatements2), source)};
-      derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
-      (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case DAE.STMT_WHILE(exp=exp, statementLst=statementLst, source=source)::restStatements
-    equation
-      (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
-      derivedStatements1 = {DAE.STMT_WHILE(exp, derivedStatements1, source)};
-      derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
-      (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case DAE.STMT_WHEN(exp=exp, initialCall=initialCall, statementLst=statementLst, elseWhen= NONE(), source=source)::restStatements
-    equation
-      (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
-      derivedStatements1 = {DAE.STMT_WHEN(exp, {}, initialCall, derivedStatements1, NONE(), source)};
-      derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
-      (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case DAE.STMT_WHEN(exp=exp, initialCall=initialCall, statementLst=statementLst, elseWhen= SOME(stmt), source=source)::restStatements
-    equation
-      (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inInputData, inDiffType, {}, inFunctionTree, maxIter, expStack);
-      ({dstmt}, functions) = differentiateStatements({stmt}, inDiffwrtCref, inInputData, inDiffType, {}, functions, maxIter, expStack);
-      derivedStatements1 = {DAE.STMT_WHEN(exp, {}, initialCall, derivedStatements1, SOME(dstmt), source)};
-      derivedStatements1 = listAppend(derivedStatements1, inStmtsAccum);
-      (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, functions, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case (DAE.STMT_ASSERT())::restStatements
-    equation
-      (derivedStatements1, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, inStmtsAccum, inFunctionTree, maxIter, expStack);
-    then (derivedStatements1, functions);
-
-    case (currStatement as DAE.STMT_TERMINATE())::restStatements
-    equation
-      derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
-      (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
-    then (derivedStatements2, functions);
-
-    case (currStatement as DAE.STMT_REINIT())::restStatements
-    equation
-      derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
-      (derivedStatements1, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
-    then (derivedStatements1, functions);
-
-    case (currStatement as DAE.STMT_NORETCALL())::restStatements
-    equation
-      derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
-      (derivedStatements1, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
-    then (derivedStatements1, functions);
-
-    case (currStatement as DAE.STMT_RETURN())::restStatements
-    equation
-      derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
-      (derivedStatements1, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
-    then (derivedStatements1, functions);
-
-    case (currStatement as DAE.STMT_BREAK())::restStatements
-    equation
-      derivedStatements1 = listAppend({currStatement}, inStmtsAccum);
-      (derivedStatements1, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements1, inFunctionTree, maxIter, expStack);
-    then (derivedStatements1, functions);
-
-    else equation
-      if Flags.isSet(Flags.FAILTRACE) then
-        (currStatement::_) = inStmts;
-        s1 = DAEDump.ppStatementStr(currStatement);
-        s2 = ComponentReference.printComponentRefStr(inDiffwrtCref);
-        Debug.trace("- differentiateStatements " + s1 + " w.r.t: " + s2 + " failed\n");
-      end if;
-    then fail();
+  out := match (inStmt)
+   local
+     DAE.Type tp;
+    case DAE.STMT_ASSIGN(type_= tp)
+    then Types.isDiscreteType(tp);
+    case DAE.STMT_ASSIGN_ARR(type_= tp)
+    then Types.isDiscreteType(tp);
+    case DAE.STMT_TUPLE_ASSIGN(type_= tp)
+    then Types.isDiscreteType(tp);
+    else false;
   end match;
-end differentiateStatements;
+end isDiscreteAssignStatment;
 
+
+protected function makeAssignmentfromTuple
+"Help function for differentiateStatements"
+  input tuple<DAE.Exp, DAE.Exp> inTpl;
+  input DAE.ElementSource source;
+  input DAE.FunctionTree inFunctionTree;
+  output Option<DAE.Statement> outStmt;
+algorithm
+  outStmt := match(inTpl)
+    local
+      DAE.Exp e1, e2;
+      DAE.Type tp;
+
+      case ((e1 as DAE.CREF(ty=tp), e2))
+        then SOME(DAE.STMT_ASSIGN(tp, e1, e2, source));
+
+      case ((e1 as DAE.CALL(), e2)) guard( Expression.isRecordCall(e1, inFunctionTree))
+        equation
+          tp = Expression.typeof(e1);
+        then SOME(DAE.STMT_ASSIGN(tp, e1, e2, source));
+
+      case ((e1, e2)) guard(Expression.isZero(e1))
+        equation
+          tp = Expression.typeof(e2);
+        then NONE();
+
+  end match;
+end makeAssignmentfromTuple;
 
 // =============================================================================
 // help functions for differentiation
@@ -1059,7 +1114,6 @@ algorithm
         //print("\nExp-Cref\n discrete variables = 0");
       then
         (zero, inFunctionTree);
-
     //
     // This part contains special rules for DIFFERENTIATION_TIME()
     //
@@ -1225,6 +1279,17 @@ algorithm
         fail();
     end matchcontinue;
 end differentiateCrefs;
+
+public function createDiffedCrefName
+  input DAE.ComponentRef inCref;
+  input String inMatrixName;
+  output DAE.ComponentRef outCref;
+protected
+ String str;
+algorithm
+	outCref := ComponentReference.prependStringCref(BackendDAE.functionDerivativeNamePrefix, inCref);
+  outCref := ComponentReference.prependStringCref(inMatrixName, outCref);
+end createDiffedCrefName;
 
 public function createDifferentiatedCrefName
   input DAE.ComponentRef inCref;
@@ -1970,7 +2035,7 @@ algorithm
 
       BackendDAE.DifferentiateInputData inputData, diffFuncData;
 
-      DAE.Exp e, zero;
+      DAE.Exp e, de, zero;
       list<DAE.Exp> expl,expl1,dexpl;
       BackendDAE.Variables timevars;
       Absyn.Path path,dpath;
@@ -1986,12 +2051,7 @@ algorithm
       String typstring, dastring, funstring, str;
       list<String> typlststring;
       DAE.TailCall tc;
-
-      list<DAE.Element> funcbody, funcbodyDer;
-      list<DAE.Element> inputVars, inputVarsNoDer, inputVarsDer;
-      list<DAE.Element> outputVars, outputVarsNoDer, outputVarsDer;
-      list<DAE.Element> protectedVars, protectedVarsNoDer, protectedVarsDer, newProtectedVars;
-      list<DAE.Statement> bodyStmts, derbodyStmts;
+      DAE.CallAttributes attr;
 
       DAE.FunctionDefinition derfuncdef;
       DAE.Function func,dfunc;
@@ -2020,7 +2080,7 @@ algorithm
         //print("Search for function mapper2\n");
         (mapper, tp) = getFunctionMapper(path, inFunctionTree);
         (dpath, blst) = differentiateFunction1(path, mapper, tp, expl, (inDiffwrtCref, inInputData, inDiffType, inFunctionTree));
-        SOME(DAE.FUNCTION(type_=dtp)) = DAEUtil.avlTreeGet(inFunctionTree, dpath);
+        SOME(DAE.FUNCTION(type_ = dtp)) = DAEUtil.avlTreeGet(inFunctionTree, dpath);
         // check if derivativ function has all expected inputs
         (false, tlst) = checkDerivativeFunctionInputs(blst, tp, dtp);
         // add Warning
@@ -2035,31 +2095,45 @@ algorithm
     // try to inline
     case (DAE.CALL(attr=DAE.CALL_ATTR(builtin=false)), _, _, _, _)
       equation
-        failure(BackendDAE.DIFF_FULL_JACOBIAN() = inDiffType);
         (e,_,true) = Inline.forceInlineExp(inExp,(SOME(inFunctionTree),{DAE.NORM_INLINE(),DAE.NO_INLINE()}),DAE.emptyElementSource);
         e = Expression.addNoEventToRelations(e);
         (e, functions) = differentiateExp(e, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
       then
         (e, functions);
 
+    // differentiate record call
+    case (e as DAE.CALL(path=path, expLst=expl, attr=attr), _, _, _, _) guard( Expression.isRecordCall(e, inFunctionTree))
+      equation
+        (dexpl, functions) = List.map3Fold(expl, function differentiateExp(maxIter=maxIter, inExpStack=expStack), inDiffwrtCref, inInputData, inDiffType, inFunctionTree);
+    then (DAE.CALL(path, dexpl, attr), functions);
+
     //differentiate function partial
-    case (e as DAE.CALL(), _, _, _, _)
+    case (e, _, _, _, _)
       equation
         // Debug dump
         if Flags.isSet(Flags.DEBUG_DIFFERENTIATION) then
           BackendDump.debugStrExpStr("### Differentiate call\n ", e, " w.r.t. " + ComponentReference.crefStr(inDiffwrtCref) + "\n");
         end if;
-        (e, functions) = differentiateFunctionCallPartial(e, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
-        (e,_,_,_) = Inline.inlineExp(e,(SOME(functions),{DAE.NORM_INLINE(),DAE.NO_INLINE()}),DAE.emptyElementSource);
+        (de, functions) = differentiateFunctionCallPartial(e, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
+        (e,_,b) = Inline.forceInlineExp(de,(SOME(functions),{DAE.NORM_INLINE(),DAE.NO_INLINE()}),DAE.emptyElementSource);
+        if b then
+          de = e;
+        end if;
         // Debug dump
         if Flags.isSet(Flags.DEBUG_DIFFERENTIATION) then
-          BackendDump.debugStrExpStr("### result output -> ", e, " w.r.t. " + ComponentReference.crefStr(inDiffwrtCref) + "\n");
+          BackendDump.debugStrExpStr("### result output :\n", de, " w.r.t. " + ComponentReference.crefStr(inDiffwrtCref) + "\n");
         end if;
       then
-        (e, functions);
+        (de, functions);
 
     case (_, _, _, _, _)
       equation
+        /* TODO: Check replace this rule by other, since it's not correct
+                 in case of
+                 - failure(BackendDAE.DIFFERENTIATION_FUNCTION() = inDiffType);
+                 - failure(BackendDAE.GENERIC_GRADIENT() = inDiffType);
+                 but anyway fornow it catches some testsuite cases.
+        */
         false = Expression.expContains(inExp, Expression.crefExp(inDiffwrtCref))
         "If the expression does not contain the variable,
          the derivative is zero. For efficiency reasons this rule
@@ -2105,7 +2179,7 @@ algorithm
       Absyn.Path path,dpath;
       Boolean b,c,isImpure;
       DAE.InlineType dinl;
-      DAE.Type ty;
+      DAE.Type ty, dtp;
       DAE.FunctionTree functions;
       DAE.FunctionDefinition mapper;
       DAE.Type tp, dtp;
@@ -2188,6 +2262,7 @@ algorithm
         (dfunc, functions, blst) = differentiatePartialFunction(func, inDiffwrtCref, NONE(), inInputData, inDiffType, inFunctionTree, maxIter, expStack);
 
         dpath = DAEUtil.functionName(dfunc);
+        DAE.T_FUNCTION(funcResultType = dtp) = DAEUtil.getFunctionType(dfunc);
 
         // debug
         if Flags.isSet(Flags.DEBUG_DIFFERENTIATION_VERBOSE) then
@@ -2207,7 +2282,7 @@ algorithm
           print(stringDelimitList(List.map(expl, ExpressionDump.printExpStr), ", ") + "\n");
           print("### and argument types: \n");
           print(stringDelimitList(List.map(List.map(expl, Expression.typeof), Types.printTypeStr), " | ") + "\n");
-          print("### and output type: "  + Types.printTypeStr(ty) + "\n");
+          print("### and output type: \n"  + Types.printTypeStr(dtp) + "\n");
         end if;
 
         // create differentiated call arguments
@@ -2219,17 +2294,20 @@ algorithm
 
         if Flags.isSet(Flags.DEBUG_DIFFERENTIATION) then
           print("### differentiated argument list:\n");
-          print("Diffed ExpList: \n");
+          print("### Diffed ExpList: \n");
           print(stringDelimitList(List.map(dexpl, ExpressionDump.printExpStr), ", ") + "\n");
+          print("### Diffed ExpList extended: \n");
+          print(stringDelimitList(List.map(dexplZero, ExpressionDump.printExpStr), ", ") + "\n");
         end if;
-/*
-        if Flags.isSet(Flags.DEBUG_DIFFERENTIATION_VERBOSE) then
-          funstring = Tpl.tplString(DAEDumpTpl.dumpFunctions, DAEUtil.getFunctionList(functions));
-          print("### FunctionTree: \n" + funstring + "\n\n");
-        end if;
-*/
-        e = DAE.CALL(dpath,dexpl,DAE.CALL_ATTR(ty,b,false,isImpure,false,DAE.NO_INLINE(),tc));
+
+        e = DAE.CALL(dpath,dexpl,DAE.CALL_ATTR(dtp,b,false,isImpure,false,DAE.NO_INLINE(),tc));
         exp = createPartialArguments(ty, dexpl, dexplZero, expl, e);
+        if Flags.isSet(Flags.DEBUG_DIFFERENTIATION) then
+          print("### differentiated Call :\n");
+          print(ExpressionDump.printExpStr(e) + "\n");
+          print("### -> result exp: \n");
+          print(ExpressionDump.printExpStr(exp) + "\n");
+        end if;
       then
         (exp, functions);
 
@@ -2250,21 +2328,27 @@ protected function createPartialArguments
   input DAE.Exp inCall;
   output DAE.Exp outExp;
 algorithm
-  outExp := match(outputType, inArgs, inDiffedArgs, inOrginalExpl, inCall)
+  outExp := match(outputType, inCall)
     local
       Absyn.Path path;
       DAE.CallAttributes attr;
-      list<list<DAE.Exp>> rest;
-      list<DAE.Exp> expLst, restDiff;
+      list<DAE.Exp> expLst;
       DAE.Exp ezero, e;
       DAE.Dimensions dims;
       list<DAE.Type> tys;
 
-    case (DAE.T_TUPLE(types = tys), _, _, _, _) equation
+    case (DAE.T_COMPLEX(complexClassType=ClassInf.RECORD()), DAE.CALL(path=path, attr=attr))
+    then DAE.CALL(path, listAppend(inOrginalExpl,inArgs), attr);
+
+    case (DAE.T_COMPLEX(complexClassType=ClassInf.RECORD()), DAE.TSUB(exp=DAE.CALL(path=path, attr=attr)))
+    then DAE.CALL(path, listAppend(inOrginalExpl,inArgs), attr);
+
+    case (DAE.T_TUPLE(types = tys), _) equation
       expLst = createPartialArgumentsTuple(tys, inArgs, inDiffedArgs, inOrginalExpl, 1, inCall, {});
     then DAE.TUPLE(expLst);
 
-    case (_, _, _, _, _) equation
+    else
+    equation
       dims = Expression.arrayDimension(outputType);
       (ezero,_) = Expression.makeZeroExpression(dims);
       e = createPartialDifferentiatedExp(inArgs, inDiffedArgs, inOrginalExpl, inCall, 1, ezero);
@@ -2318,9 +2402,19 @@ algorithm
       DAE.Dimensions dims;
       Integer i;
       Boolean b;
+      Absyn.Path path;
+      DAE.CallAttributes attr;
 
     case ({}, _, _, _, _, _)
     then inAccum;
+
+    case (de::rest, _, _, DAE.CALL(path=path, attr=attr), i, _) guard(Types.isRecord(Expression.typeof(de)))
+      equation
+      dexpLst = List.set(inDiffExplZero, i, de);
+      expLst = listAppend(inOrginalExpl,dexpLst);
+      e = DAE.CALL(path, expLst, attr);
+      e = createPartialDifferentiatedExp(rest, inDiffExplZero, inOrginalExpl, inCall, i+1, e);
+    then e;
 
     case ((DAE.ARRAY(ty = tp,scalar = b,array = expl))::rest, _, _, _, i, _) equation
       //print("createPartialDifferentiatedExp : i = " + intString(i) + "\n");
@@ -2331,7 +2425,6 @@ algorithm
       arrayArgs = List.map2r(expLst, List.set, inDiffExplZero, i);
       arrayArgs = List.map1r(arrayArgs, listAppend, inOrginalExpl);
       e = createPartialSum(arrayArgs, expl, inCall, inAccum);
-
       e = createPartialDifferentiatedExp(rest, inDiffExplZero, inOrginalExpl, inCall, i+1, e);
     then e;
 
@@ -2339,7 +2432,6 @@ algorithm
       tp = Expression.typeof(de);
       dims = Expression.arrayDimension(tp);
       (eone,_) = Expression.makeOneExpression(dims);
-      //print("createPartialDifferentiatedExp : i = " + intString(currentLstElement) + "\n");
       dexpLst = List.set(inDiffExplZero, i, eone);
       expLst = listAppend(inOrginalExpl,dexpLst);
       e = createPartialSum({expLst}, {de}, inCall, inAccum);
@@ -2362,7 +2454,7 @@ algorithm
       DAE.CallAttributes attr;
       list<list<DAE.Exp>> rest;
       list<DAE.Exp> expLst, restDiff;
-      DAE.Exp de, res;
+      DAE.Exp de, res, zero;
       DAE.Type ty;
       Integer ix;
 
@@ -2371,13 +2463,17 @@ algorithm
 
     case (expLst::rest, de::restDiff, DAE.TSUB(exp=DAE.CALL(path=path, attr=attr), ix =ix, ty=ty), _) equation
       res = DAE.TSUB(DAE.CALL(path, expLst, attr), ix, ty);
-      res = Expression.expMul(de, res);
+      ty = Expression.typeof(de);
+      (zero,_) = Expression.makeZeroExpression(Expression.arrayDimension(ty));
+      res = DAE.IFEXP(DAE.RELATION(de, DAE.NEQUAL(ty), zero, -1, NONE()), Expression.expMul(de, res), zero);
       res = Expression.expAdd(inAccum, res);
     then createPartialSum(rest, restDiff, inCall, res);
 
     case (expLst::rest, de::restDiff, DAE.CALL(path=path, attr=attr), _) equation
       res = DAE.CALL(path, expLst, attr);
-      res = Expression.expMul(de, res);
+      ty = Expression.typeof(de);
+      (zero,_) = Expression.makeZeroExpression(Expression.arrayDimension(ty));
+      res = DAE.IFEXP(DAE.RELATION(de, DAE.NEQUAL(ty), zero, -1, NONE()), Expression.expMul(de, res), zero);
       res = Expression.expAdd(inAccum, res);
     then createPartialSum(rest, restDiff, inCall, res);
   end match;
@@ -2432,7 +2528,7 @@ algorithm
       Boolean isImpure;
       DAE.InlineType dinl;
       DAE.FunctionTree functions;
-      DAE.Type tp, dtp;
+      DAE.Type tp, dtp, outdtp;
       String  str;
 
       list<DAE.Element> funcbody, funcbodyDer;
@@ -2443,7 +2539,7 @@ algorithm
 
       DAE.Function func,dfunc;
 
-      String funcname;
+      String funcname, funstring;
       DAE.ComponentRef diffwrtCref;
       list<DAE.ComponentRef> diffwrtCrefs;
       list<Boolean> blst;
@@ -2452,8 +2548,10 @@ algorithm
     // differentiate function
     case (func, _, dpathOption, _, _, _) equation
       // debug
-      //funstring = Tpl.tplString(DAEDumpTpl.dumpFunction, func);
-      //print("\n\ndifferentiate differentiateFunctionCallPartial: \n" + funstring + "\n");
+	    if Flags.isSet(Flags.DEBUG_DIFFERENTIATION_VERBOSE) then
+	      funstring = Tpl.tplString(DAEDumpTpl.dumpFunction, func);
+	      print("### Differentiate differentiateFunctionCallPartial: \n" + funstring + "\n\n");
+	    end if;
 
       inputVars = DAEUtil.getFunctionInputVars(func);
       outputVars =  DAEUtil.getFunctionOutputVars(func);
@@ -2477,6 +2575,11 @@ algorithm
       //add protected variables to dependent Vars
       (inputData,_) = addElementVars2Dep(protectedVarsNoDer, functions, inputData);
 
+      if Flags.isSet(Flags.DEBUG_DIFFERENTIATION_VERBOSE) then
+        dumpInputData(inputData);
+      end if;
+
+
       // differentiate algorithm statemeants
       //print("Function diff: statemeants");
       (derbodyStmts, functions) = differentiateStatements(listReverse(bodyStmts), inDiffwrtCref, inputData, BackendDAE.DIFFERENTIATION_FUNCTION(), {}, functions, maxIter, expStack);
@@ -2485,7 +2588,7 @@ algorithm
       dpath = Util.getOptionOrDefault(dpathOption, Absyn.stringPath("$DER" + funcname));
 
       tp = DAEUtil.getFunctionType(func);
-      dtp = Types.extendsFunctionTypeArgs(tp, inputVarsDer, blst);
+      dtp = Types.extendsFunctionTypeArgs(tp, inputVarsDer, outputVarsDer, blst);
 
       inputVars = listAppend(inputVars, inputVarsDer);
       protectedVars = listAppend(protectedVars, protectedVarsDer);
@@ -2544,22 +2647,33 @@ algorithm
     DAE.Exp binding, dbinding;
     list<DAE.Var> varLst;
     list<Boolean> blst;
+    String matrixName;
 
     case ({}, _, _, _, _, _, _, _)
     then (inElementsDer, inFunctionTree, inElementsNoDer, inBooleanLst);
 
-    case ((var as DAE.VAR(componentRef = cref, ty= (DAE.T_COMPLEX(varLst=varLst,complexClassType=ClassInf.RECORD()))))::rest, _, _, _, _, _, _, _) equation
-      _ = Expression.crefExp(cref);
-      //ExpressionDump.printExp(e);
-      crefLst = List.map1(varLst,Expression.generateCrefsFromExpVar,cref);
-      tpLst = List.map(varLst,Types.getVarType);
-      // ComponentReference.printComponentRefList(crefLst);
+    case ((var1 as DAE.VAR(componentRef = cref, ty= (DAE.T_COMPLEX(varLst=varLst,complexClassType=ClassInf.RECORD())),  binding=SOME(binding)))::rest, _, BackendDAE.DIFFINPUTDATA(matrixName=SOME(matrixName)), _, _, _, _, _) equation
+      dcref = createDiffedCrefName(cref, matrixName);
+      var = DAEUtil.replaceCrefInVar(dcref, var1);
+      (dbinding, functions) = differentiateExp(binding, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
+      var = DAEUtil.replaceBindungInVar(dbinding, var);
+      vars = listAppend(inElementsDer, {var});
+      blst = listAppend(inBooleanLst, {true});
+      (vars, functions, elementsNoDer, blst) = differentiateElementVars(rest, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, vars, inElementsNoDer, blst, maxIter, expStack);
+    then (vars, functions, elementsNoDer, blst);
 
-      newVars = List.threadMap1(crefLst, tpLst, DAEUtil.replaceCrefandTypeInVar, var);
+    case ((var1 as DAE.VAR(componentRef = cref, ty= (DAE.T_COMPLEX(varLst=varLst,complexClassType=ClassInf.RECORD()))))::rest, _, BackendDAE.DIFFINPUTDATA(matrixName=SOME(matrixName)), _, _, _, _, _) equation
+      dcref = createDiffedCrefName(cref, matrixName);
+      var = DAEUtil.replaceCrefInVar(dcref, var1);
 
-      elementsNoDer = listAppend(inElementsNoDer, newVars);
-      blst = listAppend(inBooleanLst, {false});
-      (vars, functions, elementsNoDer, blst) = differentiateElementVars(rest, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, inElementsDer, elementsNoDer, blst, maxIter, expStack);
+      //crefLst = List.map1(varLst,Expression.generateCrefsFromExpVar,dcref);
+      //tpLst = List.map(varLst,Types.getVarType);
+      //newVars = List.threadMap1(crefLst, tpLst, DAEUtil.replaceCrefandTypeInVar, var);
+      //elementsNoDer = listAppend(inElementsNoDer, newVars);
+
+      vars = listAppend(inElementsDer, {var});
+      blst = listAppend(inBooleanLst, {true});
+      (vars, functions, elementsNoDer, blst) = differentiateElementVars(rest, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, vars, inElementsNoDer, blst, maxIter, expStack);
     then (vars, functions, elementsNoDer, blst);
 
     case((var as DAE.VAR(binding=SOME(binding)))::rest, _, BackendDAE.DIFFINPUTDATA(independenentVars=SOME(timevars)), _, _, _, _, _) equation
@@ -2633,7 +2747,7 @@ algorithm
       equation
          true = intEq(1,derivativeOrder);
          tplst = List.map(funcArg,Types.funcArgType);
-         ba = Array.mapList(tplst, Types.isRealOrSubTypeReal);
+         ba = Array.mapList(tplst, diffableTypes);
          bl = checkDerFunctionConds(ba,cr,expl,inDiffArgs);
       then
         (inDFuncName,bl);
@@ -2825,6 +2939,18 @@ algorithm
   end matchcontinue;
 end getFunctionMapper1;
 
+protected function diffableTypes
+    input DAE.Type inType;
+  output Boolean out;
+protected
+  Boolean b[2];
+algorithm
+  b[1] := Types.isRealOrSubTypeReal(inType);
+  b[2] := Types.isRecord(inType);
+  out := Util.boolOrList({b[1],b[2]});
+end diffableTypes;
+
+
 //
 // util functions for Types: DifferentiateInputData, DifferentiateInputArguments, DifferentiationType
 //
@@ -2921,6 +3047,47 @@ algorithm
     fail();
   end try;
 end addElementVars2Dep;
+
+
+protected function dumpInputData
+  input BackendDAE.DifferentiateInputData inDiffData;
+protected
+  Option<BackendDAE.Variables> independenentVars;
+  Option<BackendDAE.Variables> dependenentVars;
+  Option<BackendDAE.Variables> knownVars;
+  Option<BackendDAE.Variables> allVars;
+  list<BackendDAE.Var> controlVars;
+  list<.DAE.ComponentRef> diffCrefs;
+  Option<String> matrixName;
+algorithm
+   print("### dumpInputData ###\n");
+   if isSome(inDiffData.matrixName) then
+     print("### for " + Util.getOption(inDiffData.matrixName) +" ###\n");
+   end if;
+   if isSome(inDiffData.independenentVars) then
+     print("independentVars:\n");
+     BackendDump.printVariables(Util.getOption(inDiffData.independenentVars));
+   end if;
+   if isSome(inDiffData.dependenentVars) then
+     print("dependenentVars:\n");
+     BackendDump.printVariables(Util.getOption(inDiffData.dependenentVars));
+   end if;
+   if isSome(inDiffData.knownVars) then
+     print("knownVars:\n");
+     BackendDump.printVariables(Util.getOption(inDiffData.knownVars));
+   end if;
+   if isSome(inDiffData.allVars) then
+     print("allVars:\n");
+     BackendDump.printVariables(Util.getOption(inDiffData.allVars));
+   end if;
+   if not listEmpty(inDiffData.controlVars) then
+     print("controlVars:\n");
+     BackendDump.printVarList(inDiffData.controlVars);
+   end if;
+   if not listEmpty(inDiffData.diffCrefs) then
+     print("diffCrefs:\n" + ComponentReference.printComponentRefListStr(inDiffData.diffCrefs) + "\n");
+   end if;
+end dumpInputData;
 
 annotation(__OpenModelica_Interface="backend");
 end Differentiate;

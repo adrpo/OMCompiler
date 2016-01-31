@@ -687,11 +687,11 @@ public function isIntegerOrRealOrSubTypeOfEither
   input DAE.Type t;
   output Boolean b;
 algorithm
-  b := matchcontinue(t)
-    case _ equation true = isRealOrSubTypeReal(t); then true;
-    case _ equation true = isIntegerOrSubTypeInteger(t); then true;
+  b := match(t)
+    case _ guard isRealOrSubTypeReal(t) then true;
+    case _ guard isIntegerOrSubTypeInteger(t) then true;
     else false;
-  end matchcontinue;
+  end match;
 end isIntegerOrRealOrSubTypeOfEither;
 
 public function isIntegerOrRealOrBooleanOrSubTypeOfEither
@@ -699,12 +699,12 @@ public function isIntegerOrRealOrBooleanOrSubTypeOfEither
   input DAE.Type t;
   output Boolean b;
 algorithm
-  b := matchcontinue(t)
-    case _ equation true = isRealOrSubTypeReal(t); then true;
-    case _ equation true = isIntegerOrSubTypeInteger(t); then true;
-    case _ equation true = isBooleanOrSubTypeBoolean(t); then true;
+  b := match(t)
+    case _ guard isRealOrSubTypeReal(t) then true;
+    case _ guard isIntegerOrSubTypeInteger(t) then true;
+    case _ guard isBooleanOrSubTypeBoolean(t) then true;
     else false;
-  end matchcontinue;
+  end match;
 end isIntegerOrRealOrBooleanOrSubTypeOfEither;
 
 public function isClock
@@ -858,20 +858,12 @@ public function isArrayOrString "Return true if Type is array or the builtin Str
   input DAE.Type inType;
   output Boolean outBoolean;
 algorithm
-  outBoolean := matchcontinue (inType)
+  outBoolean := match (inType)
     local Type ty;
-    case ty
-      equation
-        true = isArray(ty);
-      then
-        true;
-    case ty
-      equation
-        true = isString(ty);
-      then
-        true;
+    case ty guard isArray(ty) then true;
+    case ty guard isString(ty) then true;
     else false;
-  end matchcontinue;
+  end match;
 end isArrayOrString;
 
 public function numberOfDimensions "Return the number of dimensions of a Type."
@@ -2848,6 +2840,7 @@ public function extendsFunctionTypeArgs
   Extends function argument list adding var for element list."
   input DAE.Type inType;
   input list<DAE.Element> inElementLst;
+  input list<DAE.Element> inOutputElementLst;
   input list<Boolean> inBooltLst;
   output DAE.Type outType;
 protected
@@ -2860,8 +2853,64 @@ algorithm
   (fargs1, _) := List.splitOnBoolList(fargs, inBooltLst);
   newfargs := List.threadMap(inElementLst, fargs1, makeElementFarg);
   newfargs := listAppend(fargs, newfargs);
+  rettype := makeElementReturnType(inOutputElementLst);
   outType := DAE.T_FUNCTION(newfargs,rettype,functionAttributes,tysrc);
 end extendsFunctionTypeArgs;
+
+protected function makeElementReturnType "
+  Create a return type from a list of Element output variables.
+  Depending on the length of the output variable list, different
+  kinds of return types are created."
+  input list<DAE.Element> inElementLst;
+  output DAE.Type outType;
+algorithm
+  outType := match(inElementLst)
+    local
+      Type ty;
+      DAE.Element element;
+      list<DAE.Element> elements;
+      list<Type> types;
+      list<String> names;
+      Option<list<String>> namesOpt;
+
+
+    case {} then DAE.T_NORETCALL(DAE.emptyTypeSource);
+
+    case {element}
+      equation
+        ty = makeElementReturnTypeSingle(element);
+      then
+        ty;
+
+    case elements
+      algorithm
+        types := {};
+        names := {};
+        for element in elements loop
+          types := makeElementReturnTypeSingle(element)::types;
+          names := DAEUtil.varName(element)::names;
+        end for;
+      if listEmpty(names) then
+        namesOpt := NONE();
+      else
+        namesOpt := SOME(listReverse(names));
+      end if;
+      then DAE.T_TUPLE(listReverse(types), namesOpt, DAE.emptyTypeSource);
+  end match;
+end makeElementReturnType;
+
+protected function makeElementReturnTypeSingle
+"Create the return type from an Element for a single return value."
+  input DAE.Element inElement;
+  output DAE.Type outType;
+algorithm
+  outType := match (inElement)
+    local
+      Type ty;
+
+    case DAE.VAR(ty = ty) then ty;
+  end match;
+end makeElementReturnTypeSingle;
 
 public function makeEnumerationType
   "Creates an enumeration type from a name and an enumeration type containing
@@ -5243,8 +5292,7 @@ algorithm
     case (_, _)
       equation
         equality(c1 = c2);
-      then
-        true;
+      then true;
     else false;
   end matchcontinue;
 end constEqual;
@@ -7337,7 +7385,7 @@ public function scalarSuperType
   input DAE.Type ity2;
   output DAE.Type ty;
 algorithm
-  ty := matchcontinue (ity1,ity2)
+  ty := match (ity1,ity2)
     local Type ty1, ty2;
     case (DAE.T_INTEGER(),DAE.T_INTEGER()) then DAE.T_INTEGER_DEFAULT;
     case (DAE.T_REAL(),DAE.T_REAL())       then DAE.T_REAL_DEFAULT;
@@ -7349,7 +7397,7 @@ algorithm
     case (DAE.T_BOOL(),DAE.T_BOOL())       then DAE.T_BOOL_DEFAULT;
     // adrpo: TODO? Why not string here?
     // case (DAE.T_STRING(varLst = _),DAE.T_STRING(varLst = _))   then DAE.T_STRING_DEFAULT;
-  end matchcontinue;
+  end match;
 end scalarSuperType;
 
 protected function optInteger

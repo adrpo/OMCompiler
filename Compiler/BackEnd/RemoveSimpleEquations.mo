@@ -257,7 +257,7 @@ protected function fixAliasVarsCausal2
   output BackendDAE.BackendDAE outDAE;
 protected
   DAE.Exp binding;
-  DAE.ComponentRef rightCref;
+  list<DAE.ComponentRef> rightCrefs;
   BackendDAE.EqSystems eqs, eqs1 = {};
   BackendDAE.Shared shared;
   Boolean done=false;
@@ -270,15 +270,14 @@ protected
 algorithm
   try
     binding := BackendVariable.varBindExp(inVar);
-    rightCref::{} := Expression.getAllCrefs(binding);
-    //print("rightCref: " + ComponentReference.printComponentRefStr(rightCref) + "\n");
+    rightCrefs := Expression.getAllCrefs(binding);
     BackendDAE.DAE(eqs, shared) := inDAE;
     var := BackendVariable.setBindExp(inVar, NONE());
     var := BackendVariable.setVarFixed(var, false) "??? should we do this ???";
     eqn := BackendDAE.EQUATION(BackendVariable.varExp(var), binding, DAE.emptyElementSource, BackendDAE.EQ_ATTR_DEFAULT_BINDING);
     for eq in eqs loop
       BackendDAE.EQSYSTEM(orderedVars=orderedVars, orderedEqs=orderedEqs) := eq;
-      if BackendVariable.existsVar(rightCref, orderedVars, false) then
+      if BackendVariable.existsAnyVar(rightCrefs, orderedVars, false) then
         orderedVars := BackendVariable.addVar(var, orderedVars);
         orderedEqs := BackendEquation.addEquation(eqn, orderedEqs);
         eqs1 := BackendDAEUtil.setEqSystEqs(BackendDAEUtil.setEqSystVars(eq, orderedVars), orderedEqs)::eqs1;
@@ -2029,7 +2028,7 @@ protected function circularEqualityMsg_dispatch "author: Frenkel TUD 2013-05, ad
   input list<String> iMsg;
   output list<String> oMsg;
 algorithm
-  oMsg := matchcontinue(stack, iR, simpleeqnsarr, iMsg)
+  oMsg := match(stack, iR, simpleeqnsarr, iMsg)
     local
       Integer r;
       list<Integer> rest;
@@ -2037,23 +2036,16 @@ algorithm
       list<DAE.ComponentRef> names;
       list<String> slst;
     case ({}, _, _, _) then iMsg;
+    case (r::_, _, _, _) guard intEq(r, iR) then iMsg;
     case (r::rest, _, _, _)
       equation
-        false = intEq(r, iR);
         names = getVarsNames(simpleeqnsarr[r]);
         slst = List.map(names, ComponentReference.printComponentRefStr);
         slst = listAppend(slst, {"----------------------------------"});
         slst = listAppend(iMsg, slst);
       then
         circularEqualityMsg_dispatch(rest, iR, simpleeqnsarr, slst);
-
-    case (r::_, _, _, _)
-      equation
-        true = intEq(r, iR);
-      then
-        iMsg;
-
-  end matchcontinue;
+  end match;
 end circularEqualityMsg_dispatch;
 
 protected function getVarsNames "author: Frenkel TUD 2013-05"
@@ -3318,7 +3310,7 @@ protected function selectNonZeroExpression
   input list<tuple<DAE.Exp, DAE.ComponentRef, Integer>> iFavorit;
   output tuple<DAE.Exp, DAE.ComponentRef, Integer> selected;
 algorithm
-  selected := matchcontinue(iFavorit)
+  selected := match(iFavorit)
     local
       DAE.Exp e;
       DAE.ComponentRef cr;
@@ -3327,19 +3319,12 @@ algorithm
 
     case ({(e, cr, i)}) then ((e, cr, i));
 
-    case ((e, cr, i)::_)
-      equation
-        false = Expression.isZero(e);
-      then
-        ((e, cr, i));
+    case ((e, cr, i)::_) guard not Expression.isZero(e) then ((e, cr, i));
 
     case ((e, cr, i)::rest)
-      equation
-        true = Expression.isZero(e);
-        ((e, cr, i)) = selectNonZeroExpression(rest);
       then
-        ((e, cr, i));
-  end matchcontinue;
+        selectNonZeroExpression(rest);
+  end match;
 end selectNonZeroExpression;
 
 protected function selectFreeValue1 "author: Frenkel TUD 2012-12
@@ -4546,25 +4531,12 @@ protected function removeStateDerInfo "BB,
 remove stateDerInfo! This information should be collected after removeSimpleEquations
 "
   input list<BackendDAE.Var> inVarList;
-  output list<BackendDAE.Var> outVarList;
+  output list<BackendDAE.Var> vars = {};
 algorithm
-  outVarList := matchcontinue(inVarList)
-    local
-     BackendDAE.Var var, var1;
-     DAE.ComponentRef cr;
-     list<BackendDAE.Var> varsRest;
-    case ({}) then {};
-    case (var::varsRest) equation
-      var = BackendVariable.setStateDerivative(var, NONE());
-      outVarList = removeStateDerInfo(varsRest);
-    then (var::outVarList);
-    case (var::varsRest) equation
-      outVarList = removeStateDerInfo(varsRest);
-    then (var::outVarList);
-    else equation
-      print("\n++++++++++ Error in RemoveSimpleEquations.removeStateDerInfo ++++++++++\n");
-    then inVarList;
-  end matchcontinue;
+  for var in inVarList loop
+    vars := (if BackendVariable.isStateVar(var) then BackendVariable.setStateDerivative(var, NONE()) else var) :: vars;
+  end for;
+  vars := MetaModelica.Dangerous.listReverseInPlace(vars);
 end removeStateDerInfo;
 
 protected function findSimpleEquations "BB,
@@ -4855,26 +4827,22 @@ add all non-constant alias variables to the hash table HTCrToExp
   input list<tuple<DAE.ComponentRef,list<tuple<DAE.ComponentRef,BackendDAE.Equation>>>> tplCrEqLst;
   input HashTableCrToExp.HashTable inHTCrToExp;
   input HashTableCrToCrEqLst.HashTable inHTCrToCrEqLst;
-  output HashTableCrToExp.HashTable outHTCrToExp;
+  output HashTableCrToExp.HashTable HTCrToExp = inHTCrToExp;
+protected
+  DAE.ComponentRef cr1;
+  list<tuple<DAE.ComponentRef,BackendDAE.Equation>> cr_eq_lst;
 algorithm
-  (outHTCrToExp) := matchcontinue(tplCrEqLst, inHTCrToExp)
-  local
-    DAE.ComponentRef cr1;
-    HashTableCrToExp.HashTable HTCrToExp;
-    list<tuple<DAE.ComponentRef,list<tuple<DAE.ComponentRef,BackendDAE.Equation>>>> tplCrEqRest;
-    list<tuple<DAE.ComponentRef,BackendDAE.Equation>> cr_eq_lst;
-
-    case ({},HTCrToExp) then HTCrToExp;
-    case ((cr1,cr_eq_lst)::tplCrEqRest, HTCrToExp) equation
-      if (not BaseHashTable.hasKey(cr1, HTCrToExp)) then
-        HTCrToExp = addThisCrefs(cr_eq_lst, HTCrToExp, inHTCrToCrEqLst);
+  try
+    for tpl in tplCrEqLst loop
+      (cr1,cr_eq_lst) := tpl;
+      if not BaseHashTable.hasKey(cr1, HTCrToExp) then
+        HTCrToExp := addThisCrefs(cr_eq_lst, HTCrToExp, inHTCrToCrEqLst);
       end if;
-      HTCrToExp = addRestCrefs(tplCrEqRest, HTCrToExp, inHTCrToCrEqLst);
-    then (HTCrToExp);
-    else equation
-      print("\n++++++++++ Error in RemoveSimpleEquations.addRestCrefs ++++++++++\n");
-    then (inHTCrToExp);
-  end matchcontinue;
+    end for;
+  else
+    print("\n++++++++++ Error in RemoveSimpleEquations.addRestCrefs ++++++++++\n");
+    fail();
+  end try;
 end addRestCrefs;
 
 protected function addThisCrefs "BB

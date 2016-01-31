@@ -471,7 +471,10 @@ constant DebugFlag DUMP_DGESV = DEBUG_FLAG(151, "dumpdgesv", false,
   Util.gettext("Enables dumping of the information whether DGESV is used to solve linear systems."));
 constant DebugFlag MULTIRATE_PARTITION = DEBUG_FLAG(152, "multirate", false,
   Util.gettext("The solver can switch partitions in the system."));
-
+constant DebugFlag DUMP_EXCLUDED_EXP = DEBUG_FLAG(153, "dumpExcludedSymJacExps", false,
+  Util.gettext("This flags dumps all expression that are excluded from differentiation of a symbolic Jacobian."));
+constant DebugFlag DEBUG_ALGLOOP_JACOBIAN = DEBUG_FLAG(154, "debugAlgebraicLoopsJacobian", false,
+  Util.gettext("Dumps debug output while creating symbolic jacobians for non-linear systems."));
 
 // This is a list of all debug flags, to keep track of which flags are used. A
 // flag can not be used unless it's in this list, and the list is checked at
@@ -630,7 +633,9 @@ constant list<DebugFlag> allDebugFlags = {
   DEBUG_DIFFERENTIATION_VERBOSE,
   FMU_EXPERIMENTAL,
   DUMP_DGESV,
-  MULTIRATE_PARTITION
+  MULTIRATE_PARTITION,
+  DUMP_EXCLUDED_EXP,
+  DEBUG_ALGLOOP_JACOBIAN
 };
 
 public
@@ -1192,6 +1197,13 @@ constant ConfigFlag INIT_OPT_MODULES_SUB = CONFIG_FLAG(86, "initOptModules-",
 constant ConfigFlag PERMISSIVE = CONFIG_FLAG(87, "permissive",
   NONE(), INTERNAL(), BOOL_FLAG(false), NONE(),
   Util.gettext("Disables some error checks to allow erroneous models to compile."));
+constant ConfigFlag HETS = CONFIG_FLAG(88, "hets",
+  NONE(), INTERNAL(), STRING_FLAG("none"),SOME(
+    STRING_DESC_OPTION({
+    ("none", Util.gettext("do nothing")),
+    ("derCalls", Util.gettext("sort terms based on der-calls"))
+    })),
+  Util.gettext("heuristic euqtion terms sort"));
 
 protected
 // This is a list of all configuration flags. A flag can not be used unless it's
@@ -1284,7 +1296,8 @@ constant list<ConfigFlag> allConfigFlags = {
   POST_OPT_MODULES_SUB,
   INIT_OPT_MODULES_ADD,
   INIT_OPT_MODULES_SUB,
-  PERMISSIVE
+  PERMISSIVE,
+  HETS
 };
 
 public function new
@@ -1379,14 +1392,12 @@ protected function checkDebugFlag
   input Integer inFlagIndex;
   output Integer outNextFlagIndex;
 algorithm
-  outNextFlagIndex := matchcontinue(inDebugFlag, inFlagIndex)
+  outNextFlagIndex := match(inDebugFlag, inFlagIndex)
     local
       Integer index;
       String name, index_str, err_str;
 
-    case (DEBUG_FLAG(index = index), _)
-      equation
-        true = intEq(index, inFlagIndex);
+    case (DEBUG_FLAG(index = index), _) guard intEq(index, inFlagIndex)
       then inFlagIndex + 1;
 
     case (DEBUG_FLAG(index = index, name = name), _)
@@ -1396,7 +1407,7 @@ algorithm
           " in Flags.allDebugFlags. Make sure that all flags are present and ordered correctly.";
         Error.addSourceMessage(Error.INTERNAL_ERROR, {err_str}, sourceInfo());
       then fail();
-  end matchcontinue;
+  end match;
 end checkDebugFlag;
 
 protected function defaultDebugFlag
@@ -2589,7 +2600,7 @@ protected function defaultFlagSphinx
   input FlagData flag;
   output String str;
 algorithm
-  str := matchcontinue flag
+  str := match flag
     local
       Integer i;
     case BOOL_FLAG() then System.gettext("Boolean (default")+" ``" + boolString(flag.data) + "``).";
@@ -2610,7 +2621,7 @@ algorithm
         end for;
       then "#ENUM_FLAG Failed#" + anyString(flag);
     else "Unknown default value" + anyString(flag);
-  end matchcontinue;
+  end match;
 end defaultFlagSphinx;
 
 protected function printFlagOptionDescShort
