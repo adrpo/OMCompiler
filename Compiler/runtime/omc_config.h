@@ -77,7 +77,7 @@
 
 #endif
 
-#endif /* !defined(MSYS2_AUTOCONF) */
+/* #endif !defined(MSYS2_AUTOCONF) */
 
 #define DEFAULT_CC "gcc"
 #define DEFAULT_CXX "g++"
