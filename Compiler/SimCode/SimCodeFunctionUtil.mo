@@ -54,6 +54,7 @@ import GC;
 import Graph;
 import List;
 import Mod;
+import Patternm;
 import SCode;
 
 public
@@ -65,7 +66,7 @@ public function elementVars
 protected
   list<DAE.Element> ld;
 algorithm
-  ld := List.filter(ild, isVarQ);
+  ld := List.filterOnTrue(ild, isVarQ);
   vars := List.map(ld, daeInOutSimVar);
 end elementVars;
 
@@ -697,7 +698,7 @@ algorithm
         outVars = List.map(DAEUtil.getOutputVars(daeElts), daeInOutSimVar);
         funArgs = List.map1(args, typesSimFunctionArg, NONE());
         (recordDecls, rt_1) = elaborateRecordDeclarations(daeElts, recordDecls, rt);
-        vars = List.filter(daeElts, isVarQ);
+        vars = List.filterOnTrue(daeElts, isVarQ);
         varDecls = List.map(vars, daeInOutSimVar);
         bodyStmts = listAppend(elaborateStatement(e) for e guard DAEUtil.isAlgorithm(e) in daeElts);
         info = DAEUtil.getElementSourceFileInfo(source);
@@ -716,7 +717,7 @@ algorithm
         outVars = List.map(DAEUtil.getOutputVars(daeElts), daeInOutSimVar);
         funArgs = List.map1(args, typesSimFunctionArg, NONE());
         (recordDecls, rt_1) = elaborateRecordDeclarations(daeElts, recordDecls, rt);
-        vars = List.filter(daeElts, isVarNotInputNotOutput);
+        vars = List.filterOnTrue(daeElts, isVarNotInputNotOutput);
         varDecls = List.map(vars, daeInOutSimVar);
         bodyStmts = listAppend(elaborateStatement(e) for e guard DAEUtil.isAlgorithm(e) in daeElts);
         info = DAEUtil.getElementSourceFileInfo(source);
@@ -735,7 +736,7 @@ algorithm
         outVars = List.map(DAEUtil.getOutputVars(daeElts), daeInOutSimVar);
         funArgs = List.map1(args, typesSimFunctionArg, NONE());
         (recordDecls, rt_1) = elaborateRecordDeclarations(daeElts, recordDecls, rt);
-        vars = List.filter(daeElts, isVarQ);
+        vars = List.filterOnTrue(daeElts, isVarQ);
         varDecls = List.map(vars, daeInOutSimVar);
         bodyStmts = listAppend(elaborateStatement(e) for e guard DAEUtil.isAlgorithm(e) in daeElts);
         info = DAEUtil.getElementSourceFileInfo(source);
@@ -1147,7 +1148,9 @@ function findLiteralsHelper
 algorithm
   exp := inExp;
   tpl := inTpl;
-  (exp, tpl) := Expression.traverseExpBottomUp(exp, replaceLiteralExp, tpl);
+  (exp, tpl) := Expression.traverseExpBottomUp(exp,
+    function Patternm.traverseConstantPatternsHelper(func=replaceLiteralExp),
+    tpl);
   (exp, tpl) := Expression.traverseExpTopDown(exp, replaceLiteralArrayExp, tpl);
 end findLiteralsHelper;
 
@@ -1469,16 +1472,18 @@ end matchMetarecordCalls;
 protected function isVarQ
 "Succeeds if inElement is a variable or constant that is not input."
   input DAE.Element inElement;
+  output Boolean outB;
 algorithm
-  _ := match (inElement)
+  outB := match (inElement)
     local
       DAE.VarKind vk;
       DAE.VarDirection vd;
     case DAE.VAR(kind=vk, direction=vd)
-      equation
-        isVarVarOrConstant(vk);
-        isDirectionNotInput(vd);
-      then ();
+      guard
+        isVarVarOrConstant(vk) and
+        isDirectionNotInput(vd)
+      then true;
+    else false;
   end match;
 end isVarQ;
 
@@ -1486,43 +1491,51 @@ protected function isVarNotInputNotOutput
 "Succeeds if inElement is a variable or constant that is not input or output.
 needed in kernel functions since they shouldn't have output vars."
   input DAE.Element inElement;
+  output Boolean outB;
 algorithm
-  _ := match (inElement)
+  outB := match (inElement)
     local
       DAE.VarKind vk;
       DAE.VarDirection vd;
     case DAE.VAR(kind=vk, direction=vd)
-      equation
-        isVarVarOrConstant(vk);
-        isDirectionNotInputNotOutput(vd);
-      then ();
+      guard
+        isVarVarOrConstant(vk) and
+        isDirectionNotInputNotOutput(vd)
+      then true;
+    else false;
   end match;
 end isVarNotInputNotOutput;
 
 protected function isVarVarOrConstant
   input DAE.VarKind inVarKind;
+  output Boolean outB;
 algorithm
-  _ := match (inVarKind)
-    case DAE.VARIABLE() then ();
-    case DAE.PARAM() then ();
-    case DAE.CONST() then ();
+  outB := match (inVarKind)
+    case DAE.VARIABLE() then true;
+    case DAE.PARAM() then true;
+    case DAE.CONST() then true;
+    else false;
   end match;
 end isVarVarOrConstant;
 
 protected function isDirectionNotInput
   input DAE.VarDirection inVarDirection;
+  output Boolean outB;
 algorithm
-  _ := match (inVarDirection)
-    case DAE.OUTPUT() then ();
-    case DAE.BIDIR() then ();
+  outB := match (inVarDirection)
+    case DAE.OUTPUT() then true;
+    case DAE.BIDIR() then true;
+    else false;
   end match;
 end isDirectionNotInput;
 
 protected function isDirectionNotInputNotOutput
   input DAE.VarDirection inVarDirection;
+  output Boolean outB;
 algorithm
-  _ := match (inVarDirection)
-    case DAE.BIDIR() then ();
+  outB := match (inVarDirection)
+    case DAE.BIDIR() then true;
+    else false;
   end match;
 end isDirectionNotInputNotOutput;
 
@@ -2135,15 +2148,20 @@ algorithm
       then (if System.os()=="Windows_NT" then {"-lfmilib","-lshlwapi"} else {"-lfmilib"},{});
 
     case Absyn.STRING(str)
-      equation
+      algorithm
+        if System.os()=="Windows_NT" and str=="ModelicaStandardTables" then
+          (strs,names) := getLibraryStringInGccFormat(Absyn.STRING("ModelicaMatIO"));
+        else
+          strs := {};
+          names := {};
+        end if;
         // If the string is a file, return it as it is
         // If the string starts with a -, it's probably -l or -L gcc flags
         if System.regularFileExists(str) or "-" == stringGetStringChar(str, 1) then
-          strs = {str};
-          names = {};
+          strs := str::strs;
         else
-          strs = {"-l" + str};
-          names = {str};
+          strs := ("-l" + str)::strs;
+          names := str::names;
         end if;
 
       then (strs,names);
@@ -2851,7 +2869,7 @@ algorithm
   if Flags.isSet(Flags.EXEC_STAT) then
     t := System.realtimeTock(ClockIndexes.RT_CLOCK_EXECSTAT);
     total := System.realtimeTock(ClockIndexes.RT_CLOCK_EXECSTAT_CUMULATIVE);
-    gcStr := GC.profStatsStr(GC.getProfStats(), head="");
+    gcStr := GC.profStatsStr(GC.getProfStats(), head="", delimiter=" / ");
     timeStr := System.snprintff("%.4g", 20, t);
     totalTimeStr := System.snprintff("%.4g", 20, total);
     if Flags.isSet(Flags.GC_PROF) then

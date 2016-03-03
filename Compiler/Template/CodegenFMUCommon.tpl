@@ -285,7 +285,7 @@ template Implementation()
   >>
 end Implementation;
 
-template ModelStructure(SimCode simCode, Option<FmiModelStructure> fmiModelStructure)
+template ModelStructure(Option<FmiModelStructure> fmiModelStructure)
  "Generates ModelStructure"
 ::=
 match fmiModelStructure
@@ -296,7 +296,6 @@ case SOME(fmistruct as FMIMODELSTRUCTURE(__)) then
     <%ModelStructureDerivatives(fmistruct.fmiDerivatives)%>
     <%ModelStructureDiscreteStates(fmistruct.fmiDiscreteStates)%>
     <%ModelStructureInitialUnknowns(fmistruct.fmiInitialUnknowns)%>
-    <%ModelStructureClocks(simCode)%>
   </ModelStructure>
   >>
 else
@@ -306,8 +305,8 @@ else
   >>
 end ModelStructure;
 
-template ModelStructureClocks(SimCode simCode)
- "Generates ModelStructure Clocks"
+template TypeDefinitionsClocks(SimCode simCode)
+ "Generates TypeDefinitions Clocks"
 ::=
 match simCode
 case SIMCODE(modelInfo = MODELINFO(__)) then
@@ -323,6 +322,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
           <Clock><Periodic
                   baseInterval="<%bi%>"
                   <%if intGt(fnom, 1) then 'subSampleFactor="'+fnom+'"'%>
+                  <%if intGt(fres, 1) then 'superSampleFactor="'+fres+'"'%>
                   <%if intGt(snom, 0) then 'shiftCounter="'+snom+'"'%>
                   /></Clock>
           >>
@@ -358,7 +358,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
       <%clocks%>
     </Clocks>
     >>
-end ModelStructureClocks;
+end TypeDefinitionsClocks;
 
 template ModelStructureOutputs(FmiOutputs fmiOutputs)
  "Generates Model Structure Outputs."
@@ -432,7 +432,8 @@ end FmiUnknownAttributes;
 
 template FmiUnknownDependencies(list<Integer> dependencies)
 ::=
-  if intGt(listLength(dependencies), 0) then
+  // Note: dependencies="" means no dependencies;
+  // missing dependencies means dependent on all knowns (see FMI 2.0 spec).
   <<
    dependencies="<%dependencies |> dependency => dependency ;separator=" "%>"
   >>
@@ -440,7 +441,6 @@ end FmiUnknownDependencies;
 
 template FmiUnknownDependenciesKind(list<String> dependenciesKind)
 ::=
-  if intGt(listLength(dependenciesKind), 0) then
   <<
    dependenciesKind="<%dependenciesKind |> dependencyKind => dependencyKind ;separator=" "%>"
   >>
@@ -650,23 +650,27 @@ case SIMCODE(__) then
   >>
 end UnitDefinitions;
 
-template fmiTypeDefinitions(ModelInfo modelInfo, String FMUVersion)
+template fmiTypeDefinitions(SimCode simCode, String FMUVersion)
  "Generates code for TypeDefinitions for FMU target."
 ::=
+match simCode
+case SIMCODE(modelInfo=modelInfo) then
 match modelInfo
 case MODELINFO(vars=SIMVARS(__)) then
   <<
-  <%TypeDefinitionsHelper(SimCodeUtil.getEnumerationTypes(vars), FMUVersion)%>
+  <%TypeDefinitionsHelper(simCode, SimCodeUtil.getEnumerationTypes(vars), FMUVersion)%>
   >>
 end fmiTypeDefinitions;
 
-template TypeDefinitionsHelper(list<SimCodeVar.SimVar> vars, String FMUVersion)
+template TypeDefinitionsHelper(SimCode simCode, list<SimCodeVar.SimVar> vars, String FMUVersion)
  "Generates code for TypeDefinitions for FMU target."
 ::=
-  if intGt(listLength(vars), 0) then
+  let clocks = if isFMIVersion10(FMUVersion) then "" else TypeDefinitionsClocks(simCode)
+  if boolOr(intGt(listLength(vars), 0), boolNot(stringEq(clocks, ""))) then
   <<
   <TypeDefinitions>
     <%vars |> var => TypeDefinition(var,FMUVersion) ;separator="\n"%>
+    <%clocks%>
   </TypeDefinitions>
   >>
 end TypeDefinitionsHelper;

@@ -34,7 +34,6 @@ encapsulated package NFConnectionSets
   package:     NFConnectionSets
   description: Data structure and utilities to store connection sets.
 
-  RCS: $Id$
 
   This module contains an implementation of a disjoint-set data structure using
   a disjoint-set forest. It's made for handling connection sets, but could
@@ -487,16 +486,14 @@ protected function findRoot
   input array<Node> inNodes;
   output Node outRoot;
 algorithm
-  outRoot := matchcontinue(inNode, inNodes)
+  outRoot := match(inNode, inNodes)
     local
       Connector conn;
       Integer index, parent_id;
       Node parent;
 
     // Found the root, return it.
-    case (NODE(parent = parent_id), _)
-      equation
-        true = parent_id < 0;
+    case (NODE(parent = parent_id), _) guard parent_id < 0
       then
         inNode;
 
@@ -520,7 +517,7 @@ algorithm
       then
         parent;
 
-  end matchcontinue;
+  end match;
 end findRoot;
 
 protected function union
@@ -530,16 +527,14 @@ protected function union
   input DisjointSets inSets;
   output DisjointSets outSets;
 algorithm
-  outSets := matchcontinue(inSet1, inSet2, inSets)
+  outSets := match(inSet1, inSet2, inSets)
     local
       Integer index, index2, rank1, rank2, rc, nc;
       array<Node> nodes;
       IndexTable indices;
 
     // The nodes are the same, do nothing.
-    case (NODE(index = index), NODE(index = index2), _)
-      equation
-        true = intEq(index, index2);
+    case (NODE(index = index), NODE(index = index2), _) guard intEq(index, index2)
       then
         inSets;
 
@@ -552,7 +547,7 @@ algorithm
       then
         DISJOINT_SETS(nodes, indices, nc);
 
-  end matchcontinue;
+  end match;
 end union;
 
 protected function union2

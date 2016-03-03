@@ -55,10 +55,9 @@ encapsulated package EvaluateParameter
 
               - evaluate and replace parameters with final=true in equations, variables and parameters
               - evaluate and replace parameters with annotation(Evaluate=true) in equations, variables and parameters
-              - evaluate and replace parameters with final=true or annotation(Evaluate=true) in equations, variables and parameters
+              - evaluate and replace parameters with final=true or annotation(Evaluate=true) in equations, variables and parameters"
 
 
-  RCS: $Id: EvaluateParameter.mo 15281 2013-02-22 17:30:41Z jfrenkel $"
 
 public import Absyn;
 public import BackendDAE;
@@ -558,9 +557,12 @@ algorithm
         //  print("Evaluate Selected " + BackendDump.varString(var) + "\n->    " + BackendDump.varString(v) + "\n");
       then
         (knvars,iCache,repl,repleval);
+
+    //waurich: if there is unevaluated binding, dont take the start value as a binding replacement. compute the unevaluated binding!
     case (BackendDAE.VAR(varName = cr,varKind=BackendDAE.PARAM(),values=attr),_,_,_,_,_,_,_)
       equation
         true = BackendVariable.varFixed(var);
+        false = BackendVariable.varHasBindExp(var);
         e = DAEUtil.getStartAttrFail(attr);
         // apply replacements
         (e1,_) = BackendVarTransform.replaceExp(e, iRepl, NONE());
@@ -1226,12 +1228,12 @@ algorithm
     shared.externalObjects := extVars;
     shared.aliasVars := aliasVars;
     shared.eventInfo := eventInfo;
-	  // set remaining, not evaluated params
-	  shared.knownVars := BackendVariable.listVar(unknownVars);
-	  outDAE := BackendDAE.DAE(systs2,shared);
+    // set remaining, not evaluated params
+    shared.knownVars := BackendVariable.listVar(unknownVars);
+    outDAE := BackendDAE.DAE(systs2,shared);
   else
     outDAE := inDAE;
-	end if;
+  end if;
 end evaluateAllParameters_obsolete;
 
 

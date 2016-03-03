@@ -34,7 +34,6 @@ encapsulated package ExpressionSimplify
   package:     ExpressionSimplify
   description: ExpressionSimplify
 
-  RCS: $Id$
 
   This file contains the module ExpressionSimplify, which contains
   functions to simplify a DAE.Expression."
@@ -98,6 +97,36 @@ algorithm
       then (e,false);
   end match;
 end condsimplify;
+
+public function simplifyBinaryExp
+  input DAE.Exp inExp;
+  output DAE.Exp outExp;
+algorithm
+  outExp := match(inExp)
+  local
+    DAE.Exp e1, e2;
+    DAE.Operator op;
+    case DAE.BINARY(exp1 = e1,operator = op, exp2 = e2)
+    then simplifyBinary(inExp, op, e1, e2);
+
+    else inExp;
+  end match;
+end simplifyBinaryExp;
+
+public function simplifyUnaryExp
+  input DAE.Exp inExp;
+  output DAE.Exp outExp;
+algorithm
+  outExp := match(inExp)
+  local
+    DAE.Exp e1;
+    DAE.Operator op;
+    case DAE.UNARY(exp = e1,operator = op)
+    then simplifyUnary(inExp, op, e1);
+
+    else inExp;
+  end match;
+end simplifyUnaryExp;
 
 protected function simplifyWithOptions "Simplifies expressions"
   input DAE.Exp inExp;
@@ -403,7 +432,7 @@ algorithm
     // normal (pure) call
     case DAE.CALL(path=Absyn.IDENT(idn),expLst=expl, attr=DAE.CALL_ATTR(isImpure=false))
       equation
-        true = Expression.isConstWorkList(expl, true);
+        true = Expression.isConstWorkList(expl);
       then simplifyBuiltinConstantCalls(idn,inExp);
 
     // simplify some builtin calls, like cross, etc
@@ -845,7 +874,7 @@ protected function simplifyMatch "simplifies MetaModelica match expressions"
   input DAE.Exp exp;
   output DAE.Exp outExp;
 algorithm
-  outExp := matchcontinue exp
+  outExp := match exp
     local
       DAE.Exp e,e1,e2,e1_1,e2_1;
       Boolean b,b1,b2;
@@ -862,17 +891,18 @@ algorithm
     case DAE.MATCHEXPRESSION(inputs={}, et=ty, localDecls={}, cases={
         DAE.CASE(patterns={},localDecls={},body={},result=SOME(e))
       })
-      equation
-        false = Types.isTuple(ty);
+      guard
+        not Types.isTuple(ty)
       then e;
 
     case DAE.MATCHEXPRESSION(inputs={e}, et=ty, localDecls={}, cases={
         DAE.CASE(patterns={DAE.PAT_CONSTANT(exp=DAE.BCONST(b1))},localDecls={},body={},result=SOME(e1)),
         DAE.CASE(patterns={DAE.PAT_CONSTANT(exp=DAE.BCONST(b2))},localDecls={},body={},result=SOME(e2))
       })
+      guard
+        not boolEq(b1,b2) and
+        not Types.isTuple(ty)
       equation
-        false = boolEq(b1,b2);
-        false = Types.isTuple(ty);
         e1_1 = if b1 then e1 else e2;
         e2_1 = if b1 then e2 else e1;
         e = DAE.IFEXP(e, e1_1, e2_1);
@@ -882,15 +912,16 @@ algorithm
         DAE.CASE(patterns={DAE.PAT_CONSTANT(exp=DAE.BCONST(b1))},localDecls={},body={},result=SOME(e1)),
         DAE.CASE(patterns={DAE.PAT_WILD()},localDecls={},body={},result=SOME(e2))
       })
+      guard
+        not Types.isTuple(ty)
       equation
-        false = Types.isTuple(ty);
         e1_1 = if b1 then e1 else e2;
         e2_1 = if b1 then e2 else e1;
         e = DAE.IFEXP(e, e1_1, e2_1);
       then e;
 
      else exp;
-  end matchcontinue;
+  end match;
 end simplifyMatch;
 
 protected function simplifyCast "help function to simplify1"
@@ -1036,8 +1067,8 @@ algorithm
     // If the argument to min/max is an array, try to flatten it.
     case (DAE.CALL(path=Absyn.IDENT(name),expLst={e as DAE.ARRAY()},
         attr=DAE.CALL_ATTR(ty=tp)))
+      guard name=="max" or name=="min"
       equation
-        true = stringEq(name, "max") or stringEq(name, "min");
         expl = Expression.flattenArrayExpToList(e);
         e1 = Expression.makeScalarArray(expl, tp);
         false = Expression.expEqual(e, e1);
@@ -1045,7 +1076,14 @@ algorithm
         Expression.makePureBuiltinCall(name, {e1}, tp);
 
     // min/max function on arrays of only 1 element
-    case (DAE.CALL(path=Absyn.IDENT("min"),expLst={DAE.ARRAY(array={e})})) then e;
+    case (DAE.CALL(path=Absyn.IDENT(name),expLst={DAE.ARRAY(array=expl as {e})}))
+      guard name=="max" or name=="min"
+      algorithm
+        if Expression.isArrayType(Expression.typeof(e)) then
+          exp.expLst := expl;
+          e := exp;
+        end if;
+      then e;
     case (DAE.CALL(path=Absyn.IDENT("max"),expLst={DAE.ARRAY(array={e})})) then e;
 
     case (DAE.CALL(path=Absyn.IDENT("max"),expLst={DAE.ARRAY(array=es)},attr=DAE.CALL_ATTR(ty=tp)))
@@ -1519,31 +1557,12 @@ public function cevalBuiltinStringFormat
   input Boolean leftJustified;
   output String outString;
 algorithm
-  outString := matchcontinue(inString, stringLength, minLength, leftJustified)
-    local
-      String str;
-      Integer fill_size;
-    // The string is longer than the minimum length, do nothing.
-    case (_, _, _, _)
-      equation
-        true = stringLength >= minLength;
-      then
-        inString;
-    // leftJustified is false, append spaces at the beginning of the string.
-    case (_, _, _, false)
-      equation
-        fill_size = minLength - stringLength;
-        str = stringAppendList(List.fill(" ", fill_size)) + inString;
-      then
-        str;
-    // leftJustified is true, append spaces at the end of the string.
-    case (_, _, _, true)
-      equation
-        fill_size = minLength - stringLength;
-        str = inString + stringAppendList(List.fill(" ", fill_size));
-      then
-        str;
-  end matchcontinue;
+  outString := if stringLength >= minLength then inString
+    else
+      if leftJustified then
+        inString + stringAppendList(List.fill(" ", minLength - stringLength))
+      else
+        stringAppendList(List.fill(" ", minLength - stringLength)) + inString;
 end cevalBuiltinStringFormat;
 
 protected function simplifyStringAppendList
@@ -1749,7 +1768,7 @@ protected function simplifyCref
   input Type inType;
   output DAE.Exp exp;
 algorithm
-  exp := matchcontinue (origExp, inCREF, inType)
+  exp := matchcontinue inCREF
     local
       Type t,t2,t3;
       list<Subscript> ssl;
@@ -1759,32 +1778,21 @@ algorithm
       DAE.Exp expCref;
       Integer index;
 
-    case(_,DAE.CREF_IDENT(idn,t2,(ssl as ((DAE.SLICE(DAE.ARRAY(_,_,_))) :: _))),t)
+    case DAE.CREF_IDENT(idn,t2,(ssl as ((DAE.SLICE(DAE.ARRAY(_,_,_))) :: _)))
       equation
         cr = ComponentReference.makeCrefIdent(idn,t2,{});
-        expCref = Expression.makeCrefExp(cr,t);
+        expCref = Expression.makeCrefExp(cr, inType);
         exp = simplifyCref2(expCref,ssl);
       then exp;
 
-/*
-    case (_, DAE.CREF_QUAL(idn,t2 as DAE.T_METATYPE(DAE.T_METAARRAY()),ssl,DAE.CREF_IDENT(idn2,t3)),t)
-      equation
-        exp = DAE.ASUB(DAE.CREF(DAE.CREF_IDENT(idn,t2,{}),t2), list(Expression.subscriptIndexExp(s) for s in ssl));
-        print(ExpressionDump.printExpStr(exp) + "\n");
-        index = match tt as Types.metaArrayElementType(t2)
-          // case DAE.T_METARECORD() then t2.fields;
-          case DAE.T_METAUNIONTYPE() then List.position(idn2, tt.singletonFields);
-        end match;
-        exp = DAE.RSUB(exp, index, idn2, t);
-        print(ExpressionDump.printExpStr(origExp) + "\n");
-        print(ExpressionDump.printExpStr(exp) + "\n");
-        print("CREF_QUAL: " + idn + "\n");
-        print("CREF_QUAL: " + Types.unparseType(t2) + "\n");
-        print("CREF_QUAL: " + Types.unparseType(t) + "\n");
-        print("CREF_QUAL: " + Types.unparseType(t3) + "\n");
-      then exp;
-*/
-    case (_, DAE.CREF_QUAL(idn, DAE.T_METATYPE(ty=t2), ssl, cr), t)
+    case DAE.CREF_IDENT(subscriptLst = DAE.SLICE(exp = DAE.RANGE()) :: _)
+      algorithm
+        cr := ComponentReference.crefStripSubs(inCREF);
+        expCref := Expression.makeCrefExp(cr, inType);
+      then
+        simplifyCref2(expCref, inCREF.subscriptLst);
+
+    case DAE.CREF_QUAL(idn, DAE.T_METATYPE(ty=t2), ssl, cr)
       equation
         exp = simplifyCrefMM1(idn, t2, ssl);
         exp = simplifyCrefMM(exp, Expression.typeof(exp), cr);
@@ -1826,6 +1834,18 @@ algorithm
         exp = simplifyCref2(DAE.ARRAY(DAE.T_ARRAY(t,{DAE.DIM_INTEGER(dim)},DAE.emptyTypeSource),true,expl),ssl);
       then
         exp;
+
+    case (DAE.CREF(cr as DAE.CREF_IDENT(), t),
+          (ss as DAE.SLICE(exp = DAE.RANGE())) :: ssl)
+      algorithm
+        subs := Expression.expandSliceExp(ss.exp);
+        crefs := list(ComponentReference.subscriptCref(cr, List.create(s)) for s in subs);
+        t := Types.unliftArray(t);
+        expl := list(Expression.makeCrefExp(cr, t) for cr in crefs);
+        dim := listLength(expl);
+        exp := DAE.ARRAY(DAE.T_ARRAY(t, {DAE.DIM_INTEGER(dim)}, DAE.emptyTypeSource), true, expl);
+      then
+        simplifyCref2(exp, ssl);
 
     case(DAE.ARRAY(tp,sc,expl), ssl )
       equation
@@ -4572,7 +4592,7 @@ protected function simplifyTwoBinaryExpressions
   input Boolean operatorEqualLhsRhs;
   output DAE.Exp outExp;
 algorithm
-  outExp := matchcontinue (e1,lhsOperator,e2,mainOperator,e3,rhsOperator,e4,expEqual_e1_e3,expEqual_e1_e4,expEqual_e2_e3,expEqual_e2_e4,isConst_e1,isConst_e2,isConst_e3,operatorEqualLhsRhs)
+  outExp := match (e1,lhsOperator,e2,mainOperator,e3,rhsOperator,e4,expEqual_e1_e3,expEqual_e1_e4,expEqual_e2_e3,expEqual_e2_e4,isConst_e1,isConst_e2,isConst_e3,operatorEqualLhsRhs)
     local
       DAE.Exp e1_1,e,e_1,e_2,e_3,e_4,e_5,e_6,res,one;
       Operator oper, op1 ,op2, op3, op;
@@ -4655,9 +4675,7 @@ algorithm
           op1,
           _,_,_,
           _,_,_,true /*e2==e4*/,_,false /*isConst(e2)*/,_,true /*op2==op3*/)
-      equation
-       true = Expression.isAddOrSub(op1);
-       true = Expression.isMulOrDiv(op2);
+      guard Expression.isAddOrSub(op1) and Expression.isMulOrDiv(op2)
       then
         DAE.BINARY(DAE.BINARY(e1,op1,e3),op2,e4);
 
@@ -4667,8 +4685,8 @@ algorithm
           op1,
           _,DAE.DIV(_),_,
           true /*e1==e3*/,_,_,_,false /*isConst(e1)*/,_,_,_)
+      guard Expression.isAddOrSub(op1)
       equation
-       true = Expression.isAddOrSub(op1);
        one = Expression.makeConstOne(ty);
        e = Expression.makeDiv(one,e4);
       then
@@ -4680,8 +4698,8 @@ algorithm
           op1,
           _,DAE.MUL(_),_,
           true /*e1==e3*/,_,_,_,false /*isConst(e1)*/,_,_,_)
+      guard Expression.isAddOrSub(op1)
       equation
-       true = Expression.isAddOrSub(op1);
        one = Expression.makeConstOne(ty);
        e = Expression.makeDiv(one,e2);
       then
@@ -4693,9 +4711,8 @@ algorithm
           op1,
           e,_,_,
           _,_,_,true /*e2==e4==e_3==e_5*/,_,false /*isConst(e2==e_3)*/,_,true /*op2==op3*/)
+      guard Expression.isAddOrSub(op1) and Expression.isMulOrDiv(op2)
       equation
-       true = Expression.isAddOrSub(op1);
-       true = Expression.isMulOrDiv(op2);
        res = DAE.BINARY(e1_1,op1,e);
       then DAE.BINARY(res,op2,e_3);
 
@@ -4705,12 +4722,9 @@ algorithm
           op1,
           e,op3,e_6,
           _,_,_,_,_,_,_,_)
+      guard (not Expression.isConstValue(e_2)) and  Expression.expEqual(e_2,e_6) and Expression.operatorEqual(op2,op3) and Expression.isAddOrSub(op1)
+            and Expression.isMulOrDiv(op2)
       equation
-        false = Expression.isConstValue(e_2);
-        true = Expression.expEqual(e_2,e_6);
-        true = Expression.operatorEqual(op2,op3);
-        true = Expression.isAddOrSub(op1);
-        true = Expression.isMulOrDiv(op2);
         e1_1 = DAE.BINARY(e_1, DAE.MUL(ty),e_3);
         res = DAE.BINARY(e1_1,op1,e);
       then DAE.BINARY(res,op2,e_2);
@@ -4721,13 +4735,9 @@ algorithm
           op1,
           DAE.BINARY(e_4,op3,e_5),DAE.MUL(_),e_6,
           _,_,_,_,_,_,_,_)
+      guard (not Expression.isConstValue(e_2)) and Expression.expEqual(e_2,e_5) and Expression.operatorEqual(op2,op3) and  Expression.isAddOrSub(op1)
+            and Expression.isMulOrDiv(op2)
       equation
-        false = Expression.isConstValue(e_2);
-        true = Expression.expEqual(e_2,e_5);
-        true = Expression.operatorEqual(op2,op3);
-        true = Expression.isAddOrSub(op1);
-        true = Expression.isMulOrDiv(op2);
-
         e1_1 = DAE.BINARY(e_1, DAE.MUL(ty),e_3);
         e = DAE.BINARY(e_4, DAE.MUL(ty),e_6);
         res = DAE.BINARY(e1_1,op1,e);
@@ -4739,11 +4749,9 @@ algorithm
           op1,
           DAE.BINARY(e_4,op3,e_5),DAE.MUL(ty),e_6,
           _,_,_,_,_,false /*isConst(e2==e_3)*/,_,_)
+      guard Expression.expEqual(e_3,e_5) and Expression.operatorEqual(op2,op3) and  Expression.isAddOrSub(op1)
+            and  Expression.isMulOrDiv(op2)
       equation
-        true = Expression.expEqual(e_3,e_5);
-        true = Expression.operatorEqual(op2,op3);
-        true = Expression.isAddOrSub(op1);
-        true = Expression.isMulOrDiv(op2);
         e = DAE.BINARY(e_4,DAE.MUL(ty),e_6);
         res = DAE.BINARY(e_1,op1,e);
       then DAE.BINARY(res,op2,e_3);
@@ -4762,7 +4770,7 @@ algorithm
           _,true /*e1==e4*/,_,_,_,_,_,_)
       then DAE.BINARY(e1,lhsOperator,DAE.BINARY(e2,mainOperator,e3));
 
-  end matchcontinue;
+  end match;
 end simplifyTwoBinaryExpressions;
 
 protected function simplifyLBinary

@@ -34,7 +34,6 @@ encapsulated package FGraph
   package:     FGraph
   description: Graph of program
 
-  RCS: $Id: FGraph.mo 19292 2014-02-25 06:23:22Z adrpo $
 
 "
 
@@ -600,7 +599,7 @@ algorithm
         c = SCode.COMPONENT(
               name,
               SCode.defaultPrefixes,
-              SCode.ATTR({}, SCode.POTENTIAL(), SCode.NON_PARALLEL(), SCode.CONST(), Absyn.BIDIR()),
+              SCode.ATTR({}, SCode.POTENTIAL(), SCode.NON_PARALLEL(), SCode.CONST(), Absyn.BIDIR(), Absyn.NONFIELD()),
               Absyn.TPATH(Absyn.IDENT(""), NONE()), SCode.NOMOD(),
               SCode.noComment, NONE(), Absyn.dummyInfo);
         v = DAE.TYPES_VAR(
@@ -636,7 +635,7 @@ algorithm
       then
         str;
 
-    case (_) then "<global scope>";
+    else "<global scope>";
 
   end matchcontinue;
 end printGraphPathStr;
@@ -748,7 +747,7 @@ algorithm
         true = stringEq(name, FCore.forScopeName);
       then true;
 
-    case(_) then false;
+    else false;
 
   end matchcontinue;
 end inForLoopScope;
@@ -766,7 +765,7 @@ algorithm
         true = stringEq(name, FCore.forIterScopeName) or stringEq(name, FCore.parForIterScopeName);
       then true;
 
-    case(_) then false;
+    else false;
   end matchcontinue;
 end inForOrParforIterLoopScope;
 
@@ -797,7 +796,7 @@ algorithm
 end getScopePath;
 
 public function getGraphNameStr
-"Returns the FQ name of the environment, see also getGraphPath"
+"Returns the FQ name of the environment."
   input Graph inGraph;
   output String outString;
 algorithm
@@ -810,7 +809,7 @@ algorithm
 end getGraphNameStr;
 
 public function getGraphName
-"Returns the FQ name of the environment, see also getEnvPath"
+"Returns the FQ name of the environment."
   input Graph inGraph;
   output Absyn.Path outPath;
 protected
@@ -827,7 +826,7 @@ algorithm
 end getGraphName;
 
 public function getGraphNameNoImplicitScopes
-"Returns the FQ name of the environment, see also getEnvPath"
+"Returns the FQ name of the environment."
   input Graph inGraph;
   output Absyn.Path outPath;
 protected
@@ -897,13 +896,27 @@ public function restrictionToScopeType
   input SCode.Restriction inRestriction;
   output Option<FCore.ScopeType> outType;
 algorithm
-  outType := matchcontinue(inRestriction)
+  outType := match(inRestriction)
     case SCode.R_FUNCTION(SCode.FR_PARALLEL_FUNCTION()) then SOME(FCore.PARALLEL_SCOPE());
     case SCode.R_FUNCTION(SCode.FR_KERNEL_FUNCTION()) then SOME(FCore.PARALLEL_SCOPE());
     case SCode.R_FUNCTION(_) then SOME(FCore.FUNCTION_SCOPE());
-    case _ then SOME(FCore.CLASS_SCOPE());
-  end matchcontinue;
+    else SOME(FCore.CLASS_SCOPE());
+  end match;
 end restrictionToScopeType;
+
+public function scopeTypeToRestriction
+  "Converts a ScopeType to a Restriction. Restriction is much more expressive
+   than ScopeType, so the returned Restriction is more of a rough indication of
+   what the original Restriction was."
+  input FCore.ScopeType inScopeType;
+  output SCode.Restriction outRestriction;
+algorithm
+  outRestriction := match inScopeType
+    case FCore.PARALLEL_SCOPE() then SCode.R_FUNCTION(SCode.FR_PARALLEL_FUNCTION());
+    case FCore.FUNCTION_SCOPE() then SCode.R_FUNCTION(SCode.FR_NORMAL_FUNCTION(false));
+    else SCode.R_CLASS();
+  end match;
+end scopeTypeToRestriction;
 
 public function isTopScope "Returns true if we are in the top-most scope"
   input Graph graph;
@@ -1057,33 +1070,27 @@ protected function pathStripGraphScopePrefix2
   input Boolean stripPartial;
   output Absyn.Path outPath;
 algorithm
-  outPath := matchcontinue(inPath, inEnvPath, stripPartial)
+  outPath := match(inPath, inEnvPath, stripPartial)
     local
       Absyn.Ident id1, id2;
       Absyn.Path path;
       Absyn.Path env_path;
 
     case (Absyn.QUALIFIED(name = id1, path = path),
-          Absyn.QUALIFIED(name = id2, path = env_path), _)
-      equation
-        true = stringEqual(id1, id2);
+          Absyn.QUALIFIED(name = id2, path = env_path), _) guard stringEqual(id1, id2)
       then
         pathStripGraphScopePrefix2(path, env_path, stripPartial);
 
     case (Absyn.QUALIFIED(name = id1, path = path),
-          Absyn.IDENT(name = id2), _)
-      equation
-        true = stringEqual(id1, id2);
+          Absyn.IDENT(name = id2), _) guard stringEqual(id1, id2)
       then
         path;
 
     // adrpo: leave it as stripped as you can if you can't match it above and stripPartial is true
-    case (Absyn.QUALIFIED(name = id1), env_path, true)
-      equation
-        false = stringEqual(id1, Absyn.pathFirstIdent(env_path));
+    case (Absyn.QUALIFIED(name = id1), env_path, true) guard not stringEqual(id1, Absyn.pathFirstIdent(env_path))
       then
         inPath;
-  end matchcontinue;
+  end match;
 end pathStripGraphScopePrefix2;
 
 public function mkComponentNode "This function adds a component to the graph."
@@ -1240,10 +1247,10 @@ public function classInfToScopeType
   input ClassInf.State inState;
   output Option<FCore.ScopeType> outType;
 algorithm
-  outType := matchcontinue(inState)
+  outType := match(inState)
     case ClassInf.FUNCTION() then SOME(FCore.FUNCTION_SCOPE());
-    case _ then SOME(FCore.CLASS_SCOPE());
-  end matchcontinue;
+    else SOME(FCore.CLASS_SCOPE());
+  end match;
 end classInfToScopeType;
 
 public function isEmpty
@@ -1251,10 +1258,10 @@ public function isEmpty
   input Graph inGraph;
   output Boolean b;
 algorithm
-  b := matchcontinue(inGraph)
+  b := match(inGraph)
     case (FCore.EG(_)) then true;
     else false;
-  end matchcontinue;
+  end match;
 end isEmpty;
 
 public function isNotEmpty
@@ -1277,21 +1284,19 @@ public function inFunctionScope
   input Graph inGraph;
   output Boolean inFunction;
 algorithm
-  inFunction := matchcontinue(inGraph)
+  inFunction := match(inGraph)
     local
       Scope s;
       Ref r;
 
-    case FCore.G(scope = s)
-      equation
-        true = checkScopeType(s, SOME(FCore.FUNCTION_SCOPE())) or
-               checkScopeType(s, SOME(FCore.PARALLEL_SCOPE()));
+    case FCore.G(scope = s) guard checkScopeType(s, SOME(FCore.FUNCTION_SCOPE())) or
+                                  checkScopeType(s, SOME(FCore.PARALLEL_SCOPE()))
       then
         true;
 
-    case _ then false;
+    else false;
 
-  end matchcontinue;
+  end match;
 end inFunctionScope;
 
 public function getScopeName " Returns the name of a scope, if no name exist, the function fails."
@@ -1349,6 +1354,39 @@ algorithm
   end matchcontinue;
 end checkScopeType;
 
+public function lastScopeRestriction
+  input Graph inGraph;
+  output SCode.Restriction outRestriction;
+protected
+  Scope s;
+algorithm
+  FCore.G(scope = s) := inGraph;
+  outRestriction := getScopeRestriction(s);
+end lastScopeRestriction;
+
+public function getScopeRestriction
+  input Scope inScope;
+  output SCode.Restriction outRestriction;
+algorithm
+  outRestriction := matchcontinue inScope
+    local
+      Ref r;
+      FCore.ScopeType st;
+
+    case r :: _ guard(FNode.isRefClass(r))
+      then SCode.getClassRestriction(FNode.getElement(FNode.fromRef(r)));
+
+    case r :: _
+      algorithm
+        FCore.N(data = FCore.ND(SOME(st))) := FNode.fromRef(r);
+      then
+        scopeTypeToRestriction(st);
+
+    else getScopeRestriction(listRest(inScope));
+
+  end matchcontinue;
+end getScopeRestriction;
+
 public function getGraphPathNoImplicitScope
 "This function returns all partially instantiated parents as an Absyn.Path
  option I.e. it collects all identifiers of each frame until it reaches
@@ -1402,7 +1440,7 @@ algorithm
       then
         SOME(Absyn.IDENT(id));
 
-    case (_) then NONE();
+    else NONE();
 
   end matchcontinue;
 end getGraphPathNoImplicitScope_dispatch;
@@ -1841,7 +1879,7 @@ public function graphPrefixOf2
   input Scope inEnv;
   output Boolean outIsPrefix;
 algorithm
-  outIsPrefix := matchcontinue(inPrefixEnv, inEnv)
+  outIsPrefix := match(inPrefixEnv, inEnv)
     local
       String n1, n2;
       Scope rest1, rest2;
@@ -1849,15 +1887,13 @@ algorithm
 
     case ({}, _::_) then true;
 
-    case (r1 :: rest1, r2 :: rest2)
-      equation
-        true = stringEq(FNode.refName(r1), FNode.refName(r2));
+    case (r1 :: rest1, r2 :: rest2) guard stringEq(FNode.refName(r1), FNode.refName(r2))
       then
         graphPrefixOf2(rest1, rest2);
 
     else false;
 
-  end matchcontinue;
+  end match;
 end graphPrefixOf2;
 
 public function setStatus

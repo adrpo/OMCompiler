@@ -32,9 +32,8 @@
 encapsulated package OnRelaxation "
   file:        OnRelaxation.mo
   package:     OnRelaxation
-  description: Relaxation for MultiBody Systems
+  description: Relaxation for MultiBody Systems"
 
-  RCS: $Id: OnRelaxation.mo 12002 2012-06-08 07:26:09Z petar $"
 
 public import BackendDAE;
 public import DAE;
@@ -1748,10 +1747,10 @@ algorithm
         (listReverse(inElst), inVars, inEqns, inTpl);
     case ({}, _, _, _, _, _, _)
       then
-        (listAppend(listReverse(inElst), inB), inVars, inEqns, inTpl);
+        (List.append_reverse(inElst, inB), inVars, inEqns, inTpl);
     case (_, {}, _, _, _, _, _)
       then
-        (listAppend(listReverse(inElst), inA), inVars, inEqns, inTpl);
+        (List.append_reverse(inElst, inA), inVars, inEqns, inTpl);
     case ((ca, _)::resta, (cb, _)::restb, _, _, _, _, _)
       equation
         true = intEq(ca, cb);

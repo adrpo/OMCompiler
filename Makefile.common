@@ -54,11 +54,9 @@ mkbuilddirs:
 release: omc
 
 bootstrap-dependencies: graphstream $(BOOTSTRAP_FMIL_DEP) $(MINGW_EXTRA_LIBS)
-	# NOTE: OpenModelicaBootstrappingHeader.h has to be regenerated without any other process writing to so/etc or you get bus errors
-	$(MAKE) -f $(defaultMakefileTarget) -C Compiler OpenModelicaBootstrappingHeader.h OMBUILDDIR=$(OMBUILDDIR)
-	$(MAKE) -f $(defaultMakefileTarget) -C Compiler/runtime install OMBUILDDIR=$(OMBUILDDIR)
-	$(MAKE) -f $(defaultMakefileTarget) -C Compiler builtin install_scripts OMBUILDDIR=$(OMBUILDDIR)
-	$(MAKE) -f $(defaultMakefileTarget) -C Parser install OMBUILDDIR=$(OMBUILDDIR)
+	$(MAKE) -f $(defaultMakefileTarget) -C Compiler/runtime install_bootstrapping BOOTSTRAPPING=1 OMBUILDDIR=$(OMBUILDDIR)
+	$(MAKE) -f $(defaultMakefileTarget) -C Compiler builtin OMBUILDDIR=$(OMBUILDDIR)
+	$(MAKE) -f $(defaultMakefileTarget) -C Parser install_bootstrapping OMBUILDDIR=$(OMBUILDDIR)
 
 sim-dependencies: fmi fmil opencl_rt lis metis fmi fmil
 
@@ -323,9 +321,6 @@ install-dirs:
 	mkdir -p ${INSTALL_DOCDIR}/omc/testmodels
 	mkdir -p ${INSTALL_MANDIR}/man1/
 	mkdir -p ${INSTALL_LOCALEDIR}
-	test ! -d ${builddir_share}/omnotebook/ || mkdir -p ${INSTALL_SHAREDIR}/omnotebook/
-	test ! -d ${builddir_share}/omshell/nls/ || mkdir -p ${INSTALL_SHAREDIR}/omshell/nls/
-	test ! -d ${builddir_share}/omedit/nls/ || mkdir -p ${INSTALL_SHAREDIR}/omedit/nls/
 	mkdir -p ${INSTALL_SHAREDIR}/omc/scripts ${INSTALL_JAVADIR}
 
 install: install-dirs
@@ -348,10 +343,6 @@ install: install-dirs
 	# cp -p ${builddir_man}/man1/*.gz ${INSTALL_MANDIR}/man1/
 	# Shared data
 	cp -p ${builddir_share}/omc/*.* ${builddir_share}/omc/runtime ${INSTALL_SHAREDIR}/omc/
-	test ! -d ${builddir_share}/omnotebook/ || cp -rp ${builddir_share}/omnotebook/* ${INSTALL_SHAREDIR}/omnotebook/
-	test ! -d ${builddir_share}/omshell/ || cp -p ${builddir_share}/omshell/*.xml ${INSTALL_SHAREDIR}/omshell/
-	test ! -d ${builddir_share}/omshell/nls/ || cp -p ${builddir_share}/omshell/nls/*.qm ${INSTALL_SHAREDIR}/omshell/nls/
-	test ! -d ${builddir_share}/omedit/nls/ || cp -p ${builddir_share}/omedit/nls/*.qm ${INSTALL_SHAREDIR}/omedit/nls/
 	# Scripts
 	cp -rp ${builddir_share}/omc/scripts/*.* ${builddir_share}/omc/scripts/OpenTurns ${INSTALL_SHAREDIR}/omc/scripts
 	# Java
@@ -434,7 +425,7 @@ sanity-check: omc
 	$(OMBUILDDIR)/bin/omc Examples/SanityCheck.mos
 
 MODELICAEXTERNALC=3rdParty/ModelicaExternalC
-ModelicaExternalC: $(LIBMODELICAEXTERNALC) $(LIBMODELICASTANDARDTABLES)
+ModelicaExternalC: $(LIBMODELICAEXTERNALC) $(LIBMODELICASTANDARDTABLES) $(LIBMODELICAIO) $(LIBMODELICAMATIO) $(LIBMODELICAZLIB)
 $(LIBMODELICAEXTERNALC):
 	(cd "$(MODELICAEXTERNALC)/BuildProjects/autotools" && (test -f Makefile || ./autogen.sh))
 	(cd "$(MODELICAEXTERNALC)/BuildProjects/autotools" && (test -f Makefile || (./configure ${MSL321_CONFIG_EXTRA_FLAGS} "--host=$(host)" --libdir="$(OMBUILDDIR)/$(LIB_OMC)/" CC="$(CC)" CFLAGS="$(CFLAGS)" CPPFLAGS="$(CPPFLAGS)" LDFLAGS="$(LDFLAGS)" $(MSL_EXTRA_ARGS) && $(MAKE) clean)))
@@ -443,7 +434,16 @@ $(LIBMODELICAEXTERNALC):
 	test ! `uname` = Darwin || install_name_tool -id @rpath/libModelicaExternalC.0.dylib "$@"
 	@test -f "$@"
 $(LIBMODELICASTANDARDTABLES): $(LIBMODELICAEXTERNALC)
-	test ! `uname` = Darwin || install_name_tool -id @rpath/libModelicaStandardTables.0.dylib "$@"
+	test ! `uname` = Darwin || (install_name_tool -id @rpath/libModelicaStandardTables.0.dylib "$@" && install_name_tool -change "$(LIBMODELICAMATIO:%.dylib=%.0.dylib)" @rpath/libModelicaMatIO.0.dylib "$@")
+	@test -f "$@"
+$(LIBMODELICAZLIB): $(LIBMODELICAEXTERNALC)
+	test ! `uname` = Darwin || install_name_tool -id @rpath/libzlib.0.dylib "$@"
+	@test -f "$@"
+$(LIBMODELICAIO): $(LIBMODELICAEXTERNALC)
+	test ! `uname` = Darwin || (install_name_tool -id @rpath/libModelicaIO.0.dylib "$@" && install_name_tool -change "$(LIBMODELICAMATIO:%.dylib=%.0.dylib)" @rpath/libModelicaMatIO.0.dylib "$@")
+	@test -f "$@"
+$(LIBMODELICAMATIO): $(LIBMODELICAEXTERNALC)
+	test ! `uname` = Darwin || install_name_tool -id @rpath/libModelicaMatIO.0.dylib "$@"
 	@test -f "$@"
 
 git-clean:

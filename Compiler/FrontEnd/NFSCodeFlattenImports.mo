@@ -34,7 +34,6 @@ encapsulated package NFSCodeFlattenImports
   package:     NFSCodeFlattenImports
   description: SCode flattening
 
-  RCS: $Id$
 
   This module flattens the SCode representation by removing all extends, imports
   and redeclares, and fully qualifying class names.
@@ -134,7 +133,7 @@ algorithm
     case (SCode.PARTS(el, neql, ieql, nal, ial, nco, clats, extdecl), _, _)
       equation
         // Lookup elements.
-        el = List.filter(el, isNotImport);
+        el = List.filterOnTrue(el, isNotImport);
         (el, env) = List.mapFold(el, flattenElement, inEnv);
 
         // Lookup equations and algorithm names.
@@ -185,10 +184,11 @@ end flattenDerivedClassDef;
 
 protected function isNotImport
   input SCode.Element inElement;
+  output Boolean outB;
 algorithm
-  _ := match(inElement)
-    case SCode.IMPORT() then fail();
-    else ();
+  outB := match(inElement)
+    case SCode.IMPORT() then false;
+    else true;
   end match;
 end isNotImport;
 
@@ -264,10 +264,11 @@ protected
   SCode.Parallelism prl;
   SCode.Variability var;
   Absyn.Direction dir;
+  Absyn.IsField isf;
 algorithm
-  SCode.ATTR(ad, ct, prl, var, dir) := inAttributes;
+  SCode.ATTR(ad, ct, prl, var, dir, isf) := inAttributes;
   ad := List.map2(ad, flattenSubscript, inEnv, inInfo);
-  outAttributes := SCode.ATTR(ad, ct, prl, var, dir);
+  outAttributes := SCode.ATTR(ad, ct, prl, var, dir, isf);
 end flattenAttributes;
 
 protected function flattenTypeSpec
@@ -499,7 +500,7 @@ algorithm
       then
         SOME(exp);
 
-    case NONE() then inOptExp;
+    else inOptExp;
   end match;
 end flattenModOptExp;
 
@@ -613,7 +614,7 @@ algorithm
       then
         SOME(exp);
 
-    case (NONE(), _, _) then inExp;
+    else inExp;
   end match;
 end flattenOptExp;
 

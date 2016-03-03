@@ -34,7 +34,6 @@ encapsulated package DAE
   package:     DAE
   description: DAE management and output
 
-  RCS: $Id$
 
   This module defines data structures for DAE equations and declarations of
   variables and functions. The DAE data structure is the result of flattening,
@@ -1011,6 +1010,12 @@ end Type;
 public uniontype CodeType
   record C_EXPRESSION
   end C_EXPRESSION;
+
+  record C_EXPRESSION_OR_MODIFICATION
+  end C_EXPRESSION_OR_MODIFICATION;
+
+  record C_MODIFICATION
+  end C_MODIFICATION;
 
   record C_TYPENAME
   end C_TYPENAME;

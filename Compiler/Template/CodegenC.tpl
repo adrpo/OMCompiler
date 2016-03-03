@@ -2045,6 +2045,7 @@ template functionSetupLinearSystemsTemp(list<SimEqSystem> allEquations, String m
 
        void residualFunc<%ls.index%>(void** dataIn, const double* xloc, double* res, const int* iflag)
        {
+         TRACE_PUSH
          DATA *data = (DATA*) ((void**)dataIn[0]);
          threadData_t *threadData = (threadData_t*) ((void**)dataIn[1]);
          const int equationIndexes[2] = {1,<%ls.index%>};
@@ -2055,6 +2056,7 @@ template functionSetupLinearSystemsTemp(list<SimEqSystem> allEquations, String m
          <%prebody%>
          <%body%>
          <% if profileAll() then 'SIM_PROF_ACC_EQ(<%ls.index%>);' %>
+         TRACE_POP
        }
        void initializeStaticLSData<%ls.index%>(void *inData, threadData_t *threadData, void *systemData)
        {
@@ -2173,6 +2175,7 @@ template functionSetupLinearSystemsTemp(list<SimEqSystem> allEquations, String m
 
        void residualFunc<%ls.index%>(void** dataIn, const double* xloc, double* res, const int* iflag)
        {
+         TRACE_PUSH
          DATA *data = (DATA*) ((void**)dataIn[0]);
          threadData_t *threadData = (threadData_t*) ((void**)dataIn[1]);
          const int equationIndexes[2] = {1,<%ls.index%>};
@@ -2183,6 +2186,7 @@ template functionSetupLinearSystemsTemp(list<SimEqSystem> allEquations, String m
          <%prebody%>
          <%body%>
          <% if profileAll() then 'SIM_PROF_ACC_EQ(<%ls.index%>);' %>
+         TRACE_POP
        }
        void initializeStaticLSData<%ls.index%>(void *inData, threadData_t *threadData, void *systemData)
        {
@@ -2197,6 +2201,7 @@ template functionSetupLinearSystemsTemp(list<SimEqSystem> allEquations, String m
 
        void residualFunc<%at.index%>(void** dataIn, const double* xloc, double* res, const int* iflag)
        {
+         TRACE_PUSH
          DATA *data = (DATA*) ((void**)dataIn[0]);
          threadData_t *threadData = (threadData_t*) ((void**)dataIn[1]);
          const int equationIndexes[2] = {1,<%at.index%>};
@@ -2207,6 +2212,7 @@ template functionSetupLinearSystemsTemp(list<SimEqSystem> allEquations, String m
          <%prebody2%>
          <%body2%>
          <% if profileAll() then 'SIM_PROF_ACC_EQ(<%at.index%>);' %>
+         TRACE_POP
        }
        void initializeStaticLSData<%at.index%>(void *inData, threadData_t *threadData, void *systemData)
        {
@@ -2492,6 +2498,7 @@ template functionNonLinearResiduals(list<SimEqSystem> allEquations, String model
 
       void residualFunc<%nls.index%>(void** dataIn, const double* xloc, double* res, const int* iflag)
       {
+        TRACE_PUSH
         DATA *data = (DATA*) ((void**)dataIn[0]);
         threadData_t *threadData = (threadData_t*) ((void**)dataIn[1]);
         const int equationIndexes[2] = {1,<%nls.index%>};
@@ -2506,6 +2513,7 @@ template functionNonLinearResiduals(list<SimEqSystem> allEquations, String model
         <%body%>
         <%restoreKnownOutputs%>
         <% if profileAll() then 'SIM_PROF_ACC_EQ(<%nls.index%>);' %>
+        TRACE_POP
       }
       >>
     // dynamic tearing
@@ -2574,6 +2582,7 @@ template functionNonLinearResiduals(list<SimEqSystem> allEquations, String model
 
         void residualFunc<%nls.index%>(void **dataIn, const double* xloc, double* res, const int* iflag)
         {
+          TRACE_PUSH
           DATA *data = (DATA*) ((void**)dataIn[0]);
           threadData_t *threadData = (threadData_t*) ((void**)dataIn[1]);
           const int equationIndexes[2] = {1,<%nls.index%>};
@@ -2584,6 +2593,7 @@ template functionNonLinearResiduals(list<SimEqSystem> allEquations, String model
           <%prebody%>
           <%body%>
           <% if profileAll() then 'SIM_PROF_ACC_EQ(<%nls.index%>);' %>
+          TRACE_POP
         }
 
         <%innerEqs2%>
@@ -2598,6 +2608,7 @@ template functionNonLinearResiduals(list<SimEqSystem> allEquations, String model
 
         void residualFunc<%at.index%>(void **dataIn, const double* xloc, double* res, const int* iflag)
         {
+          TRACE_PUSH
           DATA *data = (DATA*) ((void**)dataIn[0]);
           threadData_t *threadData = (threadData_t*) ((void**)dataIn[1]);
           const int equationIndexes[2] = {1,<%at.index%>};
@@ -2608,6 +2619,7 @@ template functionNonLinearResiduals(list<SimEqSystem> allEquations, String model
           <%prebody2%>
           <%body2%>
           <% if profileAll() then 'SIM_PROF_ACC_EQ(<%at.index%>);' %>
+          TRACE_POP
         }
       >>
   )

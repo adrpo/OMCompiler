@@ -35,7 +35,6 @@ encapsulated package NFMod
   package:     NFMod
   description: Modification handling for NFInst.
 
-  RCS: $Id: NFMod.mo 7705 2011-01-17 09:53:52Z sjoelund.se $
 
   Functions for handling modifications, used by NFInst.
   "
@@ -876,15 +875,14 @@ protected function mergeSubModInSameScope2
   output Boolean outFound;
 algorithm
   (outMod, outFound) :=
-  matchcontinue(inExistingMod, inNewMod, inModName, inElementName)
+  match(inExistingMod, inNewMod, inModName, inElementName)
     local
       String id1, id2;
       Modifier mod;
 
     case (NFInstTypes.MODIFIER(name = id1),
           NFInstTypes.MODIFIER(name = id2), _, _)
-      equation
-        false = stringEq(id1, id2);
+        guard not stringEq(id1, id2)
       then
         (inExistingMod, false);
 
@@ -895,7 +893,7 @@ algorithm
       then
         (mod, true);
 
-  end matchcontinue;
+  end match;
 end mergeSubModInSameScope2;
 
 public function propagateMod

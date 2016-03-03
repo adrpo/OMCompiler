@@ -34,7 +34,6 @@ encapsulated package InstSection
   package:     InstSection
   description: Model instantiation
 
-  RCS: $Id$
 
   This module is responsible for instantiation of Modelica equation
   and algorithm sections (including connect equations)."
@@ -1243,6 +1242,7 @@ algorithm
   else
     true := Flags.isSet(Flags.FAILTRACE);
     Debug.traceln("- InstSection.unroll failed: " + ValuesUtil.valString(inValue));
+    fail();
   end try;
 end unroll;
 
@@ -1468,11 +1468,12 @@ algorithm
     case (DAE.TUPLE(exps1),e2,DAE.T_TUPLE(types = _::_),_,_,initial_)
       equation
         exps1 = List.map(exps1,Expression.emptyToWild);
+        checkNoDuplicateAssignments(exps1, DAEUtil.getElementSourceFileInfo(source));
         e1 = DAE.TUPLE(exps1);
         dae = makeDaeEquation(e1, e2, source, initial_);
       then dae;
 
-    case (e1,e2,DAE.T_TUPLE(),_,_,initial_)
+    case (e1,e2,DAE.T_TUPLE(),_,_,initial_) guard not Expression.isTuple(e1)
       equation
         dae = makeDaeEquation(e1, e2, source, initial_);
       then dae;
@@ -3296,7 +3297,7 @@ algorithm
                           SCode.COMPONENT(
                             componentName,
                             SCode.defaultPrefixes,
-                            SCode.ATTR(arrDims, SCode.POTENTIAL(), SCode.NON_PARALLEL(), SCode.VAR(), Absyn.BIDIR()),
+                            SCode.ATTR(arrDims, SCode.POTENTIAL(), SCode.NON_PARALLEL(), SCode.VAR(), Absyn.BIDIR(),Absyn.NONFIELD()),
                             Absyn.TPATH(Absyn.IDENT(""), NONE()), SCode.NOMOD(),
                             SCode.noComment, NONE(), Absyn.dummyInfo),
                           DAE.NOMOD(),
@@ -3383,7 +3384,7 @@ algorithm
                           SCode.COMPONENT(
                             componentName,
                             SCode.defaultPrefixes,
-                            SCode.ATTR(arrDims, SCode.POTENTIAL(), SCode.NON_PARALLEL(), SCode.VAR(), Absyn.BIDIR()),
+                            SCode.ATTR(arrDims, SCode.POTENTIAL(), SCode.NON_PARALLEL(), SCode.VAR(), Absyn.BIDIR(), Absyn.NONFIELD()),
                             Absyn.TPATH(Absyn.IDENT(""), NONE()), SCode.NOMOD(),
                             SCode.noComment, NONE(), Absyn.dummyInfo),
                           DAE.NOMOD(),
@@ -3437,7 +3438,7 @@ algorithm
           c1_2,
           state,
           ty1,
-          SCode.ATTR(arrDims, ct1, prl1, vt1, Absyn.BIDIR()),
+          SCode.ATTR(arrDims, ct1, prl1, vt1, Absyn.BIDIR(), Absyn.NONFIELD()),
           vis1,
           io1,
           source);
@@ -4829,6 +4830,7 @@ algorithm
         ();
 
     case SCode.EQ_EQUALS() then ();
+    case SCode.EQ_PDE() then ();
 
     // connect is not allowed in when equations.
     case SCode.EQ_CONNECT(crefLeft = cr1, crefRight = cr2, info = info)
@@ -4884,7 +4886,7 @@ algorithm
     case (cache,env,_,pre,SCode.ALG_ASSIGN(assignComponent=var,value=value,info=info),_,_,_,_,_)
       equation
         (cache,e_1,eprop,_) = Static.elabExp(cache,env,value,impl,NONE(),true,pre,info);
-        (cache,stmts) = instAssignment2(cache,env,ih,pre,var,value,e_1,eprop,info,source,initial_,impl,unrollForLoops,numError);
+        (cache,stmts) = instAssignment2(cache,env,ih,pre,var,value,e_1,eprop,info,DAEUtil.addAnnotation(source, alg.comment),initial_,impl,unrollForLoops,numError);
       then (cache,stmts);
 
     case (cache,env,_,pre,SCode.ALG_ASSIGN(value=value,info=info),_,_,_,_,_)
@@ -5016,6 +5018,7 @@ algorithm
         (cache,expl_1,cprops,attrs,_) =
           Static.elabExpCrefNoEvalList(cache, inEnv, expl, inImpl, NONE(), false, inPre, info);
         Static.checkAssignmentToInputs(expl, attrs, inEnv, info);
+        checkNoDuplicateAssignments(expl_1, info);
         (cache,expl_2) = PrefixUtil.prefixExpList(cache, inEnv, inIH, expl_1, inPre);
         source = DAEUtil.addElementSourceFileInfo(inSource, info);
         stmt = Algorithm.makeTupleAssignment(expl_2, cprops, e_2, eprop, initial_, source);
@@ -5033,6 +5036,7 @@ algorithm
         (cache,expl_1,cprops,attrs,_) =
           Static.elabExpCrefNoEvalList(cache, inEnv, expl, inImpl, NONE(), false, inPre, info);
         Static.checkAssignmentToInputs(expl, attrs, inEnv, info);
+        checkNoDuplicateAssignments(expl_1, info);
         (cache,expl_2) = PrefixUtil.prefixExpList(cache, inEnv, inIH, expl_1, inPre);
         source = DAEUtil.addElementSourceFileInfo(inSource, info);
         stmt = Algorithm.makeTupleAssignment(expl_2, cprops, e_2, eprop, initial_, source);
@@ -5044,7 +5048,7 @@ algorithm
         true = Config.acceptMetaModelicaGrammar();
         ty = Types.getPropType(prop);
         (e_1,ty) = Types.convertTupleToMetaTuple(e_1,ty);
-        (cache,pattern) = Patternm.elabPattern(cache,inEnv,left,ty,info);
+        (cache,pattern) = Patternm.elabPatternCheckDuplicateBindings(cache,inEnv,left,ty,info);
         source = DAEUtil.addElementSourceFileInfo(inSource, info);
         stmt = if Types.isEmptyOrNoRetcall(ty) then DAE.STMT_NORETCALL(e_1,source) else DAE.STMT_ASSIGN(DAE.T_UNKNOWN_DEFAULT,DAE.PATTERN(pattern),e_1,source);
       then (cache,{stmt});
@@ -5056,6 +5060,7 @@ algorithm
         (cache,expl_2,cprops,attrs,_) =
           Static.elabExpCrefNoEvalList(cache,inEnv, expl, inImpl,NONE(),false,inPre,info);
         Static.checkAssignmentToInputs(expl, attrs, inEnv, info);
+        checkNoDuplicateAssignments(expl_2, info);
         (cache,expl_2) = PrefixUtil.prefixExpList(cache, inEnv, inIH, expl_2, inPre);
         eprops = Types.propTuplePropList(eprop);
         source = DAEUtil.addElementSourceFileInfo(inSource, info);
@@ -5066,7 +5071,7 @@ algorithm
     /* Tuple with lhs being a tuple NOT of crefs => Error */
     case (_,e as Absyn.TUPLE(expressions = expl),_,_)
       equation
-        failure(_ = List.map(expl,Absyn.expCref));
+        false = List.all(expl, Absyn.isCref);
         s = Dump.printExpStr(e);
         Error.addSourceMessage(Error.TUPLE_ASSIGN_CREFS_ONLY, {s}, info);
       then
@@ -5075,7 +5080,7 @@ algorithm
     case (cache,e1 as Absyn.TUPLE(expressions = expl),e_2,prop2)
       equation
         Absyn.CALL() = inRhs;
-        _ = List.map(expl,Absyn.expCref);
+        true = List.all(expl, Absyn.isCref);
         (cache,e_1,prop1,_) = Static.elabExp(cache,inEnv,e1,inImpl,NONE(),false,inPre,info);
         lt = Types.getPropType(prop1);
         rt = Types.getPropType(prop2);
@@ -5092,7 +5097,7 @@ algorithm
     /* Tuple with rhs not CALL or CONSTANT => Error */
     case (_,Absyn.TUPLE(expressions = expl),e_1,_)
       equation
-        _ = List.map(expl,Absyn.expCref);
+        true = List.all(expl, Absyn.isCref);
         failure(Absyn.CALL() = inRhs);
         s = ExpressionDump.printExpStr(e_1);
         Error.addSourceMessage(Error.TUPLE_ASSIGN_FUNCALL_ONLY, {s}, info);
@@ -5109,6 +5114,24 @@ algorithm
         fail();
   end matchcontinue;
 end instAssignment2;
+
+function checkNoDuplicateAssignments
+  input list<DAE.Exp> inExps;
+  input SourceInfo info;
+protected
+  DAE.Exp exp;
+  list<DAE.Exp> exps=inExps;
+algorithm
+  while not listEmpty(exps) loop
+    exp::exps := exps;
+    if Expression.isWild(exp) then
+      continue;
+    elseif listMember(exp, exps) then
+      Error.addSourceMessage(Error.DUPLICATE_DEFINITION, {ExpressionDump.printExpStr(exp)}, info);
+      fail();
+    end if;
+  end while;
+end checkNoDuplicateAssignments;
 
 protected function generateNoConstantBindingError
   input Option<Values.Value> emptyValueOpt;

@@ -34,7 +34,6 @@ encapsulated package BackendDump
   package:     BackendDump
   description: Unparsing the BackendDAE structure
 
-  RCS: $Id$
 
   These file is subdivided into several section:
     - section for all print* functions
@@ -296,24 +295,42 @@ end printBasePartitions;
 public function printSubPartitions
   input array<BackendDAE.SubPartition> subPartitions;
 protected
-  String factorStr, shiftStr, solverStr, eventStr;
-  BackendDAE.SubClock clk;
+  String subClockStr, eventStr;
 algorithm
   for i in 1:arrayLength(subPartitions) loop
-    clk := subPartitions[i].clock;
-    factorStr := "factor(" + MMath.rationalString(clk.factor) + ")";
-    shiftStr := "shift(" + MMath.rationalString(clk.shift) + ")";
-    solverStr := match clk.solver
-      local
-        String s;
-      case NONE() then "";
-      case SOME(s) then "solver(" + s + ")";
-    end match;
+    subClockStr := subClockString(subPartitions[i].clock);
     eventStr := "event(" + boolString(subPartitions[i].holdEvents) + ")";
-    print( intString(i) + ": " + factorStr + " " + shiftStr + " " +
-           solverStr + " " + eventStr + "\n");
+    print(intString(i) + ": " + subClockStr + " " + eventStr + "\n");
   end for;
 end printSubPartitions;
+
+public function subClockString
+  input BackendDAE.SubClock subClock;
+  output String subClockString;
+protected
+  String factorStr, shiftStr, solverStr;
+algorithm
+  factorStr := "factor(" + MMath.rationalString(subClock.factor) + ")";
+  shiftStr := "shift(" + MMath.rationalString(subClock.shift) + ")";
+  solverStr := "solver(" + optionString(subClock.solver) + ")";
+  if stringLength(solverStr) > 8 then
+    subClockString := factorStr + " " + shiftStr + " " + solverStr;
+  else
+    subClockString := factorStr + " " + shiftStr + " ";
+  end if;
+end subClockString;
+
+public function optionString
+  input Option<String> option;
+  output String optionString;
+algorithm
+  optionString := match option
+    local
+      String s;
+    case SOME(s) then s;
+    else "";
+  end match;
+end optionString;
 
 public function printBackendDAEType "This is a helper for printShared."
   input BackendDAE.BackendDAEType btp;
@@ -1046,13 +1063,15 @@ algorithm
         vlst1 = List.flatten(List.map(eqnsvartpllst,Util.tuple22));
         elst1 = List.map(eqnsvartpllst,Util.tuple21);
         varlst = List.map1r(vlst1, BackendVariable.getVarAt, vars);
+        print("\ninternal vars\n");
         printVarList(varlst);
         varlst = List.map1r(vlst, BackendVariable.getVarAt, vars);
+        print("\nresidual vars\n");
         printVarList(varlst);
-        print("\n");
+        print("\ninternal equation\n");
         eqnlst = BackendEquation.getEqns(elst1,eqns);
         printEquationList(eqnlst);
-        print("\n");
+        print("\nresidual equations\n");
         eqnlst = BackendEquation.getEqns(elst,eqns);
         printEquationList(eqnlst);
         print("\n");
@@ -1108,6 +1127,33 @@ algorithm
         ();
   end matchcontinue;
 end dumpEqnsSolved2;
+
+public function dumpLoops "author: vitalij"
+  input BackendDAE.BackendDAE inDAE;
+  output BackendDAE.BackendDAE outDAE = inDAE;
+protected
+  BackendDAE.StrongComponents comps;
+  BackendDAE.EquationArray eqns;
+  BackendDAE.Variables vars;
+  Integer isyst = 1;
+algorithm
+    _ := match outDAE.shared
+            case BackendDAE.SHARED(backendDAEType=BackendDAE.SIMULATION()) then print("SIMULATION\n");
+            case BackendDAE.SHARED(backendDAEType=BackendDAE.INITIALSYSTEM()) then print("INITIALSYSTEM\n");
+            else print("UNKNOWN\n");
+            end match;
+
+   for syst in inDAE.eqs loop
+     print("\nsystem " + intString(isyst) + "\n");
+     BackendDAE.EQSYSTEM(orderedVars=vars,orderedEqs=eqns, matching=BackendDAE.MATCHING(comps=comps)) := syst;
+     for comp in comps loop
+       if BackendEquation.isEquationsSystem(comp) or BackendEquation.isTornSystem(comp) then
+         dumpEqnsSolved2({comp}, eqns, vars);
+       end if;
+     end for;
+   isyst := isyst + 1;
+   end for;
+end dumpLoops;
 
 public function dumpComponentsAdvanced "author: Frenkel TUD
   Prints the blocks of the BLT sorting on stdout."

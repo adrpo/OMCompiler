@@ -35,9 +35,8 @@ encapsulated package SimCodeUtil
   description: Code generation using Susan templates
 
   The entry points to this module are the functions createSimCode and
-  createFunctions.
+  createFunctions."
 
-  RCS: $Id$"
 
 // public imports
 import Absyn;
@@ -93,6 +92,7 @@ import HpcOmSimCode;
 import Inline;
 import List;
 import Matching;
+import MetaModelica.Dangerous;
 import PriorityQueue;
 import SimCodeDump;
 import SimCodeFunctionUtil;
@@ -201,7 +201,7 @@ protected
   list<DAE.Constraint> constraints;
   list<DAE.Exp> lits;
   list<SimCode.ClockedPartition> clockedPartitions;
-  list<SimCode.JacobianMatrix> LinearMatrices, SymbolicJacs, SymbolicJacsTemp, SymbolicJacsStateSelect, SymbolicJacsNLS;
+  list<SimCode.JacobianMatrix> LinearMatrices, SymbolicJacs, SymbolicJacsTemp, SymbolicJacsStateSelect, SymbolicJacsStateSelectInternal, SymbolicJacsNLS;
   list<SimCode.SimEqSystem> algorithmAndEquationAsserts;
   list<SimCode.SimEqSystem> allEquations;
   list<SimCode.SimEqSystem> equationsForZeroCrossings;
@@ -302,7 +302,7 @@ algorithm
     // just the algorithms without outputs
 
     algebraicEquations := listAppend(algebraicEquations, removedEquations::{});
-    allEquations := listAppend(allEquations, removedEquations);
+    allEquations := List.append_reverse(allEquations, removedEquations);
 
     // state set stuff
     (dlow, stateSets, uniqueEqIndex, tempvars, numStateSets) := createStateSets(dlow, {}, uniqueEqIndex, tempvars);
@@ -341,7 +341,7 @@ algorithm
     end if;
 
     // collect symbolic jacobians from state selection
-    (stateSets, SymbolicJacsStateSelect, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians) := indexStateSets(stateSets, {}, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, {});
+    (stateSets, SymbolicJacsStateSelect, SymbolicJacsStateSelectInternal, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians) := indexStateSets(stateSets, {}, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, {}, {});
 
     // generate jacobian or linear model matrices
     (LinearMatrices, uniqueEqIndex) := createJacobianLinearCode(symJacs, modelInfo, uniqueEqIndex);
@@ -353,7 +353,8 @@ algorithm
     (_, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, SymbolicJacs) := countandIndexAlgebraicLoops({}, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, LinearMatrices);
 
     jacobianEquations := collectAllJacobianEquations(SymbolicJacsStateSelect, jacobianEquations);
-    SymbolicJacsNLS := listAppend(SymbolicJacsNLS, SymbolicJacsStateSelect);
+    SymbolicJacsNLS := listAppend(SymbolicJacsStateSelectInternal, SymbolicJacsNLS);
+    SymbolicJacsNLS := listAppend(SymbolicJacsStateSelect, SymbolicJacsNLS);
     SymbolicJacs := listAppend(SymbolicJacsNLS, SymbolicJacs);
     jacobianSimvars := collectAllJacobianVars(SymbolicJacs, {});
     modelInfo := setJacobianVars(jacobianSimvars, modelInfo);
@@ -390,12 +391,12 @@ algorithm
     algebraicEquations := List.filterOnFalse(algebraicEquations, listEmpty);
 
     if Flags.isSet(Flags.EXEC_HASH) then
-      print("*** SimCode -> generate cref2simVar hastable: " + realString(clock()) + "\n");
+      print("*** SimCode -> generate cref2simVar hashtable: " + realString(clock()) + "\n");
     end if;
     (crefToSimVarHT, mixedArrayVars) := createCrefToSimVarHT(modelInfo);
     modelInfo := setMixedArrayVars(mixedArrayVars, modelInfo);
     if Flags.isSet(Flags.EXEC_HASH) then
-      print("*** SimCode -> generate cref2simVar hastable done!: " + realString(clock()) + "\n");
+      print("*** SimCode -> generate cref2simVar hashtable done!: " + realString(clock()) + "\n");
     end if;
 
     backendMapping := setBackendVarMapping(inBackendDAE, crefToSimVarHT, modelInfo, backendMapping);
@@ -639,8 +640,12 @@ protected
 algorithm
   for i in 1:arrayLength(basePartitions) loop
     basePartition := basePartitions[i];
-    simSubPartitions := List.map(Array.getRange(off, off + basePartition.nSubClocks - 1, subPartitions), Util.getOption);
-    simSubPartitions := listReverse(simSubPartitions);
+    if basePartition.nSubClocks > 0 then
+      simSubPartitions := List.map(Array.getRange(off, off + basePartition.nSubClocks - 1, subPartitions), Util.getOption);
+      simSubPartitions := listReverse(simSubPartitions);
+    else
+      simSubPartitions := {};
+    end if;
     off := off + basePartition.nSubClocks;
     clockedPartitions := SimCode.CLOCKED_PARTITION(basePartition.clock, simSubPartitions)::clockedPartitions;
   end for;
@@ -1015,8 +1020,8 @@ algorithm
     case ({}, symJac::restSymJacs, _, _, _, _, _, _)
       equation
         (symJac, countLinearSys, countNonLinSys, countMixedSys, countJacobians, symjacs) = countandIndexAlgebraicLoopsSymJac(symJac, inLinearSysIndex, inNonLinSysIndex, inMixedSysIndex, inJacobianIndex);
-        symjacs = listAppend(symjacs,inSymJacsAcc);
-        (eqs, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork({}, restSymJacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians, inEqnsAcc, symJac::symjacs);
+        symjacs = symJac::listAppend(symjacs,inSymJacsAcc);
+        (eqs, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians) = countandIndexAlgebraicLoopsWork({}, restSymJacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians, inEqnsAcc, symjacs);
       then (eqs, symjacs, countLinearSys, countNonLinSys, countMixedSys, countJacobians);
 
     // No dynamic tearing
@@ -1199,6 +1204,7 @@ algorithm
   foldArg := (iuniqueEqIndex, {}, {}, {}, {}, itempvars, {}, {}, iBackendMapping, iSccOffset);
   (ouniqueEqIndex, oodeEquations, oalgebraicEquations, oallEquations, oequationsForZeroCrossings, otempvars,
   oeqSccMapping, oeqBackendSimCodeMapping, obackendMapping, oSccOffset) := List.fold1(inSysts, createEquationsForSystems1, arg, foldArg);
+  oequationsForZeroCrossings := Dangerous.listReverseInPlace(oequationsForZeroCrossings);
 end createEquationsForSystems;
 
 protected function createEquationsForSystems1
@@ -1246,8 +1252,8 @@ algorithm
 
         odeEquations = List.consOnTrue(not listEmpty(odeEquations1), odeEquations1, odeEquations);
         algebraicEquations = List.consOnTrue(not listEmpty(algebraicEquations1), algebraicEquations1, algebraicEquations);
-        allEquations = listAppend(allEquations, allEquations1);
-        equationsForZeroCrossings = listAppend(equationsForZeroCrossings, equationsForZeroCrossings1);
+        allEquations = List.append_reverse(allEquations1, allEquations);
+        equationsForZeroCrossings = List.append_reverse(equationsForZeroCrossings1, equationsForZeroCrossings);
 
       then ( uniqueEqIndex, odeEquations, algebraicEquations, allEquations, equationsForZeroCrossings, tempvars,
              eqSccMapping, eqBackendSimCodeMapping, backendMapping, listLength(comps) + sccOffset );
@@ -2319,7 +2325,7 @@ algorithm
       slst = List.map(dims, intString);
       var = SimCodeVar.SIMVAR(cr, BackendDAE.VARIABLE(), "", "", "", 0, NONE(), NONE(), NONE(), NONE(), false, ty, false, SOME(name), SimCodeVar.NOALIAS(), DAE.emptyElementSource, SimCodeVar.NONECAUS(), NONE(), slst, false, true, false, NONE());
       tempvars = createTempVarsforCrefs(rest, {var});
-    then listAppend(listReverse(tempvars), itempvars);
+    then List.append_reverse(tempvars, itempvars);
   end match;
 end createArrayTempVar;
 
@@ -3454,14 +3460,16 @@ protected function indexStateSets
   input Integer iNumMixed;
   input Integer iNumJac;
   input list<SimCode.StateSet> inSetsAccum;
+  input list<SimCode.JacobianMatrix> inSymAccumInternal;
   output list<SimCode.StateSet> outSets;
   output list<SimCode.JacobianMatrix> outSymJacs;
+  output list<SimCode.JacobianMatrix> outSymAccumInternal;
   output Integer oNumLin;
   output Integer oNumNonLin;
   output Integer oNumMixed;
   output Integer oNumJac;
 algorithm
-  (outSets, outSymJacs, oNumLin, oNumNonLin, oNumMixed, oNumJac) := match(inSets, inSymJacs, iNumLin, iNumNonLin, iNumMixed, iNumJac, inSetsAccum)
+  (outSets, outSymJacs, outSymAccumInternal, oNumLin, oNumNonLin, oNumMixed, oNumJac) := match(inSets, inSymJacs, iNumLin, iNumNonLin, iNumMixed, iNumJac, inSetsAccum, inSymAccumInternal)
     local
       list<SimCode.StateSet> sets;
       SimCode.StateSet set;
@@ -3474,13 +3482,13 @@ algorithm
       list<DAE.ComponentRef> states;
       list<DAE.ComponentRef> statescandidates;
       DAE.ComponentRef crA;
-    case ({}, _, _, _, _, _, _) then (listReverse(inSetsAccum), listReverse(inSymJacs), iNumLin, iNumNonLin, iNumMixed, iNumJac);
-    case((SimCode.SES_STATESET(index=index, nCandidates=nCandidates, nStates=nStates, states=states, statescandidates=statescandidates, crA=crA, jacobianMatrix=symJac))::sets, _, _, _, _, _, _)
+    case ({}, _, _, _, _, _, _, _) then (listReverse(inSetsAccum), listReverse(inSymJacs), inSymAccumInternal, iNumLin, iNumNonLin, iNumMixed, iNumJac);
+    case((SimCode.SES_STATESET(index=index, nCandidates=nCandidates, nStates=nStates, states=states, statescandidates=statescandidates, crA=crA, jacobianMatrix=symJac))::sets, _, _, _, _, _, _, _)
     equation
       (symJac, numLin, numNonLin, numMixed, numJac, symJacsInternal) = countandIndexAlgebraicLoopsSymJac(symJac, iNumLin, iNumNonLin, iNumMixed, iNumJac);
-      symJacs = listAppend(symJacsInternal, inSymJacs);
-      (outSets, outSymJacs, oNumLin, oNumNonLin, oNumMixed, oNumJac) = indexStateSets(sets, symJac::symJacs, numLin, numNonLin, numMixed, numJac, SimCode.SES_STATESET(index, nCandidates, nStates, states, statescandidates, crA, symJac)::inSetsAccum);
-     then (outSets, outSymJacs, oNumLin, oNumNonLin, oNumMixed, oNumJac);
+      outSymAccumInternal = listAppend(inSymAccumInternal, symJacsInternal);
+      (outSets, outSymJacs, outSymAccumInternal, oNumLin, oNumNonLin, oNumMixed, oNumJac) = indexStateSets(sets, symJac::inSymJacs, numLin, numNonLin, numMixed, numJac, SimCode.SES_STATESET(index, nCandidates, nStates, states, statescandidates, crA, symJac)::inSetsAccum, outSymAccumInternal);
+     then (outSets, outSymJacs, outSymAccumInternal, oNumLin, oNumNonLin, oNumMixed, oNumJac);
   end match;
 end indexStateSets;
 
@@ -3545,7 +3553,8 @@ algorithm
         if Flags.isSet(Flags.JAC_DUMP2) then
           print("analytical Jacobians -> creating SimCode equations for Matrix " + name + " time: " + realString(clock()) + "\n");
         end if;
-        (columnEquations, _, uniqueEqIndex, tempvars) = createEquations(false, false, false, false, syst, shared, comps, iuniqueEqIndex, itempvars);
+        // generate also discrete equations, they might be introduced by wrapFunctionCalls
+        (columnEquations, _, uniqueEqIndex, tempvars) = createEquations(false, false, true, false, syst, shared, comps, iuniqueEqIndex, itempvars);
         if Flags.isSet(Flags.JAC_DUMP2) then
           print("analytical Jacobians -> created all SimCode equations for Matrix " + name +  " time: " + realString(clock()) + "\n");
         end if;
@@ -3787,7 +3796,8 @@ algorithm
         if Flags.isSet(Flags.JAC_DUMP2) then
           print("analytical Jacobians -> creating SimCode equations for Matrix " + name + " time: " + realString(clock()) + "\n");
         end if;
-        (columnEquations, _, uniqueEqIndex, _) = createEquations(false, false, false, false, syst, shared, comps, iuniqueEqIndex, {});
+        // generate also discrete equations, they might be introduced by wrapFunctionCalls
+        (columnEquations, _, uniqueEqIndex, _) = createEquations(false, false, true, false, syst, shared, comps, iuniqueEqIndex, {});
         if Flags.isSet(Flags.JAC_DUMP2) then
           print("analytical Jacobians -> created all SimCode equations for Matrix " + name +  " time: " + realString(clock()) + "\n");
         end if;
@@ -5208,7 +5218,7 @@ protected
   BackendDAE.EquationArray  removedEqs;
   list<SimCodeVar.SimVar> tempvars;
   Integer uniqueEqIndex;
-  list<SimCode.SimEqSystem> allEquations, solvedEquations, removedEquations, aliasEquations, removedInitialEquations;
+  list<SimCode.SimEqSystem> allEquations, knownVarEquations, solvedEquations, removedEquations, aliasEquations, removedInitialEquations;
   BackendDAE.EqSystems systs;
   BackendDAE.Shared shared;
   BackendDAE.Variables knvars, aliasVars;
@@ -5216,17 +5226,19 @@ algorithm
   BackendDAE.DAE(systs, shared as BackendDAE.SHARED(knownVars=knvars, aliasVars=aliasVars)) := inInitDAE;
   removedEqs := BackendDAEUtil.collapseRemovedEqs(inInitDAE);
   // generate equations from the known unfixed variables
-  ((uniqueEqIndex, allEquations)) := BackendVariable.traverseBackendDAEVars(knvars, traverseKnVarsToSimEqSystem, (iuniqueEqIndex, {}));
+  ((uniqueEqIndex, knownVarEquations)) := BackendVariable.traverseBackendDAEVars(knvars, traverseKnVarsToSimEqSystem, (iuniqueEqIndex, {}));
   // generate equations from the solved systems
   (uniqueEqIndex, _, _, solvedEquations, _, tempvars, _, _, _, _) :=
       createEquationsForSystems(systs, shared, uniqueEqIndex, {}, itempvars, 0, SimCode.NO_MAPPING());
-  allEquations := listAppend(allEquations, solvedEquations);
   // generate equations from the removed equations
   ((uniqueEqIndex, removedEquations)) := BackendEquation.traverseEquationArray(removedEqs, traversedlowEqToSimEqSystem, (uniqueEqIndex, {}));
-  allEquations := listAppend(allEquations, removedEquations);
   // generate equations from the alias variables
   ((uniqueEqIndex, aliasEquations)) := BackendVariable.traverseBackendDAEVars(aliasVars, traverseAliasVarsToSimEqSystem, (uniqueEqIndex, {}));
-  allEquations := listAppend(allEquations, aliasEquations);
+
+  allEquations := Dangerous.listReverseInPlace(aliasEquations);
+  allEquations := listAppend(removedEquations, allEquations);
+  allEquations := List.append_reverse(solvedEquations, allEquations);
+  allEquations := listAppend(knownVarEquations, allEquations);
 
   // generate equations from removed initial equations
   (removedInitialEquations, uniqueEqIndex, tempvars) := createNonlinearResidualEquations(inRemovedEqnLst, uniqueEqIndex, tempvars);
@@ -5248,7 +5260,7 @@ protected function createInitialEquations_lambda0 "author: lochel"
 protected
   list<SimCodeVar.SimVar> tempvars;
   Integer uniqueEqIndex;
-  list<SimCode.SimEqSystem> allEquations, solvedEquations, aliasEquations;
+  list<SimCode.SimEqSystem> allEquations, knownEquations, solvedEquations, aliasEquations;
   BackendDAE.EqSystems systs;
   BackendDAE.Shared shared;
   BackendDAE.Variables knvars, aliasVars;
@@ -5256,14 +5268,14 @@ algorithm
   BackendDAE.DAE(systs, shared as BackendDAE.SHARED(knownVars=knvars, aliasVars=aliasVars)) := inInitDAE;
 
   // generate equations from the known unfixed variables
-  ((uniqueEqIndex, allEquations)) := BackendVariable.traverseBackendDAEVars(knvars, traverseKnVarsToSimEqSystem, (iuniqueEqIndex, {}));
+  ((uniqueEqIndex, knownEquations)) := BackendVariable.traverseBackendDAEVars(knvars, traverseKnVarsToSimEqSystem, (iuniqueEqIndex, {}));
   // generate equations from the solved systems
   (uniqueEqIndex, _, _, solvedEquations, _, tempvars, _, _, _, _) :=
       createEquationsForSystems(systs, shared, uniqueEqIndex, {}, itempvars, 0, SimCode.NO_MAPPING());
-  allEquations := listAppend(allEquations, solvedEquations);
   // generate equations from the alias variables
   ((uniqueEqIndex, aliasEquations)) := BackendVariable.traverseBackendDAEVars(aliasVars, traverseAliasVarsToSimEqSystem, (uniqueEqIndex, {}));
-  allEquations := listAppend(allEquations, aliasEquations);
+  allEquations := List.append_reverse(solvedEquations, aliasEquations);
+  allEquations := listAppend(knownEquations, allEquations);
 
   // output
   outInitialEqns := allEquations;
@@ -5857,7 +5869,7 @@ protected
   list<Integer> varMap;
   array<Integer> varMapArr;
   BackendDAE.Variables vars, allVars, vars1;
-  BackendDAE.EquationArray eqs, eqs1;
+  BackendDAE.EquationArray eqs;
   BackendDAE.Matching matching;
   BackendDAE.IncidenceMatrix mStart;
   BackendDAE.IncidenceMatrixT mTStart;
@@ -5870,32 +5882,32 @@ protected
   list<Integer> stateIdcs;
   list<BackendDAE.VarKind> stateKinds;
 algorithm
-  BackendDAE.EQSYSTEM(orderedVars=vars, orderedEqs=eqs) := systIn;
+  vars := systIn.orderedVars;
   // set the varkInd for states to variable, reverse this later with the help of the stateinfo
   stateInfo := List.fold1(List.intRange(BackendVariable.varsSize(vars)),getStateInfo,vars,{});// which var is a state and save the kind
   (vars,_) := BackendVariable.traverseBackendDAEVarsWithUpdate(vars,setVarKindForStates,BackendDAE.VARIABLE());
 
   // replace every var or param by its startvalue or binding, make a system of variables withput startvalues
-  allVars := BackendVariable.mergeVariables(vars,knownVars);
+
   varLst := BackendVariable.varList(vars);
-  eqLst := BackendEquation.equationList(eqs);
   varMap := List.intRange(BackendVariable.varsSize(vars));
   (noStartVarLst,varMap) := List.filterOnTrueSync(varLst, BackendVariable.varHasNoStartValue, varMap);
 
   // insert start values for crefs and build incidence matrix
     //BackendDump.dumpVariables(vars,"VAR BEFORE");
     //BackendDump.dumpEquationList(eqLst,"EQS BEFORE");
-  (eqLst, _) := BackendEquation.traverseExpsOfEquationList(eqLst,replaceCrefWithStartValue,allVars);
+  eqs := BackendEquation.copyEquationArray(systIn.orderedEqs);
+  _ := BackendDAEUtil.traverseBackendDAEExpsEqnsWithUpdate(eqs,replaceCrefWithStartValue,knownVars);
+  _ := BackendDAEUtil.traverseBackendDAEExpsEqnsWithUpdate(eqs,replaceCrefWithStartValue,vars);
     //BackendDump.dumpEquationList(eqLst,"EQS AFTER");
-  eqs1 := BackendEquation.listEquation(eqLst);
   vars1 := BackendVariable.listVar1(noStartVarLst);
-  syst := BackendDAEUtil.createEqSystem(vars1, eqs1);
+  syst := BackendDAEUtil.createEqSystem(vars1, eqs);
   (syst, mStart, mTStart) := BackendDAEUtil.getIncidenceMatrix(syst,BackendDAE.NORMAL(),NONE());
     //BackendDump.dumpIncidenceMatrix(mStart);
     //BackendDump.dumpIncidenceMatrixT(mTStart);
   // solve equations for new start values and assign start values to variables
   varMapArr := listArray(varMap);
-  vars := preCalculateStartValues1(List.intRange(arrayLength(mStart)), mStart, mTStart, varMapArr, eqs1, vars);
+  vars := preCalculateStartValues1(List.intRange(arrayLength(mStart)), mStart, mTStart, varMapArr, eqs, vars);
 
   // reset the varKinds for the states
   stateIdcs := List.map(stateInfo, Util.tuple21);
@@ -5918,7 +5930,7 @@ protected function preCalculateStartValues1"try to solve the start equation for 
   output BackendDAE.Variables varArr = varsIn;
 protected
   Integer eqIdx, varIdx, varIdx0;
-  list<Integer> rest, newEqIdcs;
+  list<Integer> rest, newEqIdcs, workList={};
   list<list<Integer>> mEntries;
   BackendDAE.Equation eq;
   BackendDAE.EquationArray eqArr;
@@ -5927,8 +5939,16 @@ protected
   DAE.ComponentRef cref;
   DAE.Exp lhs,rhs;
 algorithm
+  // Implement a FIFO queue using two lists:
+  // 'rest' contains the elements in the correct order while 'workList'
+  // contains the rest of the elements in reverse order (in order to
+  // easier add new elements to the queue)
   rest := eqIndexes;
-  while not listEmpty(rest) loop
+  while not listEmpty(rest) or not listEmpty(workList) loop
+    if listEmpty(rest) then
+      rest := Dangerous.listReverseInPlace(workList);
+      workList := {};
+    end if;
     eqIdx::rest := rest;
     try
       {varIdx0} := arrayGet(m,eqIdx);
@@ -5950,7 +5970,7 @@ algorithm
       //check these equations again
       newEqIdcs := arrayGet(mT,varIdx0);
       newEqIdcs := List.deleteMember(newEqIdcs,eqIdx);
-      rest := listAppend(rest,newEqIdcs); // Appending to the end of the list is slow :(
+      workList := List.append_reverse(newEqIdcs,workList);
       //print("check these equations again: "+stringDelimitList(List.map(newEqIdcs,intString),", ")+"\n");
       // replace the var with the new start value in these equations
       eqLst := List.map1r(newEqIdcs,BackendEquation.equationNth1,eqs);
@@ -5963,6 +5983,7 @@ algorithm
     else
     end try;
   end while;
+
 end preCalculateStartValues1;
 
 protected function artificialVarKind "an artificial var is introduced during compilation and has a start-value that does not come from the model"
@@ -6362,7 +6383,7 @@ protected
   list<SimCodeVar.SimVar> mixedArrayVars;
   SimCodeVar.SimVar simvar;
   SimCodeVar.SimVar derivSimvar;
-  Boolean isalias;
+  Boolean isalias, isAlg, isParam, isConst;
   DAE.ComponentRef name;
   Integer len;
 algorithm
@@ -6374,6 +6395,7 @@ algorithm
   simvar := dlowvarToSimvar(dlowVar, SOME(inAliasVars), inVars);
   derivSimvar := derVarFromStateVar(simvar);
   isalias := isAliasVar(simvar);
+
 
   // update HashSet
   outHS := BaseHashSet.add(simvar.name, outHS);
@@ -6396,54 +6418,89 @@ algorithm
   end if;
 
   // figure out in which lists to put it
-  stateVars := List.consOnTrue((not isalias) and
-    (BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar)), simvar, stateVars);
-  derivativeVars := List.consOnTrue((not isalias) and
-    (BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar)), derivSimvar, derivativeVars);
-  algVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarNonDiscreteAlg(dlowVar), simvar, algVars);
-  discreteAlgVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarDiscreteAlg(dlowVar), simvar, discreteAlgVars);
-  intAlgVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarIntAlg(dlowVar), simvar, intAlgVars);
-  boolAlgVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarBoolAlg(dlowVar), simvar, boolAlgVars);
-  inputVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarOnTopLevelAndInputNoDerInput(dlowVar), simvar, inputVars);
-  outputVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarOnTopLevelAndOutput(dlowVar), simvar, outputVars);
-  paramVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarParam(dlowVar), simvar, paramVars);
-  intParamVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarIntParam(dlowVar), simvar, intParamVars);
-  boolParamVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarBoolParam(dlowVar), simvar, boolParamVars);
-  stringAlgVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarStringAlg(dlowVar), simvar, stringAlgVars);
-  stringParamVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarStringParam(dlowVar), simvar, stringParamVars);
-  extObjVars := List.consOnTrue((not isalias) and
-    BackendVariable.isExtObj(dlowVar), simvar, extObjVars);
-  aliasVars := List.consOnTrue( isalias and
-    BackendVariable.isVarNonDiscreteAlg(dlowVar), simvar, aliasVars);
-  intAliasVars := List.consOnTrue( isalias and
-    BackendVariable.isVarIntAlg(dlowVar), simvar, intAliasVars);
-  boolAliasVars := List.consOnTrue( isalias and
-    BackendVariable.isVarBoolAlg(dlowVar), simvar, boolAliasVars);
-  stringAliasVars := List.consOnTrue( isalias and
-    BackendVariable.isVarStringAlg(dlowVar), simvar, stringAliasVars);
-  constVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarConst(dlowVar), simvar, constVars);
-  intConstVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarIntConst(dlowVar), simvar, intConstVars);
-  boolConstVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarBoolConst(dlowVar), simvar, boolConstVars);
-  stringConstVars := List.consOnTrue((not isalias) and
-    BackendVariable.isVarStringConst(dlowVar), simvar, stringConstVars);
-  realOptimizeConstraintsVars := List.consOnTrue((not isalias) and
-    BackendVariable.isRealOptimizeConstraintsVars(dlowVar), simvar, realOptimizeConstraintsVars);
-  realOptimizeFinalConstraintsVars := List.consOnTrue((not isalias) and
-    BackendVariable.isRealOptimizeFinalConstraintsVars(dlowVar), simvar, realOptimizeFinalConstraintsVars);
+  isAlg := BackendVariable.isVarAlg(dlowVar);
+  isParam := BackendVariable.BackendVariable.isParam(dlowVar);
+  isConst := BackendVariable.BackendVariable.isConst(dlowVar);
+
+  // for inputs and outputs we have additional lists
+  if BackendVariable.isVarOnTopLevelAndInputNoDerInput(dlowVar) then
+    inputVars := simvar::inputVars;
+  end if;
+  if BackendVariable.isVarOnTopLevelAndOutput(dlowVar) then
+    outputVars := simvar::outputVars;
+  end if;
+  // check if alias
+  if isalias then
+    if Types.isReal(dlowVar.varType) then
+      aliasVars := simvar::aliasVars;
+    elseif Types.isInteger(dlowVar.varType) or  Types.isEnumeration(dlowVar.varType) then
+      intAliasVars := simvar::intAliasVars;
+    elseif Types.isBoolean(dlowVar.varType) then
+      boolAliasVars := simvar::boolAliasVars;
+    elseif Types.isString(dlowVar.varType) then
+      stringAliasVars := simvar::stringAliasVars;
+    end if;
+  // check for states
+  elseif BackendVariable.isStateVar(dlowVar) or BackendVariable.isAlgState(dlowVar) then
+    stateVars := simvar::stateVars;
+    derivativeVars := derivSimvar::derivativeVars;
+  // check for algebraic varibales
+  elseif isAlg or isParam or isConst then
+    // Real vars
+    if Types.isReal(dlowVar.varType) then
+      if isAlg then
+        if BackendVariable.isVarDiscrete(dlowVar) then
+          discreteAlgVars := simvar::discreteAlgVars;
+        else
+          algVars := simvar::algVars;
+        end if;
+      elseif isParam then
+        paramVars := simvar::paramVars;
+      elseif isConst then
+        constVars := simvar::constVars;
+      end if;
+    // Integer vars
+    elseif Types.isInteger(dlowVar.varType) or  Types.isEnumeration(dlowVar.varType) then
+      if isAlg then
+        intAlgVars := simvar::intAlgVars;
+      elseif isParam then
+        intParamVars := simvar::intParamVars;
+      elseif isConst then
+        intConstVars := simvar::intConstVars;
+      end if;
+    // Boolean vars
+    elseif Types.isBoolean(dlowVar.varType) then
+      if isAlg then
+        boolAlgVars := simvar::boolAlgVars;
+      elseif isParam then
+        boolParamVars := simvar::boolParamVars;
+      elseif isConst then
+        boolConstVars := simvar::boolConstVars;
+      end if;
+    // String vars
+    elseif Types.isString(dlowVar.varType) then
+      if isAlg then
+        stringAlgVars := simvar::stringAlgVars;
+      elseif isParam then
+        stringParamVars := simvar::stringParamVars;
+      elseif isConst then
+        stringConstVars := simvar::stringConstVars;
+      end if;
+    end if;
+  // external objects
+  elseif BackendVariable.isExtObj(dlowVar) then
+    extObjVars := simvar::extObjVars;
+  // optimize constraints
+  elseif BackendVariable.isRealOptimizeConstraintsVars(dlowVar) then
+    realOptimizeConstraintsVars := simvar::realOptimizeConstraintsVars;
+  // optimize final constraints vars
+  elseif BackendVariable.isRealOptimizeFinalConstraintsVars(dlowVar) then
+    realOptimizeFinalConstraintsVars := simvar::realOptimizeFinalConstraintsVars;
+  elseif BackendVariable.isOptInputVar(dlowVar) then
+    algVars := simvar::algVars;
+  else
+    Error.addInternalError("Failed to find the correct SimVar list for Var: " + BackendDump.varString(dlowVar), sourceInfo());
+  end if;
 
   varsOut := SimCodeVar.SIMVARS(stateVars, derivativeVars, algVars, discreteAlgVars, intAlgVars, boolAlgVars, inputVars, outputVars,
     aliasVars, intAliasVars, boolAliasVars, paramVars, intParamVars, boolParamVars,
@@ -10618,7 +10675,8 @@ algorithm
   end matchcontinue;
 end setUpSystMapping;
 
-protected function setBackendVarMapping"sets the varmapping in the backendmapping.
+protected function setBackendVarMapping
+"sets the varmapping in the backendmapping.
 author:Waurich TUD 2014-04"
   input BackendDAE.BackendDAE dae;
   input SimCode.HashTableCrefToSimVar ht;
@@ -10642,16 +10700,26 @@ algorithm
       BackendDAE.IncidenceMatrix m;
       BackendDAE.IncidenceMatrixT mt;
       array<list<SimCodeVar.SimVar>> simVarMapping;
+      SimCode.HashTableCrefToSimVar htStates;
+      Integer size;
     case(_,_,_,_)
       equation
         SimCode.BACKENDMAPPING(m=m,mT=mt,eqMapping=eqMapping,varMapping=varMapping,eqMatch=eqMatch,varMatch=varMatch,eqTree=tree,simVarMapping=simVarMapping) = bmapIn;
-        SimCode.MODELINFO(varInfo=varInfo,vars=allVars) = modelInfo;
         BackendDAE.DAE(eqs=eqs) = dae;
+
+        //get Backend vars and index
         vars = BackendVariable.equationSystemsVarsLst(eqs,{});
         crefs = List.map(vars,BackendVariable.varCref);
-        bVarIdcs = List.intRange(listLength(crefs));
+        size = listLength(crefs);
+        bVarIdcs = List.intRange(size);
         simVars = List.map1(crefs,SimCodeFunctionUtil.get,ht);
-        simVarIdcs = List.map2(simVars,getSimVarIndex,varInfo,allVars);
+
+        // get states and create hash table
+        SimCode.MODELINFO(varInfo=varInfo,vars=allVars) = modelInfo;
+        htStates = List.fold(allVars.stateVars, addSimVarToHashTable, SimCodeFunctionUtil.emptyHashTableSized(size));
+
+        // produce mapping
+        simVarIdcs = List.map2(simVars,getSimVarIndex,varInfo,htStates);
         varMapping = makeVarMapTuple(simVarIdcs,bVarIdcs,{});
         List.fold1(simVars, fillSimVarMapping, simVarMapping, 1);
         //print(stringDelimitList(List.map(crefs,ComponentReference.printComponentRefStr),"\n")+"\n");
@@ -10674,41 +10742,24 @@ algorithm
   oVarIdx := iVarIdx + 1;
 end fillSimVarMapping;
 
-protected function getSimVarIndex"gets the index from a SimVar and calculates the place in the localData array
+protected function getSimVarIndex
+"gets the index from a SimVar and calculates the place in the localData array
 author:Waurich TUD 2014-04"
   input SimCodeVar.SimVar var;
   input SimCode.VarInfo varInfo;
-  input SimCodeVar.SimVars allVars;
+  input SimCode.HashTableCrefToSimVar htStates;
   output Integer idx;
+protected
+  Integer offset;
 algorithm
-  idx := matchcontinue(var,varInfo,allVars)
-    local
-      Boolean isState;
-      Integer i, offset;
-      list<Boolean> bLst;
-      list<SimCodeVar.SimVar> states;
-    case(_,_,_)
-      equation
-      // is stateVar
-      SimCodeVar.SIMVARS(stateVars = states) = allVars;
-      bLst = List.map1(states,compareSimVarName,var);
-      isState = List.fold(bLst,boolOr,false);
-      true = isState;
-      SimCodeVar.SIMVAR(index=i) = var;
-    then
-      i;
-    case(_,_,_)
-      equation
-      // is not a stateVar
-      SimCodeVar.SIMVARS(stateVars = states) = allVars;
-      bLst = List.map1(states,compareSimVarName,var);
-      isState = List.fold(bLst,boolOr,false);
-      false = isState;
-      SimCode.VARINFO(numStateVars=offset) = varInfo;
-      SimCodeVar.SIMVAR(index=i) = var;
-    then
-      i+2*offset;
-  end matchcontinue;
+  try
+    _ := SimCodeFunctionUtil.get(var.name, htStates);
+    idx := var.index;
+  else
+    offset := varInfo.numStateVars;
+    idx := var.index;
+    idx := idx+2*offset;
+  end try;
 end getSimVarIndex;
 
 protected function makeVarMapTuple"builds a tuple for the varMapping. ((simvarindex,backendvarindex))

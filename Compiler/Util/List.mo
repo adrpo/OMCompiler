@@ -34,7 +34,6 @@ encapsulated package List
   package:     List
   description: List functions
 
-  RCS: $Id$
 
   This package contains all functions that operate on the List type, such as
   mapping and filtering functions.
@@ -117,18 +116,28 @@ public function fill<T>
      Example: fill(2, 3) => {2, 2, 2}"
   input T inElement;
   input Integer inCount;
-  output list<T> outList;
+  output list<T> outList = {};
+protected
+  Integer i = 0;
 algorithm
-  outList := list(inElement for i in 1:inCount);
+  while i < inCount loop
+    outList := inElement :: outList;
+    i := i + 1;
+  end while;
 end fill;
 
 public function intRange
   "Returns a list of n integers from 1 to inStop.
      Example: listIntRange(3) => {1,2,3}"
   input Integer inStop;
-  output list<Integer> outRange;
+  output list<Integer> outRange = {};
+protected
+  Integer i = inStop;
 algorithm
-  outRange := list(i for i in 1:inStop);
+  while i > 0 loop
+    outRange := i :: outRange;
+    i := i - 1;
+  end while;
 end intRange;
 
 public function intRange2
@@ -136,12 +145,21 @@ public function intRange2
      Example listIntRange2(3,5) => {3,4,5}"
   input Integer inStart;
   input Integer inStop;
-  output list<Integer> outRange;
+  output list<Integer> outRange = {};
 protected
-  Integer step;
+  Integer i = inStop;
 algorithm
-  step := if inStart < inStop then 1 else -1;
-  outRange := list(i for i in inStart:step:inStop);
+  if inStart < inStop then
+    while i >= inStart loop
+      outRange := i :: outRange;
+      i := i - 1;
+    end while;
+  else
+    while i <= inStart loop
+      outRange := i :: outRange;
+      i := i + 1;
+    end while;
+  end if;
 end intRange2;
 
 public function intRange3
@@ -183,7 +201,7 @@ algorithm
       T e;
 
     case SOME(e) then {e};
-    case NONE() then {};
+    else {};
   end match;
 end fromOption;
 
@@ -380,6 +398,21 @@ algorithm
   end match;
 end appendNoCopy;
 
+public function append_reverse<T>
+  "Appends the elements from list1 in reverse order to list2."
+  input list<T> inList1;
+  input list<T> inList2;
+  output list<T> outList=inList2;
+algorithm
+  if listEmpty(outList) then
+    outList := listReverse(inList1);
+    return;
+  end if;
+  for e in inList1 loop
+    outList := e::outList;
+  end for;
+end append_reverse;
+
 public function appendr<T>
   "Appends two lists in reverse order compared to listAppend."
   input list<T> inList1;
@@ -409,6 +442,7 @@ algorithm
     local
       list<T> l;
       list<list<T>> ll;
+      list<list<T>> ol = {};
 
     case ({}, _) then {inList};
 
@@ -416,7 +450,14 @@ algorithm
       then {listAppend(l, inList)};
 
     case (l :: ll, _)
-      then l :: appendLastList(ll, inList);
+      algorithm
+        while not listEmpty(ll) loop
+          ol := l::ol;
+          l::ll := ll;
+        end while;
+        ol := listAppend(l, inList) :: ol;
+        outListList := listReverseInPlace(ol);
+      then ol;
 
   end match;
 end appendLastList;
@@ -476,9 +517,9 @@ algorithm
     case({},{},_,_)
       then inResultList;
     case({},_,_,_)
-      then listAppend(listReverse(inList2), inResultList);
+      then append_reverse(inList2, inResultList);
     case(_,{},_,_)
-      then listAppend(listReverse(inList), inResultList);
+      then append_reverse(inList, inResultList);
     case(listHead::listRest, listHead2::listRest2,_,_)
       equation
         if(inCompFunc(listHead, listHead2)) then
@@ -553,8 +594,12 @@ algorithm
       T e;
       list<T> rest;
 
-    case {e} then e;
-    case (_ :: rest) then last(rest);
+    case (e :: rest)
+      algorithm
+        while not listEmpty(rest) loop
+          e::rest := rest;
+        end while;
+      then e;
   end match;
 end last;
 
@@ -562,17 +607,13 @@ public function lastListOrEmpty<T>
   "Returns the last element(list) of a list of lists. Returns empty list
   if the outer list is empty."
   input list<list<T>> inListList;
-  output list<T> outLastList;
+  output list<T> outLastList = {};
+protected
+  list<list<T>> rest = inListList;
 algorithm
-  outLastList := match(inListList)
-    local
-      list<T> elist;
-      list<list<T>> restlist;
-
-    case {} then {};
-    case {elist} then elist;
-    case (_ :: restlist) then lastListOrEmpty(restlist);
-  end match;
+  while not listEmpty(rest) loop
+    outLastList :: rest := rest;
+  end while;
 end lastListOrEmpty;
 
 public function secondLast<T>
@@ -658,7 +699,11 @@ public function stripFirst<T>
   input list<T> inList;
   output list<T> outList;
 algorithm
-  outList := if listEmpty(inList) then {} else listRest(inList);
+  if listEmpty(inList) then
+    outList := {};
+  else
+    _::outList := inList;
+  end if;
 end stripFirst;
 
 public function stripLast<T>
@@ -902,8 +947,8 @@ algorithm
         merge(l_rest, r_rest, inCompFunc, el :: acc);
 
     case ({}, {}) then listReverseInPlace(acc);
-    case ({}, _) then listAppend(listReverseInPlace(acc),inRight);
-    case (_, {}) then listAppend(listReverseInPlace(acc),inLeft);
+    case ({}, _) then append_reverse(acc,inRight);
+    case (_, {}) then append_reverse(acc,inLeft);
 
   end match;
 end merge;
@@ -947,7 +992,7 @@ algorithm
 
   // Reverse accumulator and append the remaining elements.
   l1 := if listEmpty(l1) then l2 else l1;
-  outList := listAppend(listReverseInPlace(outList), l1);
+  outList := append_reverse(outList, l1);
 end mergeSorted;
 
 public function sortIntN
@@ -3429,6 +3474,86 @@ algorithm
   end for;
 end fold43;
 
+public function fold20<T, FT1, FT2>
+  "Takes a list and a function operating on list elements having two extra
+   arguments that are 'updated', thus returned from the function. fold will call
+   the function for each element in a sequence, updating the start value."
+  input list<T> inList;
+  input FoldFunc inFoldFunc;
+  input FT1 inStartValue1;
+  input FT2 inStartValue2;
+  output FT1 outResult1 = inStartValue1;
+  output FT2 outResult2 = inStartValue2;
+
+  partial function FoldFunc
+    input T inElement;
+    input FT1 inFoldArg1;
+    input FT2 inFoldArg2;
+    output FT1 outFoldArg1;
+    output FT2 outFoldArg2;
+  end FoldFunc;
+algorithm
+  for e in inList loop
+    (outResult1, outResult2) := inFoldFunc(e, outResult1,outResult2);
+  end for;
+end fold20;
+
+public function fold30<T, FT1, FT2, FT3>
+  "Takes a list and a function operating on list elements having three extra
+   arguments that are 'updated', thus returned from the function. fold will call
+   the function for each element in a sequence, updating the start value."
+  input list<T> inList;
+  input FoldFunc inFoldFunc;
+  input FT1 inStartValue1;
+  input FT2 inStartValue2;
+  input FT3 inStartValue3;
+  output FT1 outResult1 = inStartValue1;
+  output FT2 outResult2 = inStartValue2;
+  output FT3 outResult3 = inStartValue3;
+
+  partial function FoldFunc
+    input T inElement;
+    input FT1 inFoldArg1;
+    input FT2 inFoldArg2;
+    input FT3 inFoldArg3;
+    output FT1 outFoldArg1;
+    output FT2 outFoldArg2;
+    output FT3 outFoldArg3;
+  end FoldFunc;
+algorithm
+  for e in inList loop
+    (outResult1, outResult2, outResult3) := inFoldFunc(e, outResult1,outResult2,outResult3);
+  end for;
+end fold30;
+
+public function fold21<T, FT1, FT2, ArgT1>
+ "Takes a list and a function operating on list elements having two extra
+   argument that are 'updated', thus returned from the function, and one constant
+   argument that is not updated. fold will call the function for each element in
+   a sequence, updating the start value."
+  input list<T> inList;
+  input FoldFunc inFoldFunc;
+  input ArgT1 inExtraArg1;
+  input FT1 inStartValue1;
+  input FT2 inStartValue2;
+  output FT1 outResult1 = inStartValue1;
+  output FT2 outResult2 = inStartValue2;
+
+  partial function FoldFunc
+    input T inElement;
+    input ArgT1 inExtraArg1;
+    input FT1 inFoldArg1;
+    input FT2 inFoldArg2;
+    output FT1 outFoldArg1;
+    output FT2 outFoldArg2;
+  end FoldFunc;
+algorithm
+  for e in inList loop
+    (outResult1, outResult2) := inFoldFunc(e, inExtraArg1, outResult1,outResult2);
+  end for;
+end fold21;
+
+
 public function fold5<T, FT, ArgT1, ArgT2, ArgT3, ArgT4, ArgT5>
   "Takes a list and a function operating on list elements having an extra
    argument that is 'updated', thus returned from the function, and five constant
@@ -5451,7 +5576,7 @@ algorithm
     e :: rest := rest;
 
     if valueEq(e, inElement) then
-      outList := listAppend(listReverseInPlace(outList), rest);
+      outList := append_reverse(outList, rest);
       return;
     end if;
 
@@ -5495,7 +5620,7 @@ algorithm
     e :: rest := rest;
 
     if inCompareFunc(inValue, e) then
-      outList := listAppend(listReverseInPlace(acc), rest);
+      outList := append_reverse(acc, rest);
       outDeletedElement := SOME(e);
       return;
     end if;
@@ -5541,7 +5666,7 @@ algorithm
     i := i + 1;
   end for;
 
-  outList := listAppend(listReverseInPlace(outList), rest);
+  outList := append_reverse(outList, rest);
 end deletePositionsSorted;
 
 public function removeMatchesFirst
@@ -5584,7 +5709,7 @@ algorithm
   // Replace the element at the position and append the remaining elements.
   _ :: rest := rest;
   rest := inElement :: rest;
-  outList := listAppend(listReverseInPlace(outList), rest);
+  outList := append_reverse(outList, rest);
 end replaceAt;
 
 public function replaceOnTrue<T>
@@ -5610,7 +5735,7 @@ algorithm
 
     if inFunc(e) then
       outReplaced := true;
-      outList := listAppend(listReverseInPlace(outList), inReplacement :: rest);
+      outList := append_reverse(outList, inReplacement :: rest);
       return;
     end if;
 
@@ -5657,7 +5782,7 @@ algorithm
   // Replace the element at the position and append the remaining elements.
   _ :: rest := rest;
   rest := listAppend(inReplacementList, rest);
-  outList := listAppend(listReverseInPlace(outList), rest);
+  outList := append_reverse(outList, rest);
 end replaceAtWithList;
 
 public function replaceAtWithFill<T>
@@ -6109,6 +6234,58 @@ algorithm
     outList := listAppend(outList, rest);
   end if;
 end findMap3;
+
+public function findSome<T1,T2>
+  "Applies the given function over the list and returns first returned value that is not NONE()."
+  input list<T1> inList;
+  input FuncType inFunc;
+  output T2 outVal;
+
+  partial function FuncType
+    input T1 inElement;
+    output Option<T2> outValOpt;
+  end FuncType;
+protected
+  Option<T2> retOpt = NONE();
+  T1 e;
+  list<T1> rest = inList;
+algorithm
+  while isNone(retOpt)/*not listEmpty(rest) and not outFound*/ loop
+    e :: rest := rest;
+    retOpt := inFunc(e);
+  end while;
+  outVal := match retOpt
+    case SOME(outVal)
+      then outVal;
+    end match;
+end findSome;
+
+public function findSome1<T1,T2,Arg>
+  "Applies the given function with one extra argument over the list and returns first returned value that is not NONE()."
+  input list<T1> inList;
+  input FuncType inFunc;
+  input Arg inArg;
+  output T2 outVal;
+
+  partial function FuncType
+    input T1 inElement;
+    input Arg inArg;
+    output Option<T2> outValOpt;
+  end FuncType;
+protected
+  Option<T2> retOpt = NONE();
+  T1 e;
+  list<T1> rest = inList;
+algorithm
+  while isNone(retOpt)/*not listEmpty(rest) and not outFound*/ loop
+    e :: rest := rest;
+    retOpt := inFunc(e,inArg);
+  end while;
+  outVal := match retOpt
+    case SOME(outVal)
+      then outVal;
+    end match;
+end findSome1;
 
 public function splitEqualPrefix<T1, T2>
   input list<T1> inFullList;

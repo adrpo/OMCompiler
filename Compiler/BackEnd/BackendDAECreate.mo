@@ -34,7 +34,6 @@ encapsulated package BackendDAECreate
   package:     BackendDAECreate
   description: This file contains all functions for transforming the DAE structure to the BackendDAE.
 
-  RCS: $Id$
 
 "
 
@@ -3291,7 +3290,7 @@ algorithm
       VarTransform.VariableReplacements repl;
    case(DAE.FUNCTION_DEF(body=body),_)
      equation
-       params = List.filter(body,DAEUtil.isParameter);
+       params = List.filterOnTrue(body,DAEUtil.isParameter);
        false = listEmpty(params);
        crefs = List.map(params,DAEUtil.varCref);
        crefs_new = List.map1r(crefs,ComponentReference.prependStringCref,pathName);

@@ -34,9 +34,8 @@ encapsulated package SynchronousFeatures
   package:     SynchronousFeatures
   description: This package contains functions that belong to synchronous features.
                - base-clock partitioning
-               - sub-clock partitioning
+               - sub-clock partitioning"
 
-  RCS: $Id: SynchronousFeatures.mo 21476 2014-07-11 12:08:20Z lochel $"
 
 public import Absyn;
 public import BackendDAE;
@@ -456,7 +455,7 @@ algorithm
 end makeClockedSyst;
 
 protected function resolveClocks
-"Get from clock equation system array sub-clocks[varIdx] and base clock."
+"Get array of subClocks[varIdx] and common base from clock equation system."
   input BackendDAE.Variables inVars;
   input BackendDAE.EquationArray inEqs;
   input BackendDAE.StrongComponents inComps;
@@ -466,11 +465,17 @@ protected
   BackendDAE.Equation eq;
   DAE.Exp exp;
   DAE.ClockKind clockKind;
-  tuple<BackendDAE.SubClock, Integer> subClock;
+  BackendDAE.SubClock subClock;
   BackendDAE.StrongComponent comp;
-  Integer eqIdx, varIdx;
+  Integer eqIdx, varIdx, updateIdx, parentIdx;
+  MMath.Rational clockFactor;
+  DAE.ClockKind branchClockKind;
+  array<DAE.ClockKind> clockKinds;
 algorithm
-  outSubClocks := arrayCreate(BackendVariable.varsSize(inVars), (BackendDAE.SUBCLOCK(MMath.RAT0, MMath.RAT0, NONE()), 0));
+  clockFactor := MMath.RAT1;
+  branchClockKind := DAE.INFERRED_CLOCK();
+  clockKinds := arrayCreate(BackendVariable.varsSize(inVars), DAE.INFERRED_CLOCK());
+  outSubClocks := arrayCreate(BackendVariable.varsSize(inVars), (BackendDAE.DEFAULT_SUBCLOCK, 0));
   for comp in inComps loop
     outClockKind := matchcontinue comp
       case BackendDAE.SINGLEEQUATION(eqIdx, varIdx)
@@ -482,9 +487,57 @@ algorithm
             case BackendDAE.EQUATION(scalar = e) then e;
             case BackendDAE.SOLVED_EQUATION(exp = e) then e;
           end match;
-          (clockKind, subClock) := getSubClock(exp, inVars, outSubClocks);
-          arrayUpdate(outSubClocks, varIdx, subClock);
-        then setClockKind(outClockKind, clockKind);
+          (clockKind, (subClock, parentIdx)) := getSubClock(exp, inVars, outSubClocks);
+          if parentIdx == varIdx then
+            // can't determine clock from var itself;
+            // use alternative exp of unsolved equation instead
+            exp := match eq
+              local
+                DAE.Exp e;
+              case BackendDAE.EQUATION(exp = e) then e;
+              else exp;
+            end match;
+            (clockKind, (subClock, parentIdx)) := getSubClock(exp, inVars, outSubClocks);
+          end if;
+          if parentIdx == 0 then
+            // start clock of new branch
+            branchClockKind := DAE.INFERRED_CLOCK();
+          else
+            // get previously obtained clock
+            branchClockKind := arrayGet(clockKinds, parentIdx);
+          end if;
+          (branchClockKind, _) := setClockKind(branchClockKind, clockKind, clockFactor);
+          arrayUpdate(clockKinds, varIdx, branchClockKind);
+          (clockKind, clockFactor) := setClockKind(outClockKind, clockKind, clockFactor);
+          if parentIdx == 0 then
+            // adapt uppermost subClock in a branch to possibly multiple bases
+            subClock.factor := MMath.multRational(subClock.factor, clockFactor);
+          end if;
+          updateIdx := match branchClockKind
+            case DAE.INFERRED_CLOCK()
+              guard parentIdx <> 0
+              algorithm
+                // apply inverse clock conversion to a parent without base
+                // as the clock propagates backwards
+                subClock.factor := MMath.divRational(MMath.RAT1, subClock.factor);
+                subClock.shift := MMath.subRational(MMath.RAT0, subClock.shift);
+                updateIdx := parentIdx;
+                (_, parentIdx) := arrayGet(outSubClocks, updateIdx);
+              then
+                updateIdx;
+            else
+              // regular subClock update
+              varIdx;
+          end match;
+          arrayUpdate(outSubClocks, updateIdx, (subClock, parentIdx));
+          /*
+            print("var " + intString(varIdx) + ": " +
+                  BackendDump.equationString(eq) + " ->\n    " +
+                  ExpressionDump.printExpStr(exp) + ": " +
+                  BackendDump.subClockString(subClock) + "\n    update " +
+                  intString(updateIdx) + " parent " + intString(parentIdx) + ".\n");
+          */
+        then clockKind;
       else
         algorithm
           print("internal error -- SynchronousFeatures.resolveClocks failure\r\n");
@@ -560,7 +613,7 @@ algorithm
     case DAE.CREF(cr, _)
       algorithm
         i1 := getVarIdx(cr, inVars);
-       (subClock, _) := arrayGet(inSubClocks, i1);
+        (subClock, _) := arrayGet(inSubClocks, i1);
       then
         (DAE.INFERRED_CLOCK(), (subClock, i1));
 
@@ -574,34 +627,72 @@ algorithm
 end getSubClock;
 
 protected function getSubClock1
+"Helper for recursion in getSubClock"
   input DAE.Exp inExp;
   input BackendDAE.Variables inVars;
   input array<tuple<BackendDAE.SubClock, Integer>> inSubClocks;
   output DAE.ClockKind outClockKind;
   output tuple<BackendDAE.SubClock, Integer> outSubClock;
 protected
-  BackendDAE.SubClock subClk;
-  Integer parent;
+  BackendDAE.SubClock subClock;
+  Integer parentIdx;
 algorithm
-  (outClockKind, (subClk, parent)) := getSubClock(inExp, inVars, inSubClocks);
-  parent := match inExp
+  (outClockKind, (subClock, parentIdx)) := getSubClock(inExp, inVars, inSubClocks);
+  parentIdx := match inExp
     local
       DAE.ComponentRef cr;
     case DAE.CREF(cr, _)
       then getVarIdx(cr, inVars);
-    else parent;
+    else parentIdx;
   end match;
-  outSubClock := (subClk, parent);
+  outSubClock := (subClock, parentIdx);
 end getSubClock1;
 
 protected function setClockKind
   input DAE.ClockKind inOldClockKind;
   input DAE.ClockKind inClockKind;
+  input MMath.Rational inClockFactor;
   output DAE.ClockKind outClockKind;
+  output MMath.Rational outClockFactor;
 algorithm
-  outClockKind := match (inOldClockKind, inClockKind)
-    case (DAE.INFERRED_CLOCK(), _) then inClockKind;
-    case (_, DAE.INFERRED_CLOCK()) then inOldClockKind;
+  (outClockKind, outClockFactor) := match (inOldClockKind, inClockKind)
+    local
+      DAE.Exp e1, e2;
+      Integer i1, i2, ie1, ie2;
+      Real r1, r2;
+      String s1, s2;
+    case (DAE.INFERRED_CLOCK(), _) then (inClockKind, inClockFactor);
+    case (_, DAE.INFERRED_CLOCK()) then (inOldClockKind, inClockFactor);
+    case (DAE.INTEGER_CLOCK(intervalCounter = e1, resolution = i1),
+          DAE.INTEGER_CLOCK(intervalCounter = e2, resolution = i2))
+      guard
+        Expression.expEqual(e1, e2) and
+        (i1 == i2)
+      then (inClockKind, inClockFactor);
+    case (DAE.INTEGER_CLOCK(intervalCounter = e1, resolution = i1),
+          DAE.INTEGER_CLOCK(intervalCounter = e2, resolution = i2))
+      // stay with old clock and adapt clock factor to new clock
+      algorithm
+        DAE.ICONST(ie1) := e1;
+        DAE.ICONST(ie2) := e2;
+      then (inOldClockKind, MMath.divRational(MMath.multRational(inClockFactor, MMath.RATIONAL(ie2, i2)), MMath.RATIONAL(ie1, i1)));
+    case (DAE.REAL_CLOCK(interval = e1),
+          DAE.REAL_CLOCK(interval = e2))
+      guard
+        Expression.expEqual(e1, e2)
+      then (inClockKind, inClockFactor);
+    case (DAE.BOOLEAN_CLOCK(condition = e1, startInterval = r1),
+          DAE.BOOLEAN_CLOCK(condition = e2, startInterval = r2))
+      guard
+        Expression.expEqual(e1, e2) and
+        (r1 == r2)
+      then (inClockKind, inClockFactor);
+    case (DAE.SOLVER_CLOCK(c = e1, solverMethod = s1),
+          DAE.SOLVER_CLOCK(c = e2, solverMethod = s2))
+      guard
+        Expression.expEqual(e1, e2) and
+        stringEqual(s1, s2)
+      then (inClockKind, inClockFactor);
     else
       equation Error.addMessage(Error.CLOCK_CONFLICT, {});
       then fail();
@@ -758,7 +849,9 @@ algorithm
       then oldSolverMethod;
     else
       algorithm
-        Error.addMessage(Error.SUBCLOCK_CONFLICT, {});
+        oldMethod := BackendDump.optionString(oldSolverMethod);
+        newMethod := BackendDump.optionString(newSolverMethod);
+        Error.addMessage(Error.SUBCLOCK_CONFLICT, {"solver", oldMethod, newMethod});
       then fail();
   end match;
 
@@ -777,14 +870,32 @@ algorithm
     case SOME(BackendDAE.SUBCLOCK(oldFactor, oldShift, oldSolverMethod))
       algorithm
         BackendDAE.SUBCLOCK(newFactor, newShift, newSolverMethod) := newSubClk;
-        newFactor := setFactorOrShift(oldFactor, newFactor);
-        newShift := setFactorOrShift(oldShift, newShift);
+        newFactor := setFactor(oldFactor, newFactor);
+        newShift := setShift(oldShift, newShift);
         newSolverMethod := setSolverMethod(oldSolverMethod, newSolverMethod);
       then BackendDAE.SUBCLOCK(newFactor, newShift, newSolverMethod);
   end match;
 end setSubClock;
 
-protected function setFactorOrShift
+protected function setFactor
+  input MMath.Rational oldVal;
+  input MMath.Rational newVal;
+  output MMath.Rational outVal;
+algorithm
+  outVal := match (oldVal, newVal)
+    case (MMath.RATIONAL(1, 1), _) then newVal;
+    case (_, MMath.RATIONAL(1, 1)) then oldVal;
+    else
+      algorithm
+        if not MMath.equals(oldVal, newVal) then
+          Error.addMessage(Error.SUBCLOCK_CONFLICT, {"factor", MMath.rationalString(oldVal), MMath.rationalString(newVal)});
+          fail();
+        end if;
+     then newVal;
+  end match;
+end setFactor;
+
+protected function setShift
   input MMath.Rational oldVal;
   input MMath.Rational newVal;
   output MMath.Rational outVal;
@@ -795,12 +906,12 @@ algorithm
     else
       algorithm
         if not MMath.equals(oldVal, newVal) then
-          Error.addMessage(Error.SUBCLOCK_CONFLICT, {});
+          Error.addMessage(Error.SUBCLOCK_CONFLICT, {"shift", MMath.rationalString(oldVal), MMath.rationalString(newVal)});
           fail();
         end if;
      then newVal;
   end match;
-end setFactorOrShift;
+end setShift;
 
 protected function collectSubclkInfoExp
   input DAE.Exp inExp;
@@ -1707,9 +1818,9 @@ protected function printPartitionType
   output String out;
 algorithm
   out := match isClockedPartition
-    case NONE() then "UNSPECIFIED_PARTITION";
     case SOME(false) then "CONT_PARTITION";
     case SOME(true) then "CLOCKED_PARTITION";
+    else "UNSPECIFIED_PARTITION";
   end match;
 end printPartitionType;
 
@@ -1828,9 +1939,9 @@ protected function getPartitionConflictError
 algorithm
   (msg, tokens) := match inComp
     local DAE.ComponentRef cr;
-    case NONE() then (Error.CONT_CLOCKED_PARTITION_CONFLICT_EQ, {});
     case SOME(cr) then ( Error.CONT_CLOCKED_PARTITION_CONFLICT_VAR,
                          {ComponentReference.printComponentRefStr(cr)} );
+    else (Error.CONT_CLOCKED_PARTITION_CONFLICT_EQ, {});
   end match;
 end getPartitionConflictError;
 

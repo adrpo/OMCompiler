@@ -60,6 +60,14 @@ static union MSVC_FLOAT_HACK __NAN = {{0x00, 0x00, 0xC0, 0x7F}};
  */
 #if defined(_MSC_VER)
 
+#ifndef S_ISDIR
+#define S_ISDIR(mode)  (((mode) & S_IFMT) == S_IFDIR)
+#endif
+
+#ifndef S_ISREG
+#define S_ISREG(mode)  (((mode) & S_IFMT) == S_IFREG)
+#endif
+
 /* get rid of inline for MSVC */
 #define OMC_INLINE
 
@@ -67,14 +75,16 @@ static union MSVC_FLOAT_HACK __NAN = {{0x00, 0x00, 0xC0, 0x7F}};
 #define WIN32
 #endif
 
-#define round(dbl) ((dbl) < 0.0 ? ceil((dbl) - 0.5) : floor((dbl) + 0.5))
 #define geteuid(void) (-1)
 
-#if defined(_WIN32) || defined(_WIN64)
+#if _MSC_VER < 1800 /* VS 2013 */
+#define round(dbl) ((dbl) < 0.0 ? ceil((dbl) - 0.5) : floor((dbl) + 0.5))
 #define fmax(x, y) ((x>y)?x:y)
 #define fmin(x, y) ((x<y)?x:y)
-#define snprintf sprintf_s
+#define trunc(a) ((double)((int)(a)))
 #endif
+
+#define snprintf sprintf_s
 
 #define PATH_MAX _MAX_PATH
 #include <stdarg.h>

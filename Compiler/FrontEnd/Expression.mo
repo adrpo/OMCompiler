@@ -34,7 +34,6 @@ encapsulated package Expression
   package:     Expression
   description: Expressions
 
-  RCS: $Id$
 
   This file contains the module `Expression\', which contains data types for
   describing expressions, after they have been examined by the
@@ -2748,12 +2747,12 @@ algorithm
         e = expMul(e, e1);
         fx1 = List.map1(fx1,expMul,e1);
         if not isZero(e) then
-	        if expHasCrefNoPreOrStart(e1,cr) then
-	          fx1 = e :: fx1;
-	          f1 = {};
-	        else
-	          f1 = {e};
-	        end if;
+          if expHasCrefNoPreOrStart(e1,cr) then
+            fx1 = e :: fx1;
+            f1 = {};
+          else
+            f1 = {e};
+          end if;
         end if;
         //f1 = List.flatten(List.map1(fx1,allTermsForCref, cr));
       then
@@ -2770,12 +2769,12 @@ algorithm
         e = expMul(e, e2);
         fx1 = List.map1(fx1,expMul,e2);
         if not isZero(e) then
-	        if expHasCrefNoPreOrStart(e1,cr) then
-	          fx1 = e :: fx1;
-	          f1 = {};
-	        else
-	          f1 = {e};
-	        end if;
+          if expHasCrefNoPreOrStart(e1,cr) then
+            fx1 = e :: fx1;
+            f1 = {};
+          else
+            f1 = {e};
+          end if;
         end if;
         //fx1 = List.flatten(List.map1(fx1,allTermsForCref, cr));
       then
@@ -2792,12 +2791,12 @@ algorithm
         e = makeDiv(e, e2);
         fx1 = List.map1(fx1,makeDiv,e2);
         if not isZero(e) then
-	        if expHasCrefNoPreOrStart(e1,cr) then
-	          fx1 = e :: fx1;
-	          f1 = {};
-	        else
-	          f1 = {e};
-	        end if;
+          if expHasCrefNoPreOrStart(e1,cr) then
+            fx1 = e :: fx1;
+            f1 = {};
+          else
+            f1 = {e};
+          end if;
         end if;
         //fx1 = List.flatten(List.map1(fx1,allTermsForCref, cr));
       then
@@ -5772,6 +5771,9 @@ algorithm
         (riters,ext_arg) = traverseReductionIteratorsTopDown(riters, rel, ext_arg);
       then (DAE.REDUCTION(reductionInfo,e1,riters),ext_arg);
 
+    case (_, DAE.EMPTY(), _, _)
+      then (inExp, inArg);
+
     // MetaModelica list
     case (_,DAE.CONS(e1,e2),rel,ext_arg)
       equation
@@ -7516,7 +7518,7 @@ public function isImpure "author: lochel
   input DAE.Exp inExp;
   output Boolean outBoolean;
 algorithm
-  outBoolean := isConstWork(inExp, true);
+  outBoolean := isConstWork(inExp);
   (_, outBoolean) := traverseExpTopDown(inExp, isImpureWork, false);
 end isImpure;
 
@@ -7576,7 +7578,7 @@ public function isConst
   input DAE.Exp inExp;
   output Boolean outBoolean;
 algorithm
-  outBoolean := isConstWork(inExp,true);
+  outBoolean := isConstWork(inExp);
 end isConst;
 
 public function isEvaluatedConst
@@ -7609,10 +7611,9 @@ end isEvaluatedConstWork;
 protected function isConstWork
 "Returns true if an expression is constant"
   input DAE.Exp inExp;
-  input Boolean inRes;
-  output Boolean outBoolean;
+  output Boolean outBoolean = false;
 algorithm
-  outBoolean := match (inExp,inRes)
+  outBoolean := match (inExp)
     local
       Boolean res;
       Operator op;
@@ -7621,56 +7622,96 @@ algorithm
       list<DAE.Exp> ae;
       list<list<DAE.Exp>> matrix;
 
-    case (_,false) then false;
-    case (DAE.ICONST(),_) then true;
-    case (DAE.RCONST(),_) then true;
-    case (DAE.BCONST(),_) then true;
-    case (DAE.SCONST(),_) then true;
-    case (DAE.ENUM_LITERAL(),_) then true;
+    case (DAE.ICONST()) then true;
+    case (DAE.RCONST()) then true;
+    case (DAE.BCONST()) then true;
+    case (DAE.SCONST()) then true;
+    case (DAE.ENUM_LITERAL()) then true;
 
-    case (DAE.UNARY(exp = e),_) then isConstWork(e,true);
+    case (DAE.UNARY(exp = e)) then isConstWork(e);
 
-    case (DAE.CAST(exp = e),_) then isConstWork(e,true);
+    case (DAE.CAST(exp = e)) then isConstWork(e);
 
-    case (DAE.BINARY(e1,_,e2),_) then isConstWork(e1,isConstWork(e2,true));
+    case (DAE.BINARY(e1,_,e2))
+      equation
+        res = isConstWork(e2);
+      then
+        if res then isConstWork(e1) else false;
 
-    case (DAE.IFEXP(e,e1,e2),_) then isConstWork(e,isConstWork(e1,isConstWork(e2,true)));
+    case (DAE.IFEXP(e,e1,e2))
+      equation
+        res = isConstWork(e2);
+        if res then
+          res = isConstWork(e1);
+        end if;
+      then
+        if res then isConstWork(e) else false;
 
-    case (DAE.LBINARY(exp1=e1,exp2=e2),_) then isConstWork(e1,isConstWork(e2,true));
+    case (DAE.LBINARY(exp1=e1,exp2=e2))
+      equation
+        res = isConstWork(e2);
+      then
+        if res then isConstWork(e1) else false;
 
-    case (DAE.LUNARY(exp=e),_) then isConstWork(e,true);
+    case (DAE.LUNARY(exp=e)) then isConstWork(e);
 
-    case (DAE.RELATION(exp1=e1,exp2=e2),_) then isConstWork(e1,isConstWork(e2,true));
+    case (DAE.RELATION(exp1=e1,exp2=e2))
+      equation
+        res = isConstWork(e2);
+      then
+        if res then isConstWork(e1) else false;
 
-    case (DAE.ARRAY(array = ae),_) then isConstWorkList(ae,true);
+    case (DAE.ARRAY(array = ae)) then isConstWorkList(ae);
 
-    case (DAE.MATRIX(matrix = matrix),_) then isConstWorkListList(matrix, true);
+    case (DAE.MATRIX(matrix = matrix)) then isConstWorkListList(matrix);
 
-    case (DAE.RANGE(start=e1,step=NONE(),stop=e2),_) then isConstWork(e1,isConstWork(e2,true));
+    case (DAE.RANGE(start=e1,step=NONE(),stop=e2))
+      equation
+        res = isConstWork(e2);
+      then
+        if res then isConstWork(e1) else false;
 
-    case (DAE.RANGE(start=e,step=SOME(e1),stop=e2),_) then isConstWork(e,isConstWork(e1,isConstWork(e2,true)));
+    case (DAE.RANGE(start=e,step=SOME(e1),stop=e2))
+      equation
+        res = isConstWork(e2);
+        if res then
+          res = isConstWork(e1);
+        end if;
+      then
+        if res then isConstWork(e) else false;
 
-    case (DAE.PARTEVALFUNCTION(expList = ae),_) then isConstWorkList(ae,true);
+    case (DAE.PARTEVALFUNCTION(expList = ae)) then isConstWorkList(ae);
 
-    case (DAE.TUPLE(PR = ae),_) then isConstWorkList(ae,true);
+    case (DAE.TUPLE(PR = ae)) then isConstWorkList(ae);
 
-    case (DAE.ASUB(exp=e,sub=ae),_) then isConstWorkList(ae,isConstWork(e,true));
+    case (DAE.ASUB(exp=e,sub=ae))
+      equation
+        res = isConstWork(e);
+      then
+        if res then isConstWorkList(ae) else false;
 
-    case (DAE.TSUB(exp=e),_) then isConstWork(e,true);
+    case (DAE.TSUB(exp=e)) then isConstWork(e);
 
-    case (DAE.SIZE(exp=e,sz=NONE()),_) then isConstWork(e,true);
+    case (DAE.SIZE(exp=e,sz=NONE())) then isConstWork(e);
 
-    case (DAE.SIZE(exp=e1,sz=SOME(e2)),_) then isConstWork(e1,isConstWork(e2,true));
+    case (DAE.SIZE(exp=e1,sz=SOME(e2)))
+      equation
+        res = isConstWork(e2);
+      then
+        if res then isConstWork(e1) else false;
 
-    case (DAE.CALL(expLst=ae, attr=DAE.CALL_ATTR(builtin=false, isImpure=false)),_) then isConstWorkList(ae,true);
+    case (DAE.CALL(expLst=ae, attr=DAE.CALL_ATTR(builtin=false, isImpure=false))) then isConstWorkList(ae);
 
-    case (DAE.RECORD(exps=ae),_) then isConstWorkList(ae,true);
+    case (DAE.RECORD(exps=ae)) then isConstWorkList(ae);
 
       /*TODO:Make this work for multiple iters, guard exps*/
-    case (DAE.REDUCTION(expr=e1,iterators={DAE.REDUCTIONITER(exp=e2)}),_)
-      then isConstWork(e1,isConstWork(e2,true));
+    case (DAE.REDUCTION(expr=e1,iterators={DAE.REDUCTIONITER(exp=e2)}))
+      equation
+        res = isConstWork(e2);
+      then
+        if res then isConstWork(e1) else false;
 
-    case(DAE.BOX(exp=e),_) then isConstWork(e,true);
+    case(DAE.BOX(exp=e)) then isConstWork(e);
 
     else false;
   end match;
@@ -7679,24 +7720,22 @@ end isConstWork;
 protected function isConstValueWork
 "Returns true if an expression is a constant value"
   input DAE.Exp inExp;
-  input Boolean inRes;
   output Boolean outBoolean;
 algorithm
-  outBoolean := match (inExp,inRes)
+  outBoolean := match (inExp)
     local
       Boolean res;
       DAE.Exp e,e1,e2;
       list<DAE.Exp> ae;
       list<list<DAE.Exp>> matrix;
 
-    case (_,false) then false;
-    case (DAE.ICONST(),_) then true;
-    case (DAE.RCONST(),_) then true;
-    case (DAE.BCONST(),_) then true;
-    case (DAE.SCONST(),_) then true;
-    case (DAE.ENUM_LITERAL(),_) then true;
-    case (DAE.ARRAY(array = ae),_) then isConstValueWorkList(ae,true);
-    case (DAE.MATRIX(matrix = matrix),_) then isConstValueWorkListList(matrix, true);
+    case (DAE.ICONST()) then true;
+    case (DAE.RCONST()) then true;
+    case (DAE.BCONST()) then true;
+    case (DAE.SCONST()) then true;
+    case (DAE.ENUM_LITERAL()) then true;
+    case (DAE.ARRAY(array = ae)) then isConstValueWorkList(ae);
+    case (DAE.MATRIX(matrix = matrix)) then isConstValueWorkListList(matrix);
     else false;
 
   end match;
@@ -7707,70 +7746,73 @@ public function isConstValue
   input DAE.Exp inExp;
   output Boolean outBoolean;
 algorithm
-  outBoolean := isConstValueWork(inExp,true);
+  outBoolean := isConstValueWork(inExp);
 end isConstValue;
 
 public function isConstWorkList
 "Returns true if a list of expressions is constant"
   input list<DAE.Exp> inExps;
-  input Boolean inBoolean;
   output Boolean outBoolean;
+protected
+  DAE.Exp e;
+  list<DAE.Exp> exps;
+  Boolean b = true;
 algorithm
-  outBoolean := match (inExps,inBoolean)
-    local
-      DAE.Exp e; list<DAE.Exp> exps;
-    case (_,false) then false;
-    case ({},_) then true;
-    case (e::exps,_) then isConstWorkList(exps,isConstWork(e,true));
-  end match;
+  exps := inExps;
+  while b and not listEmpty(exps) loop
+    e::exps := exps;
+    b := isConstWork(e);
+  end while;
+  outBoolean := b;
 end isConstWorkList;
 
 protected function isConstWorkListList
   input list<list<DAE.Exp>> inExps;
-  input Boolean inIsConst;
   output Boolean outIsConst;
+protected
+  list<DAE.Exp> e;
+  list<list<DAE.Exp>> exps;
+  Boolean b = true;
 algorithm
-  outIsConst := match(inExps, inIsConst)
-    local
-      list<DAE.Exp> e;
-      list<list<DAE.Exp>> exps;
-
-    case (_, false) then false;
-    case (e :: exps, _) then isConstWorkListList(exps, isConstWorkList(e, true));
-    case ({}, _) then true;
-    else false;
-  end match;
+  exps := inExps;
+  while b and not listEmpty(exps) loop
+    e::exps := exps;
+    b := isConstWorkList(e);
+  end while;
+  outIsConst := b;
 end isConstWorkListList;
 
-public function isConstValueWorkList
+protected function isConstValueWorkList
 "Returns true if a list of expressions is a constant value"
   input list<DAE.Exp> inExps;
-  input Boolean inBoolean;
   output Boolean outBoolean;
+protected
+  DAE.Exp e;
+  list<DAE.Exp> exps;
+  Boolean b = true;
 algorithm
-  outBoolean := match (inExps,inBoolean)
-    local
-      DAE.Exp e; list<DAE.Exp> exps;
-    case (_,false) then false;
-    case ({},_) then true;
-    case (e::exps,_) then isConstValueWorkList(exps,isConstValueWork(e,true));
-  end match;
+  exps := inExps;
+  while b and not listEmpty(exps) loop
+    e::exps := exps;
+    b := isConstValueWork(e);
+  end while;
+  outBoolean := b;
 end isConstValueWorkList;
 
 protected function isConstValueWorkListList
   input list<list<DAE.Exp>> inExps;
-  input Boolean inIsConst;
   output Boolean outIsConst;
+protected
+  list<DAE.Exp> e;
+  list<list<DAE.Exp>> exps;
+  Boolean b = true;
 algorithm
-  outIsConst := match(inExps, inIsConst)
-    local
-      list<DAE.Exp> e;
-      list<list<DAE.Exp>> exps;
-
-    case (_, false) then false;
-    case (e :: exps, _) then isConstValueWorkListList(exps, isConstWorkList(e, true));
-    else false;
-  end match;
+  exps := inExps;
+  while b and not listEmpty(exps) loop
+    e::exps := exps;
+    b := isConstValueWorkList(e);
+  end while;
+  outIsConst := b;
 end isConstValueWorkListList;
 
 public function isNotConst
@@ -9594,6 +9636,17 @@ algorithm
   end match;
 end isExpCrefOrIfExp;
 
+public function isExpIfExp
+"Returns true if expression is an if expression"
+  input DAE.Exp e;
+  output Boolean res;
+algorithm
+  res := match(e)
+    case(DAE.IFEXP()) then true;
+    else false;
+  end match;
+end isExpIfExp;
+
 public function operatorEqual
 "Helper function to expEqual."
   input DAE.Operator inOperator1;
@@ -9653,7 +9706,7 @@ algorithm
 
     case (DAE.DIM_INTEGER(0) :: _) then true;
     case (_ :: rest_dims) then arrayContainZeroDimension(rest_dims);
-    case ({}) then false;
+    else false;
 
   end match;
 end arrayContainZeroDimension;
@@ -9666,9 +9719,9 @@ algorithm
   wholedim := match(inDim)
     local
       DAE.Dimensions rest_dims;
-    case ({}) then false;
     case (DAE.DIM_UNKNOWN() :: _) then true;
     case (_ :: rest_dims) then arrayContainWholeDimension(rest_dims);
+    else false;
   end match;
 end arrayContainWholeDimension;
 
@@ -9716,7 +9769,6 @@ algorithm
         b2 = isNotComplex(e2);
       then b2;
     else
-    then
       true;
   end match;
 end isNotComplex;
@@ -12075,6 +12127,11 @@ algorithm
         outExps := List.map(crlst, crefToExp);
       then outExps;
 
+    case (DAE.UNARY(operator=DAE.UMINUS()))
+      algorithm
+        expl := list(DAE.UNARY(inExp.operator, exp) for exp in expandExpression(inExp.exp));
+      then expl;
+
     case DAE.ARRAY(_,_,expl)
       algorithm
         expl := List.mapFlat(expl,expandExpression);
@@ -12121,100 +12178,51 @@ protected function traversingextendArrExp "author: Frenkel TUD 2010-07.
   output DAE.Exp outExp;
   output Boolean outExpanded;
 algorithm
-  (outExp, outExpanded) := matchcontinue(inExp, inExpanded)
+  (outExp, outExpanded) := match(inExp)
     local
       DAE.ComponentRef cr;
-      list<DAE.ComponentRef> crlst;
-      DAE.Type t,ty;
+      DAE.Type ty;
       DAE.Dimension id, jd;
-      list<DAE.Dimension> ad;
-      Integer i,j;
-      list<list<DAE.Subscript>> subslst,subslst1;
-      list<DAE.Subscript> sublstcref;
+      Integer i, j;
       list<DAE.Exp> expl;
-      DAE.Exp e,e_new;
+      DAE.Exp e;
       list<DAE.Var> varLst;
       Absyn.Path name;
       list<list<DAE.Exp>> mat;
-      Boolean b;
 
     // CASE for Matrix
-    case (DAE.CREF(componentRef=cr,ty= t as DAE.T_ARRAY(ty=ty,dims=ad as {id, jd})), _)
+    case DAE.CREF(ty=ty as DAE.T_ARRAY(dims={id, jd}))
       equation
         i = dimensionSize(id);
         j = dimensionSize(jd);
-        subslst = List.map(ad, expandDimension);
-        subslst1 = rangesToSubscripts(subslst);
-        cr = ComponentReference.crefStripLastSubs(cr);
-        crlst = List.map1r(subslst1,ComponentReference.subscriptCref,cr);
-        expl = List.map1(crlst,makeCrefExp,ty);
-        mat = makeMatrix(expl,j);
-        e_new = DAE.MATRIX(t,i,mat);
-        (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
+        expl = expandExpression(inExp);
+        mat = makeMatrix(expl, j);
+        e = DAE.MATRIX(ty, i, mat);
       then
-        (e, b);
-
-    // CASE for Matrix and checkModel is on
-    case (DAE.CREF(componentRef=cr,ty= t as DAE.T_ARRAY(ty=ty,dims=ad as {_, _})), _)
-      equation
-        true = Flags.getConfigBool(Flags.CHECK_MODEL);
-        // consider size 1
-        i = dimensionSize(DAE.DIM_INTEGER(1));
-        j = dimensionSize(DAE.DIM_INTEGER(1));
-        subslst = List.map(ad, expandDimension);
-        subslst1 = rangesToSubscripts(subslst);
-        crlst = List.map1r(subslst1,ComponentReference.subscriptCref,cr);
-        expl = List.map1(crlst,makeCrefExp,ty);
-        mat = makeMatrix(expl,j);
-        e_new = DAE.MATRIX(t,i,mat);
-        (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
-      then
-        (e, b);
+        (e, true);
 
     // CASE for Array
-    case (DAE.CREF(componentRef=cr,ty= t as DAE.T_ARRAY(ty=ty,dims=ad)), _)
+    case DAE.CREF(ty=ty as DAE.T_ARRAY())
       equation
-        sublstcref = ComponentReference.crefSubs(cr);
-        subslst = List.map(ad, expandDimension);
-        subslst1 = rangesToSubscripts(subslst);
-        subslst = insertSubScripts(sublstcref,subslst1,{});
-        subslst1 = subslst;
-        cr = ComponentReference.crefStripLastSubs(cr);
-        crlst = List.map1r(subslst1,ComponentReference.subscriptCref,cr);
-        expl = List.map1(crlst,makeCrefExp,ty);
-        e_new = DAE.ARRAY(t,true,expl);
-        (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
+        expl = expandExpression(inExp);
+        e = DAE.ARRAY(ty, true, expl);
       then
-        (e, b);
-
-    // CASE for Array and checkModel is on
-    case (DAE.CREF(componentRef=cr,ty= t as DAE.T_ARRAY(ty=ty)), _)
-      equation
-        true = Flags.getConfigBool(Flags.CHECK_MODEL);
-        // consider size 1
-        subslst = {{DAE.INDEX(DAE.ICONST(1))}};
-        subslst1 = rangesToSubscripts(subslst);
-        crlst = List.map1r(subslst1,ComponentReference.subscriptCref,cr);
-        expl = List.map1(crlst,makeCrefExp,ty);
-        e_new = DAE.ARRAY(t,true,expl);
-        (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
-      then
-        (e, b);
+        (e, true);
 
     // CASE for Records
-    case (DAE.CREF(componentRef=cr,ty= t as DAE.T_COMPLEX(varLst=varLst,complexClassType=ClassInf.RECORD(name))), _)
+    case DAE.CREF(componentRef=cr, ty=ty as DAE.T_COMPLEX(varLst=varLst, complexClassType=ClassInf.RECORD(name)))
       equation
-        expl = List.map1(varLst,generateCrefsExpFromExpVar,cr);
+        expl = List.map1(varLst, generateCrefsExpFromExpVar, cr);
         i = listLength(expl);
-        true = intGt(i,0);
-        e_new = DAE.CALL(name,expl,DAE.CALL_ATTR(t,false,false,false,false,DAE.NO_INLINE(),DAE.NO_TAIL()));
-        (e, b) = traverseExpBottomUp(e_new, traversingextendArrExp, true);
+        true = intGt(i, 0);
+        e = DAE.CALL(name, expl, DAE.CALL_ATTR(ty, false, false, false, false, DAE.NO_INLINE(), DAE.NO_TAIL()));
+        (e, _) = traverseExpBottomUp(e, traversingextendArrExp, true);
       then
-        (e, b);
+        (e, true);
 
     else (inExp, inExpanded);
 
-  end matchcontinue;
+  end match;
 end traversingextendArrExp;
 
 protected function insertSubScripts"traverses the subscripts of the templSubScript and searches for wholedim. the value replaces the wholedim.
@@ -12310,7 +12318,7 @@ algorithm
     // That whole creating IM should be done the way checkModel works. but it's not. :( so
     // we have this.
     case DAE.INDEX(exp = DAE.ARRAY())
-      then expandSlice(inSubscript.exp);
+      then expandSliceExp(inSubscript.exp);
 
     // An index subscript, return it as an array.
     case DAE.INDEX() then {inSubscript};
@@ -12321,7 +12329,7 @@ algorithm
 
     // A slice subscript.
     case DAE.SLICE()
-      then expandSlice(inSubscript.exp);
+      then expandSliceExp(inSubscript.exp);
 
   end match;
 end expandSubscript;
@@ -12357,7 +12365,7 @@ algorithm
   end match;
 end expandDimension;
 
-protected function expandSlice
+public function expandSliceExp
   "Expands a slice subscript expression."
   input DAE.Exp inSliceExp;
   output list<DAE.Subscript> outSubscripts;
@@ -12370,8 +12378,11 @@ algorithm
     case DAE.ARRAY(array = expl)
       then List.map(expl, makeIndexSubscript);
 
+    case DAE.RANGE()
+      then List.map(Expression.expandRange(inSliceExp), makeIndexSubscript);
+
   end match;
-end expandSlice;
+end expandSliceExp;
 
 public function dimensionSizesSubscripts
   input list<Integer> inDimSizes;
@@ -12867,6 +12878,36 @@ algorithm
 
   outContinue := not outContainsCall;
 end containsAnyCall_traverser;
+
+public function rangeSize
+  "Tries to figure out the size of a range expression. Either return the size or
+   fails."
+  input DAE.Exp inRange;
+  output Integer outSize;
+algorithm
+  outSize := match inRange
+    local
+      Integer start, step, stop;
+
+    case DAE.RANGE(start = DAE.ICONST(start),
+                   step = NONE(),
+                   stop = DAE.ICONST(stop))
+      then max(stop - start, 0);
+
+    case DAE.RANGE(start = DAE.ICONST(start),
+                   step = SOME(DAE.ICONST(step)),
+                   stop = DAE.ICONST(stop))
+      algorithm
+        if step <> 0 then
+          outSize := max(realInt(floor(realDiv(stop - start, step))) + 1, 0);
+        else
+          fail();
+        end if;
+      then
+        outSize;
+
+  end match;
+end rangeSize;
 
 annotation(__OpenModelica_Interface="frontend");
 end Expression;

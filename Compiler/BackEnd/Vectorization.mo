@@ -34,7 +34,6 @@ encapsulated package Vectorization
   package:     Vectorization
   description: Vectorization
 
-  RCS: $Id: Vectorization.mo 2013-05-24 11:12:35Z vwaurich $
 "
 public import BackendDAE;
 public import DAE;
@@ -902,7 +901,7 @@ algorithm
       varLst = varLstIn;
     end if;
     tplLst = (cref0,intMax(idx0,idx1),tailCrefs0)::rest;
-    tplLst = listAppend(listReverse(tplLst),tplLstFoldIn);
+    tplLst = List.append_reverse(tplLst,tplLstFoldIn);
   then (tplLst,varLst);
 
   case((cref0,idx0,tailCrefs0)::rest,_,(cref1,idx1,tailCrefs1),_,_)

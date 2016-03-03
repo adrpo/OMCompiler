@@ -34,7 +34,6 @@ encapsulated package FGraphDump
   package:     FGraphDump
   description: A graph for instantiation
 
-  RCS: $Id: FGraphDump.mo 14085 2012-11-27 12:12:40Z adrpo $
 
   This module builds a graph out of SCode
 "
@@ -111,7 +110,7 @@ protected function addNodes
   input list<Ref> inRefs;
   output tuple<GraphML.GraphInfo,Integer> gout;
 algorithm
-  gout := matchcontinue(gin, inRefs)
+  gout := match(gin, inRefs)
     local
       tuple<GraphML.GraphInfo,Integer> g;
       list<Ref> rest;
@@ -120,23 +119,18 @@ algorithm
     case (_, {}) then gin;
 
     case (g, n::rest)
-      equation
         // if not userdefined or top, skip it
-        true = not FNode.isRefTop(n) and
-               not FNode.isRefUserDefined(n);
-        g = addNodes(g, rest);
-      then
-        g;
+        guard not FNode.isRefTop(n) and
+               not FNode.isRefUserDefined(n)
+        then addNodes(g, rest);
 
 
     case (g, n::rest)
       equation
         g = addNode(g, FNode.fromRef(n));
-        g = addNodes(g, rest);
-      then
-        g;
+        then addNodes(g, rest);
 
-  end matchcontinue;
+  end match;
 end addNodes;
 
 protected function addNode

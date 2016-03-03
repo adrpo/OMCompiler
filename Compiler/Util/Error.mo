@@ -35,7 +35,6 @@ encapsulated package Error
   package:     Error
   description: Error handling
 
-  RCS: $Id$
 
   This file contains the Error handling for the Compiler. The following steps
   are used to add a new error message:
@@ -681,7 +680,7 @@ public constant Message TCOMPLEX_TUPLE_ONE_NAME = MESSAGE(276, TRANSLATION(), NO
 public constant Message ENUM_DUPLICATES = MESSAGE(277, TRANSLATION(), ERROR(),
   Util.gettext("Enumeration has duplicate names: %s in list of names %s."));
 public constant Message RESERVED_IDENTIFIER = MESSAGE(278, TRANSLATION(), ERROR(),
-  Util.gettext("Identifier %s is reserved for the built-in type with the same name."));
+  Util.gettext("Identifier %s is reserved for the built-in element with the same name."));
 public constant Message NOTIFY_IMPACT_FOUND = MESSAGE(279, SCRIPTING(), NOTIFICATION(),
   Util.gettext("The impact package manager downloaded package %s%s to directory %s."));
 public constant Message DERIVATIVE_FUNCTION_CONTEXT = MESSAGE(280, SCRIPTING(), ERROR(),
@@ -700,7 +699,8 @@ public constant Message SCANNER_ERROR = MESSAGE(286, SYNTAX(), ERROR(),
   Util.gettext("Syntax error, unrecognized input: %s."));
 public constant Message SCANNER_ERROR_LIMIT = MESSAGE(287, SYNTAX(), ERROR(),
   Util.gettext("Additional syntax errors were suppressed."));
-
+public constant Message INVALID_TIME_SCOPE = MESSAGE(288, TRANSLATION(), ERROR(),
+  Util.gettext("Built-in variable 'time' may only be used in a model or block."));
 public constant Message UNBOUND_PARAMETER_WITH_START_VALUE_WARNING = MESSAGE(499, TRANSLATION(), WARNING(),
   Util.gettext("Parameter %s has no value, and is fixed during initialization (fixed=true), using available start value (start=%s) as default value."));
 public constant Message UNBOUND_PARAMETER_WARNING = MESSAGE(500, TRANSLATION(), WARNING(),
@@ -828,9 +828,9 @@ public constant Message CLOCKED_DSICRETE_CONT_CONFLICT = MESSAGE(568, TRANSLATIO
 public constant Message INVALID_CLOCK_EQUATION = MESSAGE(569, TRANSLATION(), ERROR(),
   Util.gettext("Invalid form of clock equation"));
 public constant Message SUBCLOCK_CONFLICT = MESSAGE(570, TRANSLATION(), ERROR(),
-  Util.gettext("Partition have different sub-clocks."));
+  Util.gettext("Partition has different sub-clock %ss (%s) and (%s)."));
 public constant Message CLOCK_CONFLICT = MESSAGE(571, TRANSLATION(), ERROR(),
-  Util.gettext("Partition have different base clocks."));
+  Util.gettext("Partitions have different base clocks."));
 public constant Message EXEC_STAT = MESSAGE(572, TRANSLATION(), NOTIFICATION(),
   Util.gettext("Performance of %s: time %s/%s"));
 public constant Message EXEC_STAT_GC = MESSAGE(573, TRANSLATION(), NOTIFICATION(),
@@ -903,6 +903,12 @@ public constant Message META_EMPTY_CALL_PATTERN = MESSAGE(5035, TRANSLATION(), N
   Util.gettext("Removing empty call named pattern argument: %s."));
 public constant Message META_ALL_EMPTY = MESSAGE(5036, TRANSLATION(), NOTIFICATION(),
   Util.gettext("All patterns in call were empty: %s."));
+public constant Message DUPLICATE_DEFINITION = MESSAGE(5037, TRANSLATION(), ERROR(),
+  Util.gettext("The same variable is being defined twice: %s."));
+public constant Message PATTERN_VAR_NOT_VARIABLE = MESSAGE(5038, TRANSLATION(), ERROR(),
+  Util.gettext("Identifiers need to point to local or output variables. Variable %s is %s."));
+public constant Message LIST_REVERSE_WRONG_ORDER = MESSAGE(5039, TRANSLATION(), NOTIFICATION(),
+  Util.gettext("%1:=listAppend(%1, _) has the first argument in the \"wrong\" order.\n  It is very slow to keep appending a linked list (scales like O(N²)).\n  Consider building the list in the reverse order in order to improve performance (scales like O(N) even if you need to reverse a lot of lists). Use annotation __OpenModelica_DisableListAppendWarning=true to disable this message for a certain assignment."));
 
 public constant Message COMPILER_ERROR = MESSAGE(5999, TRANSLATION(), ERROR(),
   Util.notrans("%s"));
@@ -931,12 +937,16 @@ public constant Message FILE_NOT_FOUND_ERROR = MESSAGE(7007, SCRIPTING(), ERROR(
 public constant Message UNKNOWN_FMU_VERSION = MESSAGE(7008, SCRIPTING(), ERROR(),
   Util.gettext("Unknown FMU version %s. Only version 1.0 & 2.0 are supported."));
 public constant Message UNKNOWN_FMU_TYPE = MESSAGE(7009, SCRIPTING(), ERROR(),
-  Util.gettext("Unknown FMU type %s. Supported types are me (model exchange) & cs (co-simulation)."));
+  Util.gettext("Unknown FMU type %s. Supported types are me (model exchange), cs (co-simulation) & me_cs (model exchange & co-simulation)."));
+public constant Message FMU_EXPORT_NOT_SUPPORTED = MESSAGE(7010, SCRIPTING(), ERROR(),
+  Util.gettext("Export of FMU type %s for version %s is not supported. Supported combinations are me (model exchange) for versions 1.0 & 2.0, cs (co-simulation) & me_cs (model exchange & co-simulation) for version 2.0."));
 // FIGARO_ERROR added by Alexander Carlqvist
-public constant Message FIGARO_ERROR = MESSAGE(7010, SCRIPTING(), ERROR(),
+public constant Message FIGARO_ERROR = MESSAGE(7011, SCRIPTING(), ERROR(),
   Util.notrans("Figaro: %s."));
-public constant Message SUSAN_NOTIFY = MESSAGE(7011, TRANSLATION(), NOTIFICATION(),
+public constant Message SUSAN_NOTIFY = MESSAGE(7012, TRANSLATION(), NOTIFICATION(),
   Util.notrans("%s"));
+public constant Message PDEModelica_ERROR = MESSAGE(7013, TRANSLATION(), ERROR(),
+  Util.gettext("PDEModelica: %s"));
 
 protected import ErrorExt;
 

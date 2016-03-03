@@ -18,7 +18,7 @@ template modelInitXMLFile(SimCode simCode, String numRealVars, String numIntVars
       //let jacobianMatrixes = jacobianMatrixesXML(simCode.jacobianMatrixes)
       let descriptionTag = if generateFMUModelDescription then "fmiModelDescription" else "ModelDescription"
       let fmiDescriptionAttributes = if generateFMUModelDescription then fmiDescriptionAttributes(simCode, FMUVersion, FMUType, FMUGuid) else 'modelName="<%dotPath(modelInfo.name)%>"'
-      let fmiTypeDefinitions = if generateFMUModelDescription then CodegenFMUCommon.fmiTypeDefinitions(modelInfo, FMUVersion)
+      let fmiTypeDefinitions = if generateFMUModelDescription then CodegenFMUCommon.fmiTypeDefinitions(simCode, FMUVersion)
       let fmiDefaultExperiment = if generateFMUModelDescription then CodegenFMUCommon.DefaultExperiment(simulationSettingsOpt)
       <<
       <?xml version="1.0" encoding="UTF-8"?>
@@ -254,25 +254,6 @@ template jacobianMatrixXML(Integer indexJacobian, list<JacobianColumn> jacobianC
   </Matrix>
   >>
 end jacobianMatrixXML;
-
-template zeroCrossLength(SimCode simCode)
-::=
-  match simCode
-    case SIMCODE(modelInfo = MODELINFO(varInfo = vi as VARINFO(__))) then
-      let size = listLength(zeroCrossings)
-      <<
-      <%intSub(listLength(zeroCrossings), vi.numTimeEvents)%>
-      >>
-end zeroCrossLength;
-
-template timeEventLength(SimCode simCode)
-::=
-  match simCode
-    case SIMCODE(modelInfo = MODELINFO(varInfo = vi as VARINFO(__))) then
-      <<
-      <%vi.numTimeEvents%>
-      >>
-end timeEventLength;
 
 annotation(__OpenModelica_Interface="backend");
 end CodegenCppInit;

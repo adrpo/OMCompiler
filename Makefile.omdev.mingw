@@ -103,7 +103,7 @@ endif
 
 
 revision:
-	test ! -e .git || cp -puf common/pre-commit.sh `git rev-parse --git-dir`/hooks/pre-commit
+	test ! -e .git || cp -puf common/pre-commit.sh `git rev-parse --git-dir`/hooks/pre-commit || echo "unlocated git"
 	@echo Current revision: $(CONFIG_REVISION)
 ifeq ($(CONFIG_REVISION),)
 	@if test -f revision.h; \
@@ -113,12 +113,12 @@ ifeq ($(CONFIG_REVISION),)
 else # revision is not empty, update it if it changed
 	@if test -f revision.h; \
 	then \
-		echo "#define CONFIG_REVISION \"$(CONFIG_REVISION)\"" > revision.h.tmp; diff revision.h revision.h.tmp > /dev/null; \
+		echo "#define CONFIG_REVISION \"OpenModelica $(CONFIG_REVISION)\"" > revision.h.tmp; diff revision.h revision.h.tmp > /dev/null; \
 		if [ $$? -eq 0 ]; then echo No change in revision; rm revision.h.tmp; \
 		else echo Revision has changed. updating revision.h; \mv revision.h.tmp revision.h; touch Compiler/runtime/omc_config.h; \
 		fi; \
 	else \
-		echo "#define CONFIG_REVISION \"$(CONFIG_REVISION)\"" > revision.h; echo Retrieved revision number. revision.h was created; \
+		echo "#define CONFIG_REVISION \"OpenModelica $(CONFIG_REVISION)\"" > revision.h; echo Retrieved revision number. revision.h was created; \
 	fi;
 endif
 
@@ -457,6 +457,7 @@ simulationruntimecmsvc: mkbuilddirs Umfpack_msvc CMinpack_msvc fmil_msvc sundial
 omc-bootstrapped:
 	$(MAKE) -f $(defaultMakefileTarget) CFLAGS="$(CFLAGS)" OMBUILDDIR=$(OMBUILDDIR) bootstrap-dependencies sim-dependencies
 	$(MAKE) -f $(defaultMakefileTarget) -C Compiler/boot CFLAGS="$(CFLAGS)" OMBUILDDIR=$(OMBUILDDIR)
+	$(MAKE) -f $(defaultMakefileTarget) -C Compiler install_scripts OMBUILDDIR=$(OMBUILDDIR)
 
 # Empty; only Unix version uses QT makefiles, etc...
 qtclean:

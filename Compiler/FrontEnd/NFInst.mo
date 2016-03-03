@@ -34,7 +34,6 @@ encapsulated package NFInst
   package:     NFInst
   description: Instantiation
 
-  RCS: $Id: NFInst.mo 14780 2013-01-15 08:47:24Z mahge930 $
 
   New instantiation, enable with +d=scodeInst.
 "
@@ -240,7 +239,7 @@ algorithm
       case ELEMENT_DEF(element = ext as SCode.EXTENDS())
         algorithm
           (el, outEnv) := partialInstExtends(ext, outEnv);
-          outElements := listAppend(listReverse(el), outElements);
+          outElements := List.append_reverse(el, outElements);
         then
           ();
 

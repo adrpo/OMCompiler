@@ -161,6 +161,7 @@ public constant Integer MODELICA = 1;
 public constant Integer METAMODELICA = 2;
 public constant Integer PARMODELICA = 3;
 public constant Integer OPTIMICA = 4;
+public constant Integer PDEMODELICA = 5;
 
 // DEBUG FLAGS
 public
@@ -334,8 +335,8 @@ constant DebugFlag PEDANTIC = DEBUG_FLAG(84, "pedantic", false,
   Util.gettext("Switch into pedantic debug-mode, to get much more feedback."));
 constant DebugFlag SHOW_EQUATION_SOURCE = DEBUG_FLAG(85, "showEquationSource", false,
   Util.gettext("Display the element source information in the dumped DAE for easier debugging."));
-constant DebugFlag NLS_ANALYTIC_JACOBIAN = DEBUG_FLAG(86, "NLSanalyticJacobian", false,
-  Util.gettext("Generates analytical Jacobian for non-linear algebraic loops."));
+constant DebugFlag NLS_ANALYTIC_JACOBIAN = DEBUG_FLAG(86, "NLSanalyticJacobian", true,
+  Util.gettext("Enables analytical jacobian for non-linear strong components without user-defined function calls, for that see forceNLSanalyticJacobian"));
 constant DebugFlag INLINE_SOLVER = DEBUG_FLAG(87, "inlineSolver", false,
   Util.gettext("Generates code for inline solver."));
 constant DebugFlag HPCOM = DEBUG_FLAG(88, "hpcom", false,
@@ -475,6 +476,13 @@ constant DebugFlag DUMP_EXCLUDED_EXP = DEBUG_FLAG(153, "dumpExcludedSymJacExps",
   Util.gettext("This flags dumps all expression that are excluded from differentiation of a symbolic Jacobian."));
 constant DebugFlag DEBUG_ALGLOOP_JACOBIAN = DEBUG_FLAG(154, "debugAlgebraicLoopsJacobian", false,
   Util.gettext("Dumps debug output while creating symbolic jacobians for non-linear systems."));
+constant DebugFlag DISABLE_JACSCC = DEBUG_FLAG(155, "disableJacsforSCC", false,
+  Util.gettext("Disables calculation of jacobians to detect if a SCC is linear or non-linear. By disabling all SCC will handled like non-linear."));
+constant DebugFlag FORCE_NLS_ANALYTIC_JACOBIAN = DEBUG_FLAG(156, "forceNLSanalyticJacobian", false,
+  Util.gettext("Forces calculation analytical jacobian also for non-linear strong components with user-defined functions."));
+constant DebugFlag DUMP_LOOPS = DEBUG_FLAG(157, "dumpLoops", false,
+  Util.gettext("Dumps loop equation."));
+
 
 // This is a list of all debug flags, to keep track of which flags are used. A
 // flag can not be used unless it's in this list, and the list is checked at
@@ -635,7 +643,10 @@ constant list<DebugFlag> allDebugFlags = {
   DUMP_DGESV,
   MULTIRATE_PARTITION,
   DUMP_EXCLUDED_EXP,
-  DEBUG_ALGLOOP_JACOBIAN
+  DEBUG_ALGLOOP_JACOBIAN,
+  DISABLE_JACSCC,
+  FORCE_NLS_ANALYTIC_JACOBIAN,
+  DUMP_LOOPS
 };
 
 public
@@ -661,8 +672,8 @@ constant ConfigFlag TARGET = CONFIG_FLAG(5, "target", NONE(), EXTERNAL(),
   Util.gettext("Sets the target compiler to use."));
 
 constant ConfigFlag GRAMMAR = CONFIG_FLAG(6, "grammar", SOME("g"), EXTERNAL(),
-  ENUM_FLAG(MODELICA, {("Modelica", MODELICA), ("MetaModelica", METAMODELICA), ("ParModelica", PARMODELICA), ("Optimica", OPTIMICA)}),
-  SOME(STRING_OPTION({"Modelica", "MetaModelica", "ParModelica", "Optimica"})),
+  ENUM_FLAG(MODELICA, {("Modelica", MODELICA), ("MetaModelica", METAMODELICA), ("ParModelica", PARMODELICA), ("Optimica", OPTIMICA), ("PDEModelica", PDEMODELICA)}),
+  SOME(STRING_OPTION({"Modelica", "MetaModelica", "ParModelica", "Optimica", "PDEModelica"})),
   Util.gettext("Sets the grammar and semantics to accept."));
 
 constant ConfigFlag ANNOTATION_VERSION = CONFIG_FLAG(7, "annotationVersion",
@@ -803,8 +814,8 @@ constant ConfigFlag POST_OPT_MODULES = CONFIG_FLAG(16, "postOptModules",
     ("addScaledVars_states", Util.notrans("added var_norm = var/nominal, where var is state")),
     ("addScaledVars_inputs", Util.notrans("added var_norm = var/nominal, where var is input")),
     ("addTimeAsState", Util.gettext("Experimental feature: this replaces each occurrence of variable time with a new introduced state $time with equation der($time) = 1.0")),
-    ("calculateStateSetsJacobians", Util.gettext("Generates analytical Jacobian for dynamic state selection sets.")),
-    ("calculateStrongComponentJacobians", Util.gettext("Generates analytical Jacobian for non-linear strong components.")),
+    ("calculateStateSetsJacobians", Util.gettext("Generates analytical jacobian for dynamic state selection sets.")),
+    ("calculateStrongComponentJacobians", Util.gettext("Generates analytical jacobian for torn linear and non-linear strong components. By default non-linear components with user-defined function calls are skipped. See also debug flags: NLSanalyticJacobian and forceNLSanalyticJacobian")),
     ("constantLinearSystem", Util.gettext("Evaluates constant linear systems (a*x+b*y=c; d*x+e*y=f; a,b,c,d,e,f are constants) at compile-time.")),
     ("countOperations", Util.gettext("Count the mathematical operations of the system.")),
     ("cseBinary", Util.gettext("Common Sub-expression Elimination")),
@@ -851,7 +862,7 @@ constant ConfigFlag POST_OPT_MODULES = CONFIG_FLAG(16, "postOptModules",
 
 constant ConfigFlag SIMCODE_TARGET = CONFIG_FLAG(17, "simCodeTarget",
   NONE(), EXTERNAL(), STRING_FLAG("C"),
-  SOME(STRING_OPTION({"C", "CSharp", "Cpp", "Adevs", "sfmi", "XML", "Java", "JavaScript", "None"})),
+  SOME(STRING_OPTION({"None", "Adevs", "C", "Cpp", "CSharp", "Java", "JavaScript", "sfmi", "XML"})),
   Util.gettext("Sets the target language for the code generation."));
 
 constant ConfigFlag ORDER_CONNECTIONS = CONFIG_FLAG(18, "orderConnections",
@@ -1152,7 +1163,7 @@ constant ConfigFlag INIT_OPT_MODULES = CONFIG_FLAG(77, "initOptModules",
     "simplifyAllExpressions"
     }),
   SOME(STRING_DESC_OPTION({
-    ("calculateStrongComponentJacobians", Util.gettext("Generates analytical Jacobian for non-linear strong components.")),
+    ("calculateStrongComponentJacobians", Util.gettext("Generates analytical jacobian for torn linear and non-linear strong components. By default non-linear components with user-defined function calls are skipped. See also debug flags: NLSanalyticJacobian and NLSanalyticJacobianDisable")),
     ("constantLinearSystem", Util.gettext("Evaluates constant linear systems (a*x+b*y=c; d*x+e*y=f; a,b,c,d,e,f are constants) at compile-time.")),
     ("extendDynamicOptimization", Util.gettext("Move loops to constraints.")),
     ("inputDerivativesUsed", Util.gettext("Checks if derivatives of inputs are need to calculate the model.")),
@@ -1204,6 +1215,9 @@ constant ConfigFlag HETS = CONFIG_FLAG(88, "hets",
     ("derCalls", Util.gettext("sort terms based on der-calls"))
     })),
   Util.gettext("heuristic euqtion terms sort"));
+constant ConfigFlag DEFAULT_CLOCK_PERIOD = CONFIG_FLAG(89, "defaultClockPeriod",
+  NONE(), INTERNAL(), REAL_FLAG(1.0), NONE(),
+  Util.gettext("Sets the default clock period (in seconds) for state machines (default: 1.0)."));
 
 protected
 // This is a list of all configuration flags. A flag can not be used unless it's
@@ -1297,7 +1311,8 @@ constant list<ConfigFlag> allConfigFlags = {
   INIT_OPT_MODULES_ADD,
   INIT_OPT_MODULES_SUB,
   PERMISSIVE,
-  HETS
+  HETS,
+  DEFAULT_CLOCK_PERIOD
 };
 
 public function new
@@ -1553,7 +1568,7 @@ algorithm
     end if;
   end while;
 
-  outArgs := listAppend(listReverse(outArgs), rest_args);
+  outArgs := List.append_reverse(outArgs, rest_args);
   _ := List.map2(outArgs,System.iconv,"UTF-8","UTF-8");
   Error.assertionOrAddSourceMessage(numError == Error.getNumErrorMessages(), Error.UTF8_COMMAND_LINE_ARGS, {}, Util.dummyInfo);
   saveFlags(flags);

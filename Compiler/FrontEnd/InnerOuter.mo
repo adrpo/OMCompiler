@@ -31,9 +31,8 @@
 encapsulated package InnerOuter
 " file:        InnerOuter.mo
   package:     InnerOuter
-  description: Instance hierarchy and functionality to deal with Inner/Outer definitions
+  description: Instance hierarchy and functionality to deal with Inner/Outer definitions"
 
-  RCS: $Id$"
 
 import Absyn;
 import Connect;
@@ -1718,7 +1717,7 @@ algorithm
         (erest, _) = List.splitEqualPrefix(listReverse(erest), listReverse(eicp), ComponentReference.crefFirstIdentEqual);
 
         // Combine the parts into a new cref.
-        erest = listAppend(listReverse(erest), esuffix);
+        erest = List.append_reverse(erest, esuffix);
         eifull = listAppend(epre, erest);
         ic = ComponentReference.implode(eifull);
         // print("C:" + ComponentReference.printComponentRefStr(ic) + "\n");

@@ -653,6 +653,7 @@ function inStream
 </html>"));
 end inStream;
 
+
 /* Extension for uncertainty computations */
 record Distribution
   String name "the name of the distibution, e.g \"normal\" ";
@@ -827,6 +828,7 @@ type $Code "Code quoting is not a uniontype yet because that would require enabl
 Besides, it has special semantics."
 
 type Expression "An expression of some kind" end Expression;
+type ExpressionOrModification "An expression or modification of some kind" end ExpressionOrModification;
 type TypeName "A path, for example the name of a class, e.g. A.B.C or .A.B" end TypeName;
 type VariableName "A variable name, e.g. a.b or a[1].b[3].c" end VariableName;
 type VariableNames "An array of variable names, e.g. {a.b,a[1].b[3].c}, or a single VariableName" end VariableNames;
@@ -930,6 +932,7 @@ end Internal;
 package Scripting
 
 import OpenModelica.$Code.Expression;
+import OpenModelica.$Code.ExpressionOrModification;
 import OpenModelica.$Code.TypeName;
 import OpenModelica.$Code.VariableName;
 import OpenModelica.$Code.VariableNames;
@@ -2786,7 +2789,7 @@ end checkCodeGraph;
 
 function val "Return the value of a variable at a given time in the simulation results"
   input VariableName var;
-  input Real time;
+  input Real timePoint;
   input String fileName = "<default>" "The contents of the currentSimulationResult variable";
   output Real valAtTime;
 external "builtin";
@@ -2809,7 +2812,7 @@ end closeSimulationResultFile;
 
 function addClassAnnotation
   input TypeName class_;
-  input Expression annotate;
+  input ExpressionOrModification annotate;
   output Boolean bool;
 external "builtin";
 annotation(preferredView="text",Documentation(info="<html>
@@ -2818,6 +2821,7 @@ and the annotation to set.</p>
 <p>Usage: addClassAnnotation(Modelica, annotate = Documentation(info = \"&lt;html&gt;&lt;/html&gt;\"))</p>
 </html>"));
 end addClassAnnotation;
+
 
 function getParameterNames
   input TypeName class_;

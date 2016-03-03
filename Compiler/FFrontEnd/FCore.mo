@@ -34,7 +34,6 @@ encapsulated package FCore
   package:     FCore
   description: Structures to hold Modelica constructs
 
-  RCS: $Id: FCore.mo 14085 2012-11-27 12:12:40Z adrpo $
 
   This module holds types used in FNode, FGraph and all the other F* packages
 "
@@ -510,7 +509,7 @@ algorithm
 
     case (id) then stringGet(id,1) == 36; // "$"
 
-    case (_) then false;
+    else false;
 
   end matchcontinue;
 end isImplicitScope;
@@ -695,10 +694,10 @@ public function isTyped
   input Status is;
   output Boolean b;
 algorithm
-  b := matchcontinue(is)
+  b := match(is)
     case(VAR_UNTYPED()) then false;
-    case(_) then true;
-  end matchcontinue;
+    else true;
+  end match;
 end isTyped;
 
 public function getCachedInitialGraph "get the initial environment from the cache"
@@ -735,43 +734,22 @@ public function getRecordConstructorName
   input Name inName;
   output Name outName;
 algorithm
-  outName := matchcontinue(inName)
-
-    case (_)
-      equation
-        true = Config.acceptMetaModelicaGrammar();
-      then
-        inName;
-
-    else inName + recordConstructorSuffix;
-
-  end matchcontinue;
+  outName := if Config.acceptMetaModelicaGrammar() then inName else inName + recordConstructorSuffix;
 end getRecordConstructorName;
 
 public function getRecordConstructorPath
   input Absyn.Path inPath;
   output Absyn.Path outPath;
+protected
+  Name lastId;
 algorithm
-  outPath := matchcontinue(inPath)
-    local
-      Absyn.Path path;
-      Name lastId;
-
-    case (_)
-      equation
-        true = Config.acceptMetaModelicaGrammar();
-      then
-        inPath;
-
-    else
-     equation
-       lastId = Absyn.pathLastIdent(inPath);
-       lastId = getRecordConstructorName(lastId);
-       path = Absyn.pathSetLastIdent(inPath, Absyn.makeIdentPathFromString(lastId));
-     then
-       path;
-
-  end matchcontinue;
+  if Config.acceptMetaModelicaGrammar() then
+    outPath := inPath;
+  else
+    lastId := Absyn.pathLastIdent(inPath);
+    lastId := getRecordConstructorName(lastId);
+    outPath := Absyn.pathSetLastIdent(inPath, Absyn.makeIdentPathFromString(lastId));
+  end if;
 end getRecordConstructorPath;
 
 annotation(__OpenModelica_Interface="frontend");

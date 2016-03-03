@@ -389,39 +389,6 @@ modelica_metatype boxptr_stringUpdateStringChar(threadData_t *threadData,metamod
   return res;
 }
 
-metamodelica_string stringAppend(metamodelica_string_const s1, metamodelica_string_const s2)
-{
-  unsigned len1 = 0, len2 = 0, nbytes = 0, header = 0, nwords = 0;
-  void *res = NULL;
-  struct mmc_string *p = NULL;
-  MMC_CHECK_STRING(s1);
-  MMC_CHECK_STRING(s2);
-
-  /* fprintf(stderr, "stringAppend([%p] %s, [%p] %s)->\n", s1, anyString(s1), s2, anyString(s2)); fflush(NULL); */
-  len1 = MMC_STRLEN(s1);
-  len2 = MMC_STRLEN(s2);
-
-  if (len1==0) {
-    return s2;
-  } else if (len2==0) {
-    return s1;
-  }
-
-  nbytes = len1+len2;
-  header = MMC_STRINGHDR(nbytes);
-  nwords = MMC_HDRSLOTS(header) + 1;
-  p = (struct mmc_string *) mmc_alloc_words_atomic(nwords);
-  /* fprintf(stderr, "at address %p\n", MMC_TAGPTR(p)); fflush(NULL); */
-  p->header = header;
-
-  memcpy(p->data, MMC_STRINGDATA(s1), len1);
-  memcpy(p->data + len1, MMC_STRINGDATA(s2), len2 + 1);
-  res = MMC_TAGPTR(p);
-  MMC_CHECK_STRING(res);
-  /* fprintf(stderr, "-> %s\n", anyString(res)); fflush(NULL); */
-  return res;
-}
-
 /* List Operations */
 
 modelica_metatype listReverse(modelica_metatype lst)
@@ -448,6 +415,14 @@ modelica_metatype listReverseInPlace(modelica_metatype lst)
     lst = oldcdr;
   }
   return prev;
+}
+
+void boxptr_listSetRest(threadData_t *threadData, modelica_metatype cellToDestroy, modelica_metatype newRest)
+{
+  if (MMC_NILTEST(cellToDestroy)) {
+    MMC_THROW_INTERNAL();
+  }
+  MMC_CDR(cellToDestroy) = newRest;
 }
 
 modelica_metatype listAppend(modelica_metatype lst1,modelica_metatype lst2)

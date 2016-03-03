@@ -34,7 +34,6 @@ encapsulated package Mod
   package:     Mod
   description: Modification handling
 
-  RCS: $Id$
 
   Modifications are simply the same kind of modifications used in the Absyn module.
 
@@ -155,7 +154,7 @@ algorithm
     case (cache,_,_,_,SCode.NOMOD(),_,_,_) then (cache,DAE.NOMOD());
 
     // no top binding
-    case (cache,env,ih,pre,SCode.MOD(finalPrefix = finalPrefix,eachPrefix = each_,subModLst = subs,binding = NONE(), info = info),impl,_,info)
+    case (cache,env,ih,pre,SCode.MOD(finalPrefix = finalPrefix,eachPrefix = each_,subModLst = subs,binding = NONE(), info = info),impl,_,_)
       equation
         (cache,subs_1) = elabSubmods(cache, env, ih, pre, subs, impl, inModScope, info);
       then
@@ -1626,7 +1625,7 @@ algorithm
     outIsEqual := not (Util.sourceInfoIsEmpty(info1) or
                        Util.sourceInfoIsEmpty(info2)) and
                   Util.sourceInfoIsEqual(info1, info2);
-	end if;
+  end if;
 end merge_isEqual;
 
 public function isFinalMod
@@ -1851,7 +1850,7 @@ algorithm
       outSubMods := sm1 :: outSubMods;
     end for;
 
-    outSubMods := listAppend(listReverse(outSubMods), submods2);
+    outSubMods := List.append_reverse(outSubMods, submods2);
   end if;
 end mergeSubs;
 

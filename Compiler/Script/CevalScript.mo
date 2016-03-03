@@ -34,7 +34,6 @@ encapsulated package CevalScript
   package:     CevalScript
   description: Constant propagation of expressions
 
-  RCS: $Id$
 
   This module handles scripting.
 
@@ -1950,6 +1949,9 @@ algorithm
 
     case DAE.CREF(componentRef = DAE.CREF_QUAL(ident = name),
                   ty = DAE.T_FUNCTION_REFERENCE_FUNC(builtin = false))
+      then List.consOnTrue(not listMember(name, inAcc), name, inAcc);
+
+    case DAE.PARTEVALFUNCTION(path = Absyn.FULLYQUALIFIED(Absyn.QUALIFIED(name = name)))
       then List.consOnTrue(not listMember(name, inAcc), name, inAcc);
 
     else inAcc;

@@ -181,7 +181,7 @@ protected function evalFunctions_findFuncs "traverses the lhs and rhs exps of an
 algorithm
   (eqOut,tplOut) := matchcontinue(eqIn,tplIn)
     local
-      Integer sizeL,sizeR,size,idx;
+      Integer idx;
       Boolean b1,b2,changed, changed1;
       BackendDAE.Equation eq;
       BackendDAE.EquationAttributes attr;
@@ -204,7 +204,7 @@ algorithm
         changed = changed1 or changed;
         addEqs = listAppend(addEqs1,addEqs);
         addEqs = listAppend(addEqs2,addEqs);
-        eq = BackendDAE.EQUATION(lhsExp,rhsExp,source,attr);
+        eq = BackendEquation.generateEquation(lhsExp,rhsExp,source,attr);
         //if changed then print("FROM EQ "+BackendDump.equationString(eqIn)+"\n");print("GOT EQ "+BackendDump.equationString(eq)+"\n"); end if;
       then
         (eq,(shared,addEqs,idx+1,changed));
@@ -229,10 +229,7 @@ algorithm
         addEqs = listAppend(addEqs1,addEqs);
         addEqs = listAppend(addEqs2,addEqs);
         shared = BackendDAEUtil.setSharedFunctionTree(shared, funcs);
-        sizeL = getScalarExpSize(lhsExp);
-        sizeR = getScalarExpSize(rhsExp);
-        size = intMax(sizeR,sizeL);
-        eq = if intEq(size,0) then BackendDAE.EQUATION(lhsExp,rhsExp,source,attr) else BackendDAE.COMPLEX_EQUATION(size,lhsExp,rhsExp,source,attr);
+        eq = BackendEquation.generateEquation(lhsExp,rhsExp,source,attr);
         //since tuple=tuple is not supported, these equations are converted into a list of simple equations
         (eq,addEqs) = convertTupleEquations(eq,addEqs);
         //if changed then print("FROM EQ "+BackendDump.equationString(eqIn)+"\n");print("GOT EQ "+BackendDump.equationString(eq)+"\n"); end if;
@@ -278,8 +275,8 @@ algorithm
         // get the input exps from the call
         exps = List.map1(exps0,evaluateConstantFunctionCallExp,funcsIn);
         scalarExp = List.map1(exps,expandComplexEpressions,funcsIn);
-				allInputExps = List.flatten(scalarExp);
-				  //print("allInputExps\n"+stringDelimitList(List.map(allInputExps,ExpressionDump.printExpStr),"\n")+"\n");
+        allInputExps = List.flatten(scalarExp);
+          //print("allInputExps\n"+stringDelimitList(List.map(allInputExps,ExpressionDump.printExpStr),"\n")+"\n");
 
         if listEmpty(elements) then  // its a record
         //-----------------------its a record-----------------------
@@ -1913,7 +1910,7 @@ algorithm
         if Flags.isSet(Flags.EVAL_FUNC_DUMP) then
           print("evaluated for-statements to:\n"+stringDelimitList(List.map(stmts1,DAEDump.ppStatementStr),"\n")+"\n");
         end if;
-        stmts2 = listAppend(listReverse(stmts1),lstIn);
+        stmts2 = List.append_reverse(stmts1,lstIn);
         (rest,(funcTree,repl,idx)) = evaluateFunctions_updateStatement(rest,(funcTree,repl,idx),stmts2);
       then (rest,(funcTree,repl,idx));
 

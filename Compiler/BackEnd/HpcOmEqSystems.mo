@@ -34,7 +34,6 @@ encapsulated package HpcOmEqSystems
   package:     HpcOmEqSystems
   description: HpcOmEqSystems contains the logic to manipulate systems of equations for the parallel simulation.
 
-  RCS: $Id: HpcOmEqSystems.mo 15486 2013-05-24 11:12:35Z  $
 "
 // public imports
 
@@ -1266,7 +1265,7 @@ algorithm
       // traverse the residualEquations
       equation
         repl = arrayGet(replArr,i+1);
-        (h_i,_) = BackendVarTransform.replaceExpList1(resExpsIn, repl, NONE(), {}, {});
+        (h_i,_) = BackendVarTransform.replaceExpList1(resExpsIn, repl, NONE());
         h_iArr = arrayUpdate(h_iArrIn,i+1,h_i);
       then h_iArr;
     else

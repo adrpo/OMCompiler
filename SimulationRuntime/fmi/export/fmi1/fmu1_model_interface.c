@@ -143,10 +143,11 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
   }
   comp = (ModelInstance *)functions.allocateMemory(1, sizeof(ModelInstance));
   if (comp) {
-    DATA* fmudata = NULL;
-    threadData_t *threadData = NULL;
-    comp->instanceName = (fmiString)functions.allocateMemory(1 + strlen(instanceName), sizeof(char));
-    comp->GUID = (fmiString)functions.allocateMemory(1 + strlen(GUID), sizeof(char));
+    comp->functions = functions;
+    comp->loggingOn = loggingOn;
+    comp->state = modelInstantiated;
+    comp->instanceName = functions.allocateMemory(1 + strlen(instanceName), sizeof(char));
+    comp->GUID = functions.allocateMemory(1 + strlen(GUID), sizeof(char));
     /* Cannot use functions.allocateMemory since the pointer might not be stored on the stack of the parent */
     DATA* fmudata = (DATA *)functions.allocateMemory(1, sizeof(DATA));
     MODEL_DATA* modelData = (MODEL_DATA *)functions.allocateMemory(1, sizeof(MODEL_DATA));
@@ -155,7 +156,7 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
     fmudata->simulationInfo = simInfo;
 
 
-    threadData = (threadData_t *)functions.allocateMemory(1, sizeof(threadData_t));
+    threadData_t *threadData = (threadData_t *)functions.allocateMemory(1, sizeof(threadData_t));
     memset(threadData, 0, sizeof(threadData_t));
     /*
     pthread_key_create(&fmu1_thread_data_key,NULL);
@@ -175,8 +176,6 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
     functions.logger(NULL, instanceName, fmiError, "error", "fmiInstantiateModel: Out of memory.");
     return NULL;
   }
-  if (comp->loggingOn) comp->functions.logger(NULL, instanceName, fmiOK, "log",
-      "fmiInstantiateModel: GUID=%s", GUID);
   /* intialize modelData */
   fmu1_model_interface_setupDataStruc(comp->fmuData);
   useStream[LOG_STDOUT] = 1;
@@ -191,9 +190,6 @@ fmiComponent fmiInstantiateModel(fmiString instanceName, fmiString GUID, fmiCall
 
   strcpy((char*)comp->instanceName, (const char*)instanceName);
   strcpy((char*)comp->GUID, (const char*)GUID);
-  comp->functions = functions;
-  comp->loggingOn = loggingOn;
-  comp->state = modelInstantiated;
 
   /* read input vars */
   //input_function(comp->fmuData);
@@ -678,7 +674,6 @@ fmiStatus fmiEventUpdate(fmiComponent c, fmiBoolean intermediateResults, fmiEven
   int i;
   ModelInstance* comp = (ModelInstance *)c;
   threadData_t *threadData = comp->threadData;
-  double nextSampleEvent;
   if (invalidState(comp, "fmiEventUpdate", modelInitialized))
     return fmiError;
   if (nullPointer(comp, "fmiEventUpdate", "eventInfo", eventInfo))
@@ -759,7 +754,7 @@ fmiStatus fmiEventUpdate(fmiComponent c, fmiBoolean intermediateResults, fmiEven
       comp->functions.logger(c, comp->instanceName, fmiOK, "log", "fmiEventUpdate: intermediateResults = %d", intermediateResults);
 
     //Get Next Event Time
-    nextSampleEvent = 0;
+    double nextSampleEvent=0;
     nextSampleEvent = getNextSampleTimeFMU(comp->fmuData);
     if (nextSampleEvent == -1)
     {

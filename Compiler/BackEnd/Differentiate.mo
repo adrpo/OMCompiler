@@ -34,7 +34,6 @@ encapsulated package Differentiate
   package:     Differentiate
   description: Differentiation of equations from BackendDAE.BackendDAE
 
-  RCS: $Id$
 
   This module is responsible for symbolic differentiation of equations and
   expressions.
@@ -569,7 +568,6 @@ algorithm
       //print("\nExp-Cref\nDifferentiate exp: " + se1);
 
       (res, functionTree) = differentiateCrefs(inExp, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1, expStack);
-      (res,_) = ExpressionSimplify.simplify1(res);
 
       //se1 = ExpressionDump.printExpStr(res);
       //print("\nresults to exp: " + se1);
@@ -580,10 +578,9 @@ algorithm
     then (Expression.makeConstZero(tp), inFunctionTree);
 
     // differentiate homotopy
-    // lochel: see #3305 - this is commented out since it breaks Modelica.Fluid.Examples.HeatingSystem.
-    //case DAE.CALL(path=Absyn.IDENT(name="homotopy"), expLst=actual::_) equation
-    //  (e1, functionTree) = differentiateExp(actual, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, inExpStack);
-    //then (e1, functionTree);
+    case DAE.CALL(path=Absyn.IDENT(name="homotopy"), expLst=actual::_) equation
+      (e1, functionTree) = differentiateExp(actual, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, inExpStack);
+    then (e1, functionTree);
 
     // differentiate call
     case DAE.CALL() equation
@@ -603,7 +600,7 @@ algorithm
       //print("\nExp-BINARY\nDifferentiate exp: " + se1);
 
       (res, functionTree) = differentiateBinary(inExp, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1, expStack);
-      (res,_) = ExpressionSimplify.simplify1(res);
+      (res) = ExpressionSimplify.simplifyBinaryExp(res);
 
       //se1 = ExpressionDump.printExpStr(res);
       //print("\nresults to exp: " + se1);
@@ -617,7 +614,7 @@ algorithm
       (res, functionTree) = differentiateExp(e1, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1, expStack);
 
       res = DAE.UNARY(op,res);
-      (res, _) = ExpressionSimplify.simplify1(res);
+      (res) = ExpressionSimplify.simplifyUnaryExp(res);
 
       //se1 = ExpressionDump.printExpStr(res);
       //print("\nresults to exp: " + se1);
@@ -1591,6 +1588,14 @@ algorithm
         (exp_1, _) = Expression.makeZeroExpression(Expression.arrayDimension(tp));
       then (exp_1, inFuncs);
 
+    case ("sum",_)
+      equation
+        tp = Expression.typeof(exp);
+        (exp_1, funcs) = differentiateExp(exp, inDiffwrtCref, inInputData,inDiffType,inFuncs, maxIter, expStack);
+        exp_2 = Expression.makePureBuiltinCall("sum",{exp_1},tp);
+      then
+       (exp_2, funcs);
+
     case ("max",DAE.ARRAY(array=expl,ty=tp))
       equation
         tp = Types.arrayElementType(tp);
@@ -2391,33 +2396,32 @@ protected function createPartialDifferentiatedExp
   input DAE.Exp inCall;
   input Integer currentLstElement;
   input DAE.Exp inAccum;
-  output DAE.Exp outExp;
+  output DAE.Exp outExp = inAccum;
+protected
+  Integer i = currentLstElement;
 algorithm
-  outExp := match(inDiffExpl, inDiffExplZero, inOrginalExpl, inCall, currentLstElement, inAccum)
+for de in inDiffExpl loop
+  outExp := match(de, inCall)
     local
-      DAE.Exp e, de, eone, eArray;
+      DAE.Exp e,  eone, eArray;
       list<DAE.Exp> rest;
       list<list<DAE.Exp>> arrayArgs;
       list<DAE.Exp> expl, expLst, dexpLst;
       DAE.Type tp;
       DAE.Dimensions dims;
-      Integer i;
       Boolean b;
       Absyn.Path path;
       DAE.CallAttributes attr;
 
-    case ({}, _, _, _, _, _)
-    then inAccum;
-
-    case (de::rest, _, _, DAE.CALL(path=path, attr=attr), i, _) guard(Types.isRecord(Expression.typeof(de)))
+    case (_, DAE.CALL(path=path, attr=attr))
+    guard(Types.isRecord(Expression.typeof(de)))
       equation
       dexpLst = List.set(inDiffExplZero, i, de);
       expLst = listAppend(inOrginalExpl,dexpLst);
       e = DAE.CALL(path, expLst, attr);
-      e = createPartialDifferentiatedExp(rest, inDiffExplZero, inOrginalExpl, inCall, i+1, e);
     then e;
 
-    case ((DAE.ARRAY(ty = tp,scalar = b,array = expl))::rest, _, _, _, i, _) equation
+    case (DAE.ARRAY(ty = tp,scalar = b,array = expl), _) equation
       //print("createPartialDifferentiatedExp : i = " + intString(i) + "\n");
       eArray = listGet(inDiffExplZero, i);
       dexpLst = Expression.arrayElements(eArray);
@@ -2425,20 +2429,21 @@ algorithm
       expLst = List.map2(arrayArgs, Expression.makeArray, tp, b);
       arrayArgs = List.map2r(expLst, List.set, inDiffExplZero, i);
       arrayArgs = List.map1r(arrayArgs, listAppend, inOrginalExpl);
-      e = createPartialSum(arrayArgs, expl, inCall, inAccum);
-      e = createPartialDifferentiatedExp(rest, inDiffExplZero, inOrginalExpl, inCall, i+1, e);
+      e = createPartialSum(arrayArgs, expl, inCall, outExp);
     then e;
 
-    case (de::rest, _, _, _, i, _) equation
+    else
+     equation
       tp = Expression.typeof(de);
       dims = Expression.arrayDimension(tp);
       (eone,_) = Expression.makeOneExpression(dims);
       dexpLst = List.set(inDiffExplZero, i, eone);
       expLst = listAppend(inOrginalExpl,dexpLst);
-      e = createPartialSum({expLst}, {de}, inCall, inAccum);
-      e = createPartialDifferentiatedExp(rest, inDiffExplZero, inOrginalExpl, inCall, i+1, e);
+      e = createPartialSum({expLst}, {de}, inCall, outExp);
     then e;
   end match;
+  i := i + 1;
+end for;
 end createPartialDifferentiatedExp;
 
 protected function createPartialSum
@@ -2447,37 +2452,36 @@ protected function createPartialSum
   input list<DAE.Exp> inDiff;
   input DAE.Exp inCall;
   input DAE.Exp inAccum;
-  output DAE.Exp outExp;
+  output DAE.Exp outExp = inAccum;
+protected
+   list<DAE.Exp> restDiff = inDiff;
+   DAE.Exp de, res;
 algorithm
-  outExp := match(inArgsLst, inDiff, inCall, inAccum)
-    local
-      Absyn.Path path;
-      DAE.CallAttributes attr;
-      list<list<DAE.Exp>> rest;
-      list<DAE.Exp> expLst, restDiff;
-      DAE.Exp de, res, zero;
-      DAE.Type ty;
-      Integer ix;
+  for expLst in inArgsLst loop
+    de::restDiff := restDiff;
 
-    case ({}, _, _, _)
-    then inAccum;
+    // skip for zero differentiation
+    if not Expression.isZero(de) then
+      res := match(inCall)
+       local
+         Absyn.Path path;
+         DAE.CallAttributes attr;
+         DAE.Type ty;
+         Integer ix;
 
-    case (expLst::rest, de::restDiff, DAE.TSUB(exp=DAE.CALL(path=path, attr=attr), ix =ix, ty=ty), _) equation
-      res = DAE.TSUB(DAE.CALL(path, expLst, attr), ix, ty);
-      ty = Expression.typeof(de);
-      (zero,_) = Expression.makeZeroExpression(Expression.arrayDimension(ty));
-      res = DAE.IFEXP(DAE.RELATION(de, DAE.NEQUAL(ty), zero, -1, NONE()), Expression.expMul(de, res), zero);
-      res = Expression.expAdd(inAccum, res);
-    then createPartialSum(rest, restDiff, inCall, res);
+      case DAE.TSUB(exp=DAE.CALL(path=path, attr=attr), ix =ix, ty=ty)
+        then DAE.TSUB(DAE.CALL(path, expLst, attr), ix, ty);
 
-    case (expLst::rest, de::restDiff, DAE.CALL(path=path, attr=attr), _) equation
-      res = DAE.CALL(path, expLst, attr);
-      ty = Expression.typeof(de);
-      (zero,_) = Expression.makeZeroExpression(Expression.arrayDimension(ty));
-      res = DAE.IFEXP(DAE.RELATION(de, DAE.NEQUAL(ty), zero, -1, NONE()), Expression.expMul(de, res), zero);
-      res = Expression.expAdd(inAccum, res);
-    then createPartialSum(rest, restDiff, inCall, res);
-  end match;
+      case DAE.CALL(path=path, attr=attr) equation
+        then DAE.CALL(path, expLst, attr);
+      end match;
+
+      res := Expression.expMul(de, res);
+      outExp := Expression.expAdd(outExp, res);
+
+    end if;
+  end for;
+
 end createPartialSum;
 
 protected function prepareArgumentsExplArray

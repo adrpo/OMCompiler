@@ -1418,7 +1418,7 @@ protected
 algorithm
   (vars, varsLst) := inTpl;
   varLst2 := BackendEquation.expressionVars(inExp, vars);
-  varsLst := listAppend(varsLst, varLst2);
+  varsLst := listAppend(varLst2, varsLst);
   exp := inExp;
   outTpl := (vars, varsLst);
 end varsCollector;
@@ -3462,11 +3462,11 @@ algorithm
   outM := match(inM)
   local
     BackendDAE.IncidenceMatrix m,m1;
-    case (NONE()) then NONE();
     case (SOME(m))
       equation
         m1 = arrayCopy(m);
       then SOME(m1);
+    else then NONE();
    end match;
 end copyIncidenceMatrix;
 
@@ -4151,7 +4151,7 @@ algorithm
         lstall = List.map(row, Util.tuple21);
         (_, lst, _) = List.intersection1OnTrue(lstall, lst, intEq);
         _ = List.fold1(lst, markNegativ, rowmark, mark);
-        row = listAppend(row,row1);
+        row = listAppend(row1,row);
       then
         (row,size);
 
@@ -4189,8 +4189,7 @@ algorithm
         (row,size) = adjacencyRowEnhanced(inVariables, eqn, mark, rowmark, kvars, trytosolve);
         lst = List.map(row,Util.tuple21);
         lst = List.intersectionOnTrue(lst, inLstAllBranch,intEq);
-        row = listAppend(row,iRow);
-     then adjacencyRowEnhancedEqnLstIfBranches(rest, inVariables, mark, rowmark, kvars, trytosolve, (lst, row, size + iSize));
+     then adjacencyRowEnhancedEqnLstIfBranches(rest, inVariables, mark, rowmark, kvars, trytosolve, (lst, listAppend(row,iRow), size + iSize));
   end match;
 end adjacencyRowEnhancedEqnLstIfBranches;
 
@@ -5404,7 +5403,7 @@ algorithm
         explst1 = List.map3(explst1,getEqnsysRhsExp,v,funcs,SOME(repl));
         explst1 = List.map(explst1,Expression.negate);
         explst1 = ExpressionSimplify.simplifyList(explst1, {});
-        explst = listAppend(listReverse(explst1),explst);
+        explst = List.append_reverse(explst1,explst);
         sources = List.consN(BackendEquation.equationSize(eqn), source, sources);
       then (eqn,(v,explst,sources,funcs,repl));
 
@@ -5453,15 +5452,15 @@ algorithm
   outExp := match(inExp,inVariables,funcs,oRepl)
     local
       BackendVarTransform.VariableReplacements repl;
-    case (_,_,_,NONE())
+    case (_,_,_,SOME(repl))
       equation
-        repl = makeZeroReplacements(inVariables);
        (outExp,(_,_,_,true)) = Expression.traverseExpTopDown(inExp, getEqnsysRhsExp1, (repl,inVariables,funcs,true));
        (outExp,_) = ExpressionSimplify.simplify(outExp);
       then
         outExp;
-    case (_,_,_,SOME(repl))
+    else
       equation
+        repl = makeZeroReplacements(inVariables);
        (outExp,(_,_,_,true)) = Expression.traverseExpTopDown(inExp, getEqnsysRhsExp1, (repl,inVariables,funcs,true));
        (outExp,_) = ExpressionSimplify.simplify(outExp);
       then
@@ -6355,12 +6354,12 @@ algorithm
       BackendDAE.Equation eqn;
       Type_a ext_arg_1;
       Boolean b;
-    case (NONE(),_,_) then (true,inTypeA);
     case (SOME(eqn),_,_)
       equation
         (b,ext_arg_1) = BackendEquation.traverseExpsOfEquation_WithStop(eqn,func,inTypeA);
       then
         (b,ext_arg_1);
+    else (true,inTypeA);
   end match;
 end traverseBackendDAEExpsOptEqnWithStop;
 
@@ -6383,12 +6382,12 @@ algorithm
     local
       BackendDAE.Equation eqn;
      Type_a ext_arg_1;
-    case (NONE(),_,_) then (NONE(),inTypeA);
     case (SOME(eqn),_,_)
       equation
         (eqn,ext_arg_1) = BackendEquation.traverseExpsOfEquation(eqn,func,inTypeA);
       then
         (SOME(eqn),ext_arg_1);
+    else (NONE(),inTypeA);
   end match;
 end traverseBackendDAEExpsOptEqnWithUpdate;
 
@@ -6548,7 +6547,9 @@ algorithm
   if Flags.isSet(Flags.DUMP_EQNINORDER) then
     BackendDump.dumpEqnsSolved(outSimDAE, "indxdae: eqns in order");
   end if;
-
+  if Flags.isSet(Flags.DUMP_LOOPS) then
+    BackendDump.dumpLoops(outSimDAE);
+  end if;
   checkBackendDAEWithErrorMsg(outSimDAE);
 end getSolvedSystem;
 
@@ -8480,8 +8481,8 @@ algorithm
     then (vars,vidxs,{eq},{eidx});
   case(BackendDAE.TORNSYSTEM(strictTearingSet = BackendDAE.TEARINGSET(residualequations=eidxs,tearingvars=vidxs, otherEqnVarTpl=otherEqnVarTpl)),_,_)
     equation
-      eidxs = listAppend(eidxs,List.map(otherEqnVarTpl,Util.tuple21));
-      vidxs = listAppend(vidxs,List.flatten(List.map(otherEqnVarTpl,Util.tuple22)));
+      eidxs = listAppend(List.map(otherEqnVarTpl,Util.tuple21),eidxs);
+      vidxs = listAppend(List.flatten(List.map(otherEqnVarTpl,Util.tuple22)),vidxs);
       vars = List.map1(vidxs,BackendVariable.getVarAtIndexFirst,varArr);
       eqs = BackendEquation.getEqns(eidxs,eqArr);
     then (vars,vidxs,eqs,eidxs);

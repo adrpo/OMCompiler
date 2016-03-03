@@ -32,9 +32,8 @@
 encapsulated package SymbolicJacobian
 " file:        SymbolicJacobian.mo
   package:     SymbolicJacobian
-  description: This package contains stuff that is related to symbolic jacobian or sparsity structure.
+  description: This package contains stuff that is related to symbolic jacobian or sparsity structure."
 
-  RCS: $Id$"
 
 public import Absyn;
 public import BackendDAE;
@@ -1815,8 +1814,7 @@ algorithm
           backendDAE2 = BackendDAEUtil.getSolvedSystemforJacobians(backendDAE,
                                                                    {"removeEqualFunctionCalls",
                                                                     "removeSimpleEquations",
-                                                                    "evalFunc",
-                                                                    "simplifyAllExpressions"},
+                                                                    "evalFunc"},
                                                                    NONE(),
                                                                    NONE(),
                                                                    {"wrapFunctionCalls",
@@ -1826,8 +1824,7 @@ algorithm
                                                                     "calculateStrongComponentJacobians",
                                                                     "removeConstants",
                                                                     "solveSimpleEquations",
-                                                                    "simplifyTimeIndepFuncCalls",
-                                                                    "simplifyAllExpressions"});
+                                                                    "simplifyTimeIndepFuncCalls"});
           _ = Flags.set(Flags.EXEC_STAT, b);
           if Flags.isSet(Flags.JAC_DUMP) then
             BackendDump.bltdump("Symbolic Jacobian",backendDAE2);
@@ -2263,55 +2260,55 @@ protected
   list<Integer> otherEqnsInts, otherVarsInts;
 algorithm
 try
-	// get iteration vars
-	iterationvars := List.map1r(inIterationvarsInts, BackendVariable.getVarAt, inVars);
-	iterationvars := List.map(iterationvars, BackendVariable.transformXToXd);
-	outDiffVars := BackendVariable.listVar1(iterationvars);
+  // get iteration vars
+  iterationvars := List.map1r(inIterationvarsInts, BackendVariable.getVarAt, inVars);
+  iterationvars := List.map(iterationvars, BackendVariable.transformXToXd);
+  outDiffVars := BackendVariable.listVar1(iterationvars);
 
-	// debug
-	if Flags.isSet(Flags.DEBUG_ALGLOOP_JACOBIAN) then
-	  print("*** got iteration variables at time: " + realString(clock()) + "\n");
-	  BackendDump.printVarList(iterationvars);
-	end if;
-
-	// get residual eqns
-	reqns := BackendEquation.getEqns(inResidualequations, inEqns);
-	reqns := BackendEquation.replaceDerOpInEquationList(reqns);
-	outResidualEqns := BackendEquation.listEquation(reqns);
-	// create  residual equations
-	reqns := BackendEquation.traverseEquationArray(outResidualEqns, BackendEquation.traverseEquationToScalarResidualForm, {});
-	reqns := listReverse(reqns);
-	(reqns, resVarsLst) := convertResidualsIntoSolvedEquations(reqns);
-	outResidualVars := BackendVariable.listVar1(resVarsLst);
-	outResidualEqns := BackendEquation.listEquation(reqns);
-
-	// debug
-	if Flags.isSet(Flags.DEBUG_ALGLOOP_JACOBIAN) then
-	  print("*** got residual equation and created corresponding variables at time: " + realString(clock()) + "\n");
-	  print("Equations:\n");
-	  BackendDump.printEquationList(reqns);
-	end if;
-
-	// get other eqns
-	otherEqnsInts := List.map(inOtherEqnVarTpl, Util.tuple21);
-	otherEqnsLst := BackendEquation.getEqns(otherEqnsInts, inEqns);
-	otherEqnsLst := BackendEquation.replaceDerOpInEquationList(otherEqnsLst);
-	outOtherEqns := BackendEquation.listEquation(otherEqnsLst);
-
-	// get other vars
-	otherVarsIntsLst := List.map(inOtherEqnVarTpl, Util.tuple22);
-	otherVarsInts := List.flatten(otherVarsIntsLst);
-	ovarsLst := List.map1r(otherVarsInts, BackendVariable.getVarAt, inVars);
-	ovarsLst := List.map(ovarsLst, BackendVariable.transformXToXd);
-	outOtherVars := BackendVariable.listVar1(ovarsLst);
   // debug
-	if Flags.isSet(Flags.DEBUG_ALGLOOP_JACOBIAN) then
-	  print("*** got residual equation and created corresponding variables at time: " + realString(clock()) + "\n");
-	  print("other Equations:\n");
-	  BackendDump.printEquationList(otherEqnsLst);
-	  print("other Variables:\n");
-	  BackendDump.printVarList(ovarsLst);
-	end if;
+  if Flags.isSet(Flags.DEBUG_ALGLOOP_JACOBIAN) then
+    print("*** got iteration variables at time: " + realString(clock()) + "\n");
+    BackendDump.printVarList(iterationvars);
+  end if;
+
+  // get residual eqns
+  reqns := BackendEquation.getEqns(inResidualequations, inEqns);
+  reqns := BackendEquation.replaceDerOpInEquationList(reqns);
+  outResidualEqns := BackendEquation.listEquation(reqns);
+  // create  residual equations
+  reqns := BackendEquation.traverseEquationArray(outResidualEqns, BackendEquation.traverseEquationToScalarResidualForm, {});
+  reqns := listReverse(reqns);
+  (reqns, resVarsLst) := convertResidualsIntoSolvedEquations(reqns);
+  outResidualVars := BackendVariable.listVar1(resVarsLst);
+  outResidualEqns := BackendEquation.listEquation(reqns);
+
+  // debug
+  if Flags.isSet(Flags.DEBUG_ALGLOOP_JACOBIAN) then
+    print("*** got residual equation and created corresponding variables at time: " + realString(clock()) + "\n");
+    print("Equations:\n");
+    BackendDump.printEquationList(reqns);
+  end if;
+
+  // get other eqns
+  otherEqnsInts := List.map(inOtherEqnVarTpl, Util.tuple21);
+  otherEqnsLst := BackendEquation.getEqns(otherEqnsInts, inEqns);
+  otherEqnsLst := BackendEquation.replaceDerOpInEquationList(otherEqnsLst);
+  outOtherEqns := BackendEquation.listEquation(otherEqnsLst);
+
+  // get other vars
+  otherVarsIntsLst := List.map(inOtherEqnVarTpl, Util.tuple22);
+  otherVarsInts := List.flatten(otherVarsIntsLst);
+  ovarsLst := List.map1r(otherVarsInts, BackendVariable.getVarAt, inVars);
+  ovarsLst := List.map(ovarsLst, BackendVariable.transformXToXd);
+  outOtherVars := BackendVariable.listVar1(ovarsLst);
+  // debug
+  if Flags.isSet(Flags.DEBUG_ALGLOOP_JACOBIAN) then
+    print("*** got residual equation and created corresponding variables at time: " + realString(clock()) + "\n");
+    print("other Equations:\n");
+    BackendDump.printEquationList(otherEqnsLst);
+    print("other Variables:\n");
+    BackendDump.printVarList(ovarsLst);
+  end if;
 else
   fail();
 end try;
@@ -2325,7 +2322,7 @@ protected function checkForSymbolicJacobian
 protected
   Boolean b1, b2;
 algorithm
-  if not Flags.isSet(Flags.NLS_ANALYTIC_JACOBIAN) then
+  if not Flags.isSet(Flags.FORCE_NLS_ANALYTIC_JACOBIAN) then
     (b1, _) := BackendEquation.traverseExpsOfEquationList_WithStop(inResidualEqns, traverserhasEqnNonDiffParts, ({}, true, false));
     (b2, _) := BackendEquation.traverseExpsOfEquationList_WithStop(inOtherEqns, traverserhasEqnNonDiffParts, ({}, true, false));
     if not (b1 and b2) then
@@ -2394,7 +2391,7 @@ algorithm
 
       case (BackendDAE.TORNSYSTEM(BackendDAE.TEARINGSET(tearingvars=iterationvarsInts, residualequations=residualequations, otherEqnVarTpl=otherEqnVarTpl), NONE(), linear=false, mixedSystem=mixedSystem), _, _, _)
         equation
-
+          true = Flags.isSet(Flags.NLS_ANALYTIC_JACOBIAN);
 
           // generate jacobian name
           name = "NLSJac" + intString(System.tmpTickIndex(Global.backendDAE_jacobianSeq));
@@ -2418,7 +2415,7 @@ algorithm
       // dynamic tearing
       case (BackendDAE.TORNSYSTEM(BackendDAE.TEARINGSET(tearingvars=iterationvarsInts, residualequations=residualequations, otherEqnVarTpl=otherEqnVarTpl), SOME(BackendDAE.TEARINGSET(tearingvars=iterationvarsInts2, residualequations=residualequations2, otherEqnVarTpl=otherEqnVarTpl2)), linear=b, mixedSystem=mixedSystem), _, _, _)
         equation
-          true = (Flags.isSet(Flags.NLS_ANALYTIC_JACOBIAN) and not b) or b;
+          true = (not Flags.isSet(Flags.NLS_ANALYTIC_JACOBIAN) and not b) or b;
 
           // Get Jacobian for strict tearing set
 
@@ -2466,6 +2463,7 @@ algorithm
 
       case (BackendDAE.EQUATIONSYSTEM(eqns=residualequations, vars=iterationvarsInts, mixedSystem=mixedSystem), _, _, _)
         equation
+          true = Flags.isSet(Flags.NLS_ANALYTIC_JACOBIAN);
           //generate jacobian name
           name = "NLSJac" + intString(System.tmpTickIndex(Global.backendDAE_jacobianSeq));
 
@@ -2983,8 +2981,7 @@ algorithm
       BackendDAE.Shared shared;
     case (vars,eqns,m,_,_)
       equation
-        eqn_lst = BackendEquation.equationList(eqns);
-        (jac, shared) = calculateJacobianRows(eqn_lst,vars,m,1,1,differentiateIfExp,iShared,BackendDAEUtil.varsInEqn,{});
+        (jac, shared) = calculateJacobianRows(eqns,vars,m,1,1,differentiateIfExp,iShared,BackendDAEUtil.varsInEqn);
       then
         (SOME(jac),shared);
     else (NONE(), iShared);  /* no analytic jacobian available */
@@ -2999,7 +2996,7 @@ protected function calculateJacobianRows "author: PA
   variables {x,y,z} on index x1,y1,z1 gives
   {(e1,x1,3a), (e1,y1,5z), (e1,z1,5y+2z)}"
   replaceable type Type_a subtypeof Any;
-  input list<BackendDAE.Equation> inEquationLst;
+  input BackendDAE.EquationArray inEquationArray;
   input BackendDAE.Variables vars;
   input Type_a m;
   input Integer eqn_indx;
@@ -3007,30 +3004,33 @@ protected function calculateJacobianRows "author: PA
   input Boolean differentiateIfExp "If true, allow differentiation of if-expressions";
   input BackendDAE.Shared iShared;
   input varsInEqnFunc varsInEqn;
-  input list<tuple<Integer, Integer, BackendDAE.Equation>> iAcc;
-  output list<tuple<Integer, Integer, BackendDAE.Equation>> outLst;
-  output BackendDAE.Shared oShared;
+  output list<tuple<Integer, Integer, BackendDAE.Equation>> outLst = {};
+  output BackendDAE.Shared oShared = iShared;
   partial function varsInEqnFunc
     input Type_a m;
     input Integer indx;
     output list<Integer> outIntegerLst;
   end varsInEqnFunc;
+protected
+  Integer size, i, j, n, k;
+  BackendDAE.Equation eqn;
+  array<Option<BackendDAE.Equation>> equOptArr;
 algorithm
-  (outLst, oShared) := match (inEquationLst,vars,m,eqn_indx,scalar_eqn_indx,differentiateIfExp,iShared,varsInEqn,iAcc)
-    local
-      list<tuple<Integer, Integer, BackendDAE.Equation>> res;
-      BackendDAE.Equation eqn;
-      list<BackendDAE.Equation> eqns;
-      Integer size;
-      BackendDAE.Shared shared;
-    case ({},_,_,_,_,_,_,_,_) then (listReverse(iAcc), iShared);
-    case (eqn::eqns,_,_,_,_,_,_,_,_)
-      equation
-        (res, size, shared) = calculateJacobianRow(eqn, vars,  m, eqn_indx, scalar_eqn_indx,differentiateIfExp,iShared,varsInEqn,iAcc);
-        (res, shared) = calculateJacobianRows(eqns, vars, m, eqn_indx + 1, scalar_eqn_indx + size,differentiateIfExp,shared,varsInEqn,res);
-      then
-        (res, shared);
-  end match;
+  i := eqn_indx;
+  j := scalar_eqn_indx;
+  size := 0;
+  (n, equOptArr) := match inEquationArray case BackendDAE.EQUATION_ARRAY(numberOfElement = n, equOptArr = equOptArr) then (n, equOptArr); end match;
+  // print("CalcJac(Eqs:" + intString(n) + ")\n");
+  for k in 1:n loop
+    if isSome(equOptArr[k]) then
+      eqn := Util.getOption(equOptArr[k]);
+      (outLst, size, oShared) := calculateJacobianRow(eqn, vars,  m, i, j, differentiateIfExp, oShared, varsInEqn, outLst);
+      i := i+1;
+      j := j+size;
+    end if;
+  end for;
+  outLst := MetaModelica.Dangerous.listReverseInPlace(outLst);
+  // print("END_CalcJac(Size:" + intString(listLength(outLst)) + ")\n");
 end calculateJacobianRows;
 
 protected function calculateJacobianRow "author: PA
@@ -3072,11 +3072,13 @@ algorithm
       DAE.ComponentRef cr;
       String str;
       BackendDAE.Shared shared;
+
     // residual equations
     case (BackendDAE.EQUATION(exp = e1,scalar=e2,source=source),_,_,_,_,_,_,_,_)
       equation
         var_indxs = fvarsInEqn(m, eqn_indx);
-        var_indxs_1 = List.unionOnTrue(var_indxs, {}, intEq) "Remove duplicates and get in correct order: ascending index";
+        // Remove duplicates and get in correct order: ascending index
+        var_indxs_1 = List.unionOnTrue(var_indxs, {}, intEq);
         var_indxs_1 = List.sort(var_indxs_1,intGt);
         (eqns, shared) = calculateJacobianRow2(Expression.expSub(e1,e2), vars, scalar_eqn_indx, var_indxs_1,differentiateIfExp,iShared,source,iAcc);
       then
@@ -3086,7 +3088,8 @@ algorithm
     case (BackendDAE.RESIDUAL_EQUATION(exp=e,source=source),_,_,_,_,_,_,_,_)
       equation
         var_indxs = fvarsInEqn(m, eqn_indx);
-        var_indxs_1 = List.unionOnTrue(var_indxs, {}, intEq) "Remove duplicates and get in correct order: ascending index";
+        // Remove duplicates and get in correct order: ascending index
+        var_indxs_1 = List.unionOnTrue(var_indxs, {}, intEq);
         var_indxs_1 = List.sort(var_indxs_1,intGt);
         (eqns, shared) = calculateJacobianRow2(e, vars, scalar_eqn_indx, var_indxs_1,differentiateIfExp,iShared,source,iAcc);
       then
@@ -3096,8 +3099,10 @@ algorithm
     case (BackendDAE.SOLVED_EQUATION(componentRef=cr,exp=e2,source=source),_,_,_,_,_,_,_,_)
       equation
         e1 = Expression.crefExp(cr);
+
         var_indxs = fvarsInEqn(m, eqn_indx);
-        var_indxs_1 = List.unionOnTrue(var_indxs, {}, intEq) "Remove duplicates and get in correct order: ascending index";
+        // Remove duplicates and get in correct order: ascending index
+        var_indxs_1 = List.unionOnTrue(var_indxs, {}, intEq);
         var_indxs_1 = List.sort(var_indxs_1,intGt);
         (eqns, shared) = calculateJacobianRow2(Expression.expSub(e1,e2), vars, scalar_eqn_indx, var_indxs_1,differentiateIfExp,iShared,source,iAcc);
       then
@@ -3112,8 +3117,10 @@ algorithm
         subslst = Expression.dimensionSizesSubscripts(ds);
         subslst = Expression.rangesToSubscripts(subslst);
         expl = List.map1r(subslst,Expression.applyExpSubscripts,e);
+
         var_indxs = fvarsInEqn(m, eqn_indx);
-        var_indxs_1 = List.unionOnTrue(var_indxs, {}, intEq) "Remove duplicates and get in correct order: ascending index";
+        // Remove duplicates and get in correct order: ascending index
+        var_indxs_1 = List.unionOnTrue(var_indxs, {}, intEq);
         var_indxs_1 = List.sort(var_indxs_1,intGt);
         (eqns, shared) = calculateJacobianRowLst(expl, vars, scalar_eqn_indx, var_indxs_1,differentiateIfExp,iShared,source,iAcc);
         size = List.fold(ds,intMul,1);
@@ -3140,23 +3147,12 @@ protected function calculateJacobianRowLst "author: Frenkel TUD 2012-06
   input BackendDAE.Shared iShared;
   input DAE.ElementSource source;
   input list<tuple<Integer, Integer, BackendDAE.Equation>> iAcc;
-  output list<tuple<Integer, Integer, BackendDAE.Equation>> outLst;
-  output BackendDAE.Shared oShared;
+  output list<tuple<Integer, Integer, BackendDAE.Equation>> outLst = iAcc;
+  output BackendDAE.Shared oShared = iShared;
 algorithm
-  (outLst, oShared) := match inExps
-    local
-      DAE.Exp e;
-      list<DAE.Exp> elst;
-      list<tuple<Integer, Integer, BackendDAE.Equation>> eqns;
-      BackendDAE.Shared shared;
-
-    case {} then (iAcc, iShared);
-
-    case e::elst equation
-      (eqns, shared) = calculateJacobianRow2(e,vars,eqn_indx,inIntegerLst,differentiateIfExp,iShared,source,iAcc);
-      (eqns, shared) = calculateJacobianRowLst(elst,vars,eqn_indx+1,inIntegerLst,differentiateIfExp,shared,source,eqns);
-    then (eqns, shared);
-  end match;
+  for e in inExps loop
+    (outLst, oShared) := calculateJacobianRow2(e,vars,eqn_indx,inIntegerLst,differentiateIfExp,oShared,source,outLst);
+  end for;
 end calculateJacobianRowLst;
 
 protected function calculateJacobianRow2 "author: PA
@@ -3174,52 +3170,40 @@ protected function calculateJacobianRow2 "author: PA
   input BackendDAE.Shared iShared;
   input DAE.ElementSource source;
   input list<tuple<Integer, Integer, BackendDAE.Equation>> iAcc;
-  output list<tuple<Integer, Integer, BackendDAE.Equation>> outLst;
-  output BackendDAE.Shared oShared;
+  output list<tuple<Integer, Integer, BackendDAE.Equation>> outLst = {};
+  output BackendDAE.Shared oShared = iShared;
+protected
+	DAE.Exp e, e_1, e_2, dcrexp;
+	BackendDAE.Var v;
+	DAE.ComponentRef cr, dcr;
+	list<tuple<Integer, Integer, BackendDAE.Equation>> es, result;
+	Integer vindx;
+	list<Integer> vindxs;
+	String str;
+	BackendDAE.Shared shared;
 algorithm
-  (outLst, oShared) := matchcontinue (inIntegerLst)
-    local
-      DAE.Exp e, e_1, e_2, dcrexp;
-      BackendDAE.Var v;
-      DAE.ComponentRef cr, dcr;
-      list<tuple<Integer, Integer, BackendDAE.Equation>> es;
-      Integer vindx;
-      list<Integer> vindxs;
-      String str;
-      BackendDAE.Shared shared;
-
-    case {}
-    then (iAcc, iShared);
-
-    case vindx::vindxs equation
-      v = BackendVariable.getVarAt(vars, vindx);
-      cr = BackendVariable.varCref(v);
-      true = BackendVariable.isStateVar(v);
-      dcr = ComponentReference.crefPrefixDer(cr);
-      dcrexp = Expression.crefExp(cr);
-      dcrexp = DAE.CALL(Absyn.IDENT("der"), {dcrexp}, DAE.callAttrBuiltinReal);
-      ((e, _)) = Expression.replaceExp(inExp, dcrexp, Expression.crefExp(dcr));
-      (e_1, shared) = Differentiate.differentiateExpCrefFullJacobian(e, dcr, vars, iShared);
-      (e_2, _) = ExpressionSimplify.simplify(e_1);
-      es = calculateJacobianRow3(eqn_indx, vindx, e_2, source, iAcc);
-      (es, shared) = calculateJacobianRow2(inExp, vars, eqn_indx, vindxs, differentiateIfExp, shared, source, es);
-    then (es, shared);
-
-    case vindx::vindxs equation
-      v = BackendVariable.getVarAt(vars, vindx);
-      cr = BackendVariable.varCref(v);
-      (e_1, shared) = Differentiate.differentiateExpCrefFullJacobian(inExp, cr, vars, iShared);
-      (e_2, _) = ExpressionSimplify.simplify(e_1);
-      es = calculateJacobianRow3(eqn_indx, vindx, e_2, source, iAcc);
-      (es, shared) = calculateJacobianRow2(inExp, vars, eqn_indx, vindxs, differentiateIfExp, shared, source, es);
-    then (es, shared);
-
-    else equation
-      true = Flags.isSet(Flags.FAILTRACE);
-      str = ExpressionDump.printExpStr(inExp);
+  try
+    for vindx in inIntegerLst loop
+      v := BackendVariable.getVarAt(vars, vindx);
+      cr := BackendVariable.varCref(v);
+      if BackendVariable.isStateVar(v) then
+        dcr := ComponentReference.crefPrefixDer(cr);
+        dcrexp := Expression.crefExp(cr);
+        dcrexp := DAE.CALL(Absyn.IDENT("der"), {dcrexp}, DAE.callAttrBuiltinReal);
+        ((e, _)) := Expression.replaceExp(inExp, dcrexp, Expression.crefExp(dcr));
+      end if;
+      (e_1, oShared) := Differentiate.differentiateExpCrefFullJacobian(inExp, cr, vars, oShared);
+      // e_1 already simplified in Differentiate.differentiateExpCrefFullJacobian!
+      outLst := calculateJacobianRow3(eqn_indx, vindx, e_1, source, outLst);
+    end for;
+    outLst := listAppend(outLst, iAcc);
+  else
+    if Flags.isSet(Flags.FAILTRACE) then
+      str := ExpressionDump.printExpStr(inExp);
       Debug.traceln("- BackendDAE.calculateJacobianRow2 failed on " + str);
-    then fail();
-  end matchcontinue;
+    end if;
+    fail();
+  end try;
 end calculateJacobianRow2;
 
 protected function calculateJacobianRow3
@@ -3408,30 +3392,35 @@ protected function jacobianConstant "author: PA
   Checks if Jacobian is constant, i.e. all expressions in each equation are constant."
   input list<tuple<Integer, Integer, BackendDAE.Equation>> inTplIntegerIntegerEquationLst;
   output Boolean outBoolean;
+protected
+  DAE.Exp e1,e2, e;
+  tuple<Integer, Integer, BackendDAE.Equation> tpl;
+  BackendDAE.Equation eqn;
 algorithm
-  outBoolean := matchcontinue (inTplIntegerIntegerEquationLst)
-    local
-      DAE.Exp e1,e2,e;
-      list<tuple<Integer, Integer, BackendDAE.Equation>> eqns;
-    case ({}) then true;
-    case (((_,_,BackendDAE.EQUATION(exp = e1,scalar = e2))::eqns)) /* TODO: Algorithms and ArrayEquations */
-      equation
-        true = Expression.isConst(e1);
-        true = Expression.isConst(e2);
-      then
-        jacobianConstant(eqns);
-    case (((_,_,BackendDAE.RESIDUAL_EQUATION(exp = e))::eqns))
-      equation
-        true = Expression.isConst(e);
-      then
-        jacobianConstant(eqns);
-    case (((_,_,BackendDAE.SOLVED_EQUATION(exp = e))::eqns))
-      equation
-        true = Expression.isConst(e);
-      then
-        jacobianConstant(eqns);
-    else false;
-  end matchcontinue;
+  /* TODO: Algorithms and ArrayEquations */
+
+  for tpl in inTplIntegerIntegerEquationLst loop
+    eqn := Util.tuple33(tpl);
+    outBoolean := match eqn
+      case BackendDAE.EQUATION(exp = e1,scalar = e2)
+        then Expression.isConst(e1) and Expression.isConst(e2);
+      case BackendDAE.RESIDUAL_EQUATION(exp = e)
+        then Expression.isConst(e);
+      case BackendDAE.SOLVED_EQUATION(exp = e)
+        then Expression.isConst(e);
+      case BackendDAE.ARRAY_EQUATION(left=e1, right=e2)
+        then Expression.isConst(e1) and Expression.isConst(e2);
+      case BackendDAE.COMPLEX_EQUATION(left=e1, right=e2)
+        then Expression.isConst(e1) and Expression.isConst(e2);
+      else false;
+      end match;
+
+    if not outBoolean then
+      break;
+    end if;
+
+  end for;
+
 end jacobianConstant;
 
 protected function varsNotInRelations
@@ -3500,24 +3489,15 @@ protected function rhsConstant "author: PA
   input BackendDAE.Variables vars;
   input BackendDAE.EquationArray eqns;
   output Boolean outBoolean;
+protected
+  BackendVarTransform.VariableReplacements repl;
 algorithm
-  outBoolean:=
-  matchcontinue (vars,eqns)
-    local
-      Boolean res;
-      BackendVarTransform.VariableReplacements repl;
-    case (_,_)
-      equation
-        0 = BackendDAEUtil.equationSize(eqns);
-      then
-        true;
-    case (_,_)
-      equation
-        repl = BackendDAEUtil.makeZeroReplacements(vars);
-        ((_,res,_)) = BackendEquation.traverseEquationArray_WithStop(eqns,rhsConstant2,(vars,true,repl));
-      then
-        res;
-  end matchcontinue;
+  if BackendDAEUtil.equationSize(eqns) == 0 then
+    outBoolean:= true;
+  else
+    repl := BackendDAEUtil.makeZeroReplacements(vars);
+    ((_,outBoolean,_)) := BackendEquation.traverseEquationArray_WithStop(eqns,rhsConstant2,(vars,true,repl));
+  end if;
 end rhsConstant;
 
 protected function rhsConstant2 "Helper function to rhsConstant, traverses equation list."

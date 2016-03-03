@@ -33,9 +33,8 @@ encapsulated package CommonSubExpression
 " file:        CommonSubExpression.mo
   package:     CommonSubExpression
   description: This package contains functions for the optimization module
-               CommonSubExpression.
+               CommonSubExpression."
 
-  RCS: $Id: CommonSubExpression.mo 23264 2014-11-07 07:01:20Z sjoelund.se $"
 
 public import BackendDAE;
 public import DAE;
@@ -244,7 +243,12 @@ protected function wrapFunctionCalls3
   output DAE.Exp outExp;
   output tuple<tuple<HashTableExpToExp.HashTable, Integer, list<BackendDAE.Equation>, list<BackendDAE.Var>, DAE.FunctionTree>, DAE.ElementSource> outTuple;
 algorithm
-  (outExp, outTuple) := Expression.traverseExpBottomUp(inExp, wrapFunctionCalls_main, inTuple);
+  if Expression.isExpIfExp(inExp) then
+    outExp  := inExp;
+    outTuple := inTuple;
+  else
+    (outExp, outTuple) := Expression.traverseExpBottomUp(inExp, wrapFunctionCalls_main, inTuple);
+  end if;
 end wrapFunctionCalls3;
 
 protected function wrapFunctionCalls_main
@@ -324,6 +328,8 @@ algorithm
     then (inExp, inTuple);
     case (DAE.CALL(path=Absyn.IDENT("noClock")), _)
     then (inExp, inTuple);
+    case (DAE.CALL(path=Absyn.IDENT("sign")), _)
+    then (inExp, inTuple);
     case (_, _) guard(Expression.isImpureCall(inExp))
     then (inExp, inTuple);
 
@@ -358,9 +364,9 @@ algorithm
 end isRecordExp;
 
 protected function isZeroequalCall
-	input DAE.Exp inExp;
-	input DAE.Exp inExp2;
-	output Boolean outB;
+  input DAE.Exp inExp;
+  input DAE.Exp inExp2;
+  output Boolean outB;
 algorithm
    outB := match(inExp, inExp2)
 
@@ -806,12 +812,8 @@ algorithm
          with variable indexes.*/
       outVarLst := inAccumVarLst;
       for cr_ in crefs loop
-        if Expression.isArrayType(ComponentReference.crefTypeFull(cr_)) then
-          arrayDim := ComponentReference.crefDims(cr_);
-          outVarLst := BackendVariable.createCSEArrayVar(cr_, ComponentReference.crefTypeFull(cr_), arrayDim)::outVarLst;
-        else
-          outVarLst := BackendVariable.createCSEVar(cr_, ComponentReference.crefTypeFull(cr_))::outVarLst;
-        end if;
+        arrayDim := ComponentReference.crefDims(cr_);
+        outVarLst := BackendVariable.createCSEArrayVar(cr_, ComponentReference.crefTypeFull(cr_), arrayDim)::outVarLst;
       end for;
     then outVarLst;
 

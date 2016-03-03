@@ -46,6 +46,7 @@ protected import Util;
 
 public import Tpl;
 protected import TplCodegen;
+protected import MetaModelica.Dangerous.listReverseInPlace;
 
 
 /* Input AST */
@@ -577,7 +578,7 @@ algorithm
       equation
         tp = fullyQualifyTemplatePackage(inTplPackage);
         TEMPL_PACKAGE(name, astDefs, templateDefs, annotationFooter) = tp;
-        mmDeclarations = importDeclarations(astDefs, {});
+        mmDeclarations = importDeclarations(astDefs);
         mmDeclarations
          = transformTemplateDefs(templateDefs, tp, mmDeclarations);
         mmDeclarations = listReverse(mmDeclarations);
@@ -609,26 +610,15 @@ end fullyQualifyTemplatePackage;
 
 public function importDeclarations
   input list<ASTDef> inASTDefs;
-  input list<MMDeclaration> inAccMMDecls;
-
-  output list<MMDeclaration> outMMDecls;
+  output list<MMDeclaration> outMMDecls = {};
+protected
+  PathIdent importPackage;
+  Boolean isDefault;
 algorithm
-  outMMDecls := match (inASTDefs, inAccMMDecls)
-    local
-      list<ASTDef> restASTDefs;
-      PathIdent importPackage;
-      Boolean isDefault;
-      list<MMDeclaration> accMMDecls;
-
-    case ( {} , accMMDecls )
-      then accMMDecls;
-
-    case ( AST_DEF(importPackage = importPackage, isDefault = isDefault) :: restASTDefs, accMMDecls )
-      then
-        importDeclarations(restASTDefs,
-                          (MM_IMPORT(isDefault, importPackage) :: accMMDecls));
-
-  end match;
+  for astDef in inASTDefs loop
+    AST_DEF(importPackage = importPackage, isDefault = isDefault) := astDef;
+    outMMDecls := MM_IMPORT(isDefault, importPackage) :: outMMDecls;
+  end for;
 end importDeclarations;
 
 public function transformTemplateDefs
@@ -686,7 +676,7 @@ algorithm
         //TODO: should be done some checks for uniqueness / keywords collisions ...
         //tplname = encodeIdent(tplname);
         iargs = imlicitTxtArg :: encArgs;
-        oargs = List.filter(iargs, isText);
+        oargs = List.filterOnTrue(iargs, isText);
         stmts = listReverse(stmts);
         stmts = addOutPrefixes(stmts, oargs, {});
         (stmts, locals, accMMDecls) = inlineLastFunIfSingleCall(iargs, oargs, stmts, locals, accMMDecls);
@@ -934,38 +924,22 @@ public function addOutTextAssigns
   input TypedIdents inTextArgs;
   input list<tuple<Ident,Ident>> inTranslatedTextArgs;
 
-  output list<MMExp> outStmts;
+  output list<MMExp> outStmts = {};
+protected
+  String outident;
+  tuple<Ident, TypeSignature> id;
+  Ident ident;
 algorithm
-  (outStmts) := matchcontinue (inTextArgs, inTranslatedTextArgs)
-    local
-      list<MMExp> stmts;
-      TypedIdents restArgs;
-      Ident ident;
-      String outident;
-      list<tuple<Ident,Ident>> trIdents;
-
-    case (  {} , _)
-      then ( {} );
-
-    case (  (ident, _) :: restArgs , trIdents)
-      equation
-        _ = lookupTupleList(trIdents, ident);
-        stmts = addOutTextAssigns( restArgs, trIdents);
-      then ( stmts );
-
-    case ( (ident, _) :: restArgs , trIdents)
-      equation
-        //failure(_ = lookupTupleList(trIdents, ident));
-        outident = outPrefix + ident;
-        stmts = addOutTextAssigns( restArgs, trIdents);
-      then ( MM_ASSIGN({outident},MM_IDENT(IDENT(ident))) :: stmts );
-
+  for id in inTextArgs loop
+    (ident,_) := id;
+    try
+      _ := lookupTupleList(inTranslatedTextArgs, ident);
     else
-      equation
-        true = Flags.isSet(Flags.FAILTRACE); Debug.trace("-!!!addOutTextAssigns failed\n");
-      then
-        fail();
-  end matchcontinue;
+      outident := outPrefix + ident;
+      outStmts := MM_ASSIGN({outident},MM_IDENT(IDENT(ident))) :: outStmts;
+    end try;
+  end for;
+  outStmts := listReverseInPlace(outStmts);
 end addOutTextAssigns;
 
 
@@ -974,24 +948,17 @@ public function isAssignedIdent
   input Ident inIdent;
 
   output Boolean outIsAssigned;
+protected
+  list<Ident> largs;
 algorithm
-  (outIsAssigned) := match (inStatementList, inIdent)
-    local
-      Ident ident;
-      list<Ident> largs;
-      list<MMExp> rest;
-
-    case ( {}, _ )  then  false;
-
-    case ( MM_ASSIGN(lhsArgs = largs) :: _, ident ) guard listMember(ident, largs)
-      then
-        true;
-
-    case ( _ :: rest, ident )
-      then
-        isAssignedIdent(rest, ident);
-
-  end match;
+  for st in inStatementList loop
+    MM_ASSIGN(lhsArgs = largs) := st;
+    if listMember(inIdent, largs) then
+      outIsAssigned := true;
+      return;
+    end if;
+  end for;
+  outIsAssigned := false;
 end isAssignedIdent;
 
 
@@ -2519,6 +2486,7 @@ algorithm
       list<MMExp> mmargs;
       list<Ident> lhsArgs;
       TemplPackage tplPackage;
+      MMExp exp;
 
     case ( _, _, {}, _)
       then
@@ -2535,10 +2503,11 @@ algorithm
     //a text argument that is input and output
     //an actual parameter ident ... non-internal idents all starts with "_"
     //- put it out
-    case ( MM_IDENT(IDENT(txtarg)) :: mmargs, _ :: iargs, _ :: oargs, tplPackage)
+    case ((exp as MM_IDENT(IDENT(txtarg))) :: mmargs, _ :: iargs, _ :: oargs, tplPackage)
       equation
         // obsolete ... "_" = stringGetStringChar(txtarg, 1);
         //areEqualInOutArgs(iarg , oarg);
+        false = listMember(exp, mmargs); // This makes only the last Text argument be cached, but it is the simplest solution
         lhsArgs = elabOutTextArgs(mmargs, iargs, oargs, tplPackage);
       then
         ( txtarg :: lhsArgs );
@@ -2673,8 +2642,8 @@ algorithm
         fname = listMapFunPrefix + intString(listLength(accMMDecls));
         iargs = imlicitTxtArg :: ("items",argtype) :: encodedExtargs;
         assignedIdents = getAssignedIdents(mapstmts, {});
-        //oargs = List.filter(extargs, isText);
-        oargs = List.filter1(encodedExtargs, isAssignedText, assignedIdents);
+        //oargs = List.filterOnTrue(extargs, isText);
+        oargs = List.filter1OnTrue(encodedExtargs, isAssignedText, assignedIdents);
         oargs = imlicitTxtArg :: oargs;
         lhsArgs = List.map(oargs, Util.tuple21);
         inMapExtargvals =  List.map(encodedExtargs, makeMMArgValue);
@@ -2779,8 +2748,8 @@ algorithm
         fname = scalarMapFunPrefix + intString(listLength(accMMDecls));
         iargs = imlicitTxtArg :: ("it",argtype) :: encodedExtargs;
         assignedIdents = getAssignedIdents(mapstmts, {});
-        //oargs = List.filter(extargs, isText); //it can be actually Text, but not to be as output stream
-        oargs = List.filter1(encodedExtargs, isAssignedText, assignedIdents);
+        //oargs = List.filterOnTrue(extargs, isText); //it can be actually Text, but not to be as output stream
+        oargs = List.filter1OnTrue(encodedExtargs, isAssignedText, assignedIdents);
         oargs = imlicitTxtArg :: oargs;
         mapstmts = listReverse(mapstmts);
         //add indexed value if needed
@@ -3107,7 +3076,7 @@ algorithm
 
         iargs = imlicitTxtArg :: (matchArgName, exptype) :: encodedExtargs;
 
-        oargs = List.filter1(encodedExtargs, isAssignedText, assignedIdents);
+        oargs = List.filter1OnTrue(encodedExtargs, isAssignedText, assignedIdents);
         oargs = imlicitTxtArg :: oargs;
 
         funLocals = listAppend(encodedExtargs, funLocals);
@@ -3198,25 +3167,29 @@ end makeMMArgValue;
 
 public function isText
   input tuple<Ident, TypeSignature> inArg;
+  output Boolean outB;
 algorithm
-  _:= match(inArg)
+  outB := match(inArg)
     case ( (_ , TEXT_TYPE()) )
-      then ();
+      then true;
+    else false;
   end match;
 end isText;
 
-function isAssignedText
+protected function isAssignedText
   input tuple<Ident, TypeSignature> inArg;
   input list<Ident> inAssignedTexts;
+  output Boolean outB;
 algorithm
-  _:= match(inArg, inAssignedTexts)
+  outB := match(inArg, inAssignedTexts)
     local
       Ident ident;
       list<Ident> assignedTexts;
     case ( (ident , TEXT_TYPE()), assignedTexts )
-      equation
-        true = listMember(ident,assignedTexts);
-      then ();
+      guard
+        listMember(ident,assignedTexts)
+      then true;
+    else false;
   end match;
 end isAssignedText;
 
@@ -5876,7 +5849,7 @@ algorithm
       equation
         TEMPLATE_DEF(args = iargs)  =  lookupTupleList(templateDefs, templname);
         iargs = imlicitTxtArg :: iargs;
-        oargs = List.filter(iargs, isText); //just for now, it is not inferred from the usage
+        oargs = List.filterOnTrue(iargs, isText); //just for now, it is not inferred from the usage
         //not encoding templates now
         //templname = encodeIdent(templname);
         //fname = IDENT( templname );

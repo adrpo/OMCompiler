@@ -44,12 +44,17 @@ extern "C" {
 #endif
 
 #include "meta_modelica_builtin_boxptr.h"
+#include "util/modelica_string_lit.h"
 
 typedef modelica_metatype metamodelica_string;
 typedef const modelica_metatype metamodelica_string_const;
 
-extern metamodelica_string intString(modelica_integer);
+extern modelica_string intString(modelica_integer);
 extern modelica_string realString(modelica_real);
+static inline modelica_string boolString(modelica_integer i)
+{
+  return mmc_strings_boolString[i];
+}
 
 /* String Character Conversion */
 
@@ -58,13 +63,12 @@ extern modelica_integer nobox_stringCharInt(threadData_t *threadData,metamodelic
 #define intStringChar(X) nobox_intStringChar(threadData,X)
 extern metamodelica_string nobox_intStringChar(threadData_t *threadData,modelica_integer ix);
 
-/* String Operations */
+/* String Operations (MM extensions only) */
 #define stringInt(x) nobox_stringInt(threadData,x)
 #define stringReal(x) nobox_stringReal(threadData,x)
 extern modelica_integer nobox_stringInt(threadData_t*,metamodelica_string s);
 extern modelica_real nobox_stringReal(threadData_t*,metamodelica_string s);
 extern modelica_metatype stringListStringChar(metamodelica_string s);
-extern metamodelica_string stringAppend(metamodelica_string_const s1,metamodelica_string_const s2);
 extern metamodelica_string stringAppendList(modelica_metatype lst);
 extern metamodelica_string stringDelimitList(modelica_metatype lst,metamodelica_string_const delimiter);
 #define stringLength(x) MMC_STRLEN(x)
@@ -92,6 +96,8 @@ extern modelica_metatype boxptr_stringHashDjb2Mod(threadData_t*,modelica_metatyp
 /* List Operations */
 extern modelica_metatype listReverse(modelica_metatype);
 extern modelica_metatype listReverseInPlace(modelica_metatype);
+#define listSetRest(X,Y) boxptr_listSetRest(threadData,X,Y)
+extern void boxptr_listSetRest(threadData_t*,modelica_metatype,modelica_metatype);
 extern modelica_boolean listMember(modelica_metatype, modelica_metatype);
 extern modelica_metatype listAppend(modelica_metatype,modelica_metatype);
 extern modelica_integer listLength(modelica_metatype);

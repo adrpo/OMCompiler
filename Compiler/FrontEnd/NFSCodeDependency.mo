@@ -34,7 +34,6 @@ encapsulated package NFSCodeDependency
   package:     NFSCodeDependency
   description: SCode dependency analysis.
 
-  RCS: $Id$
 
   Dependency analysis for SCode.
 "
@@ -320,8 +319,6 @@ algorithm
       then
         ();
 
-    case (NFSCodeEnv.CLASS(cls = SCode.CLASS(name = "time")), _) then ();
-
     else
       equation
         true = Flags.isSet(Flags.FAILTRACE);
@@ -395,8 +392,6 @@ algorithm
         analyseRedeclaredClass(cls, env);
       then
         ();
-
-    case (NFSCodeEnv.CLASS(cls = SCode.CLASS(name = "time")), _) then ();
 
     else
       equation
@@ -600,7 +595,7 @@ protected
   list<String> el_names;
 algorithm
   // Remove all 'extends ExternalObject'.
-  el := List.filter(inElements, isNotExternalObject);
+  el := List.filterOnTrue(inElements, isNotExternalObject);
   // Check if length of the new list is different to the old, i.e. if we
   // actually found and removed any 'extends ExternalObject'.
   false := (listLength(el) == listLength(inElements));
@@ -633,12 +628,13 @@ algorithm
 end elementName;
 
 protected function isNotExternalObject
-  "Fails on 'extends ExternalObject', otherwise succeeds."
+  "False on 'extends ExternalObject', otherwise true."
   input SCode.Element inElement;
+  output Boolean b;
 algorithm
-  _ := match(inElement)
-    case SCode.EXTENDS(baseClassPath = Absyn.IDENT("ExternalObject")) then fail();
-    else ();
+  b := match(inElement)
+    case SCode.EXTENDS(baseClassPath = Absyn.IDENT("ExternalObject")) then false;
+    else true;
   end match;
 end isNotExternalObject;
 

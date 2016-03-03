@@ -25,6 +25,7 @@ CJSONINCLUDE = ../../3rdParty/cJSON/
 OMBUILDDIR = ../../build
 LPSOLVEINCLUDE = ../../3rdParty/lpsolve/build/include/
 SQLITE3INCLUDE = ../../3rdParty/sqlite3/build/include/
+OMC=$(OMBUILDDIR)/bin/omc
 
 OMPCC = gcc -fopenmp
 
