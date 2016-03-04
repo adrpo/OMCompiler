@@ -29,7 +29,14 @@ CFLAGS =-g -O2 -falign-functions
 MSGPACK_CFLAGS = -march=i686
 CMAKE = $(OMDEV)/bin/cmake/bin/cmake
 CMAKE_TARGET = "MSYS Makefiles"
-BOOST_PATH = $(OMDEV)/lib/3rdParty/boost-1_55/
+
+ifeq (MINGW32,$(findstring MINGW32,$(shell uname)))
+BOOST_PATH = $(OMDEV)/tools/msys/mingw32/include
+else # mingw64
+BOOST_PATH = $(OMDEV)/tools/msys/mingw64/include
+endif
+BOOST_PATH_MSVC = $(OMDEV)/lib/3rdParty/boost-1_55/
+
 OPENCL = Yes
 LINK = cp -rl
 AR = ar
@@ -156,7 +163,6 @@ omdev_extra_dlls: install-openturns
 	echo Copying needed .dlls to the $(OMBUILDDIR)/bin directory
 	(cp -puf $(OMDEV)/lib/omniORB-4.2.0-msvc-10/bin/x86_win32/omniORB420_vc10_rt.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/lib/omniORB-4.2.0-msvc-10/bin/x86_win32/omnithread40_vc10_rt.dll $(builddir_bin)/)
-	(cp -puf $(OMDEV)/lib/pthread/pthreadGC2.dll $(builddir_bin)/)
 ifeq (MINGW32,$(findstring MINGW32,$(shell uname)))
 	(cp -puf $(OMDEV)/tools/msys/mingw32/bin/libgomp-1.dll $(builddir_bin)/)
 	(cp -puf $(OMDEV)/tools/msys/mingw32/bin/libwinpthread-1.dll $(builddir_bin)/)
@@ -391,8 +397,8 @@ sundials_msvc: getMSVCversion 3rdParty/sundials/CMakeLists.txt
 
 runtimeCPPmsvcinstall: mkbuilddirs CMinpack_msvc sundials_msvc copycppheader
 	$(MAKE) -C SimulationRuntime/cpp/ -f Makefile.omdev.mingw runtimeCPPmsvc OMBUILDDIR=$(OMBUILDDIR)
-	cp -p $(BOOST_PATH)/lib/*vc*.dll $(OMBUILDDIR)/bin/
-	cp -p $(BOOST_PATH)/lib/*vc*.lib $(OMBUILDDIR)/lib/omc/cpp/msvc
+	cp -p $(BOOST_PATH_MSVC)/lib/*vc*.dll $(OMBUILDDIR)/bin/
+	cp -p $(BOOST_PATH_MSVC)/lib/*vc*.lib $(OMBUILDDIR)/lib/omc/cpp/msvc
 
 simulationruntimecmsvc: mkbuilddirs Umfpack_msvc CMinpack_msvc fmil_msvc sundials_msvc
 	test -f """${VSCOMNTOOLS}/../../VC/vcvarsall.bat"""

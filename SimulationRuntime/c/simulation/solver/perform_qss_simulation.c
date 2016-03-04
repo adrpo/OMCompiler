@@ -104,14 +104,14 @@ int prefixedName_performQSSSimulation(DATA* data, threadData_t *threadData, SOLV
 
 /* *********************************************************************************** */
   /* Initialization */
-  uinteger i = 0; /* loop var */
-  SIMULATION_DATA *sData = (SIMULATION_DATA*)data->localData[0];
-  modelica_real* state = sData->realVars;
-  modelica_real* stateDer = sData->realVars + data->modelData->nStates;
-  const SPARSE_PATTERN* pattern = &(data->simulationInfo->analyticJacobians[data->callback->INDEX_JAC_A].sparsePattern);
-  const uinteger ROWS = data->simulationInfo->analyticJacobians[data->callback->INDEX_JAC_A].sizeRows;
-  const uinteger STATES = data->modelData->nStates;
-  uinteger numDer = 0;  /* number of derivatives influenced by state k */
+  i = 0; /* loop var */
+  sData = (SIMULATION_DATA*)data->localData[0];
+  state = sData->realVars;
+  stateDer = sData->realVars + data->modelData->nStates;
+  pattern = &(data->simulationInfo->analyticJacobians[data->callback->INDEX_JAC_A].sparsePattern);
+  ROWS = data->simulationInfo->analyticJacobians[data->callback->INDEX_JAC_A].sizeRows;
+  STATES = data->modelData->nStates;
+  numDer = 0;  /* number of derivatives influenced by state k */
 
   fail = 0;
   qik = NULL;  /* Approximation of states */

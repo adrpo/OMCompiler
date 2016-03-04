@@ -310,18 +310,18 @@ fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2Str
   comp = (ModelInstance *)functions->allocateMemory(1, sizeof(ModelInstance));
   if (comp) {
     DATA* fmudata = NULL;
+	MODEL_DATA* modelData = NULL;
+	SIMULATION_INFO* simInfo = NULL;
     threadData_t *threadData = NULL;
     int i;
 
     comp->instanceName = (fmi2String)functions->allocateMemory(1 + strlen(instanceName), sizeof(char));
     comp->GUID = (fmi2String)functions->allocateMemory(1 + strlen(fmuGUID), sizeof(char));
-    DATA* fmudata = (DATA *)functions->allocateMemory(1, sizeof(DATA));
-    MODEL_DATA* modelData = (MODEL_DATA *)functions->allocateMemory(1, sizeof(MODEL_DATA));
-    SIMULATION_INFO* simInfo = (SIMULATION_INFO *)functions->allocateMemory(1, sizeof(SIMULATION_INFO));
+    fmudata = (DATA *)functions->allocateMemory(1, sizeof(DATA));
+    modelData = (MODEL_DATA *)functions->allocateMemory(1, sizeof(MODEL_DATA));
+    simInfo = (SIMULATION_INFO *)functions->allocateMemory(1, sizeof(SIMULATION_INFO));
     fmudata->modelData = modelData;
     fmudata->simulationInfo = simInfo;
-
-
 
     threadData = (threadData_t *)functions->allocateMemory(1, sizeof(threadData_t));
     memset(threadData, 0, sizeof(threadData_t));

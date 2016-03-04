@@ -1098,7 +1098,6 @@ template populateModelInfo(ModelInfo modelInfo, String fileNamePrefix, String gu
     data->modelData->initXMLData = NULL;
     data->modelData->modelDataXml.infoXMLData = NULL;
     #else
-    data->modelData.initXMLData =
     #if defined(_MSC_VER) /* handle joke compilers */
     {
     /* for MSVC we encode a string like char x[] = {'a', 'b', 'c', '\0'} */
@@ -1113,15 +1112,14 @@ template populateModelInfo(ModelInfo modelInfo, String fileNamePrefix, String gu
       data->modelData->modelDataXml.infoXMLData = contents_info;
     }
     #else /* handle real compilers */
-
     data->modelData->initXMLData =
     #include "<%fileNamePrefix%>_init.c"
       ;
     data->modelData->modelDataXml.infoXMLData =
     #include "<%fileNamePrefix%>_info.c"
       ;
-
-    #endif
+    #endif /* defined(_MSC_VER) */
+	#endif /* defined(OPENMODELICA_XML_FROM_FILE_AT_RUNTIME) */
     >>
     %>
 
@@ -5264,7 +5262,7 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   %>CPPFLAGS=<%makefileParams.includes ; separator=" "%> -I"<%makefileParams.omhome%>/include/omc/c" -I. -DOPENMODELICA_XML_FROM_FILE_AT_RUNTIME<% if stringEq(Config.simCodeTarget(),"JavaScript") then " -DOMC_EMCC"%>
   LDFLAGS=<%dirExtra%> <%
   if stringEq(Config.simCodeTarget(),"JavaScript") then <<-L'<%makefileParams.omhome%>/lib/<%getTriple()%>/omc/emcc' -lblas -llapack -lexpat -lSimulationRuntimeC -s TOTAL_MEMORY=805306368 -s OUTLINING_LIMIT=20000 --pre-js $(OMC_EMCC_PRE_JS)>>
-  else <<-L"<%makefileParams.omhome%>/lib/<%getTriple()%>/omc" -L"<%makefileParams.omhome%>/lib" -Wl,<% if stringEq(makefileParams.platform, "win32") then "--stack,16777216,"%>-rpath,"<%makefileParams.omhome%>/lib/<%getTriple()%>/omc" -Wl,-rpath,"<%makefileParams.omhome%>/lib" <%ParModelicaExpLibs%> <%ParModelicaAutoLibs%> <%makefileParams.ldflags%> <%makefileParams.runtimelibs%> >>
+  else <<-L"<%makefileParams.omhome%>/lib/<%getTriple()%>/omc" -L"<%makefileParams.omhome%>/lib" -Wl,<% if boolOr(stringEq(makefileParams.platform, "win32"),stringEq(makefileParams.platform, "win64")) then "--stack,16777216,"%>-rpath,"<%makefileParams.omhome%>/lib/<%getTriple()%>/omc" -Wl,-rpath,"<%makefileParams.omhome%>/lib" <%ParModelicaExpLibs%> <%ParModelicaAutoLibs%> <%makefileParams.ldflags%> <%makefileParams.runtimelibs%> >>
   %>
   MAINFILE=<%fileNamePrefix%>.c
   MAINOBJ=<%fileNamePrefix%>.o

@@ -45,8 +45,8 @@
 #define CONFIG_MODELICA_SPEC_PLATFORM "win64"
 #define CONFIG_OPENMODELICA_SPEC_PLATFORM "mingw64"
 #define CONFIG_GCC_DUMPMACHINE "x86_64-w64-mingw32"
-#define CONFIG_GCC_VERSION "5.2.0" /* adrpo, change here when we upgrade! */
-#define DEFAULT_TRIPLE "i686-mingw64"
+#define CONFIG_GCC_VERSION "5.3.0" /* adrpo, change here when we upgrade! */
+#define DEFAULT_TRIPLE ""
 
 #elif defined(__MINGW32__)
 
@@ -54,8 +54,8 @@
 #define CONFIG_MODELICA_SPEC_PLATFORM "win32"
 #define CONFIG_OPENMODELICA_SPEC_PLATFORM "mingw32"
 #define CONFIG_GCC_DUMPMACHINE "i686-w64-mingw32"
-#define CONFIG_GCC_VERSION "5.2.0" /* adrpo, change here when we upgrade! */
-#define DEFAULT_TRIPLE "mingw32"
+#define CONFIG_GCC_VERSION "5.3.0" /* adrpo, change here when we upgrade! */
+#define DEFAULT_TRIPLE ""
 
 #elif defined(_MSV_VER) && defined(_M_IX86)
 
@@ -98,10 +98,10 @@
 #endif
 
 /* adrpo: add -loleaut32 as is used by ExternalMedia */
-#define BASIC_LDFLAGS_RT " -lomcgc -lexpat -lregex -static-libgcc -luuid -loleaut32 -lole32 -lws2_32 -llis -lumfpack -lklu -lcolamd -lbtf -lamd -lsundials_kinsol -lsundials_nvecserial -lipopt -lcoinmumps -lpthread -lm -lgfortranbegin -lgfortran -lmingw32 -lgcc_eh -lmoldname -lmingwex -lmsvcrt -luser32 -lkernel32 -ladvapi32 -lshell32 -llapack-mingw -lcminpack -lblas -lf2c"
+#define BASIC_LDFLAGS_RT " -lomcgc -lexpat -lregex -static-libgcc -luuid -loleaut32 -lole32 -lws2_32 -llis -lumfpack -lklu -lcolamd -lbtf -lamd -lsundials_kinsol -lsundials_nvecserial -lipopt -lcoinmumps -lpthread -lm -lgfortranbegin -lgfortran -lmingw32 -lgcc_eh -lmoldname -lmingwex -lmsvcrt -luser32 -lkernel32 -ladvapi32 -lshell32 -lopenblas -lcminpack"
 #define LDFLAGS_RT " -lOpenModelicaRuntimeC" BASIC_LDFLAGS_RT
 #define LDFLAGS_RT_SIM " -lSimulationRuntimeC" BASIC_LDFLAGS_RT " -lwsock32 -lstdc++"
-#define LDFLAGS_RT_SOURCE_FMU " -lregex -static-libgcc -lpthread -lm -lgfortranbegin -lgfortran -lmingw32 -lgcc_eh -lmoldname -lmingwex -lmsvcrt -luser32 -lkernel32 -ladvapi32 -lshell32 -llapack-mingw -ltmglib-mingw -lblas-mingw -lf2c"
+#define LDFLAGS_RT_SOURCE_FMU " -lregex -static-libgcc -lpthread -lm -lgfortranbegin -lgfortran -lmingw32 -lgcc_eh -lmoldname -lmingwex -lmsvcrt -luser32 -lkernel32 -ladvapi32 -lshell32 -lopenblas"
 #define CONFIG_EXE_EXT ".exe"
 #define CONFIG_DLL_EXT ".dll"
 #define CONFIG_OS "Windows_NT"
