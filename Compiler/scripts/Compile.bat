@@ -16,12 +16,10 @@ set C_INCLUDE_PATH=
 set LIBRARY_PATH=
 set OLD_PATH=%PATH%
 set MINGW=%OPENMODELICAHOME%\msys\%OM_PLATFORM%
-set MSYSBIN=%OPENMODELICAHOME%\msys\usr\bin
 set ADDITIONAL_ARGS=
 REM If OMDEV is set, use MinGW from there instead of OPENMODELICAHOME
 REM It is not certain that release OMC is installed
 if not %OMDEV%a==a set MINGW=%OMDEV%\tools\msys\%OM_PLATFORM%
-if not %OMDEV%a==a set MSYSBIN=%OMDEV%\msys\usr\bin
 REM echo OPENMODELICAHOME = %OPENMODELICAHOME% >> %1.log 2>&1
 REM echo MINGW = %MINGW% >>%1.log 2>&1
 set CURRENT_DIR="%CD%"
@@ -30,13 +28,13 @@ if %LOGGING%==1 (goto :SET_PATH_LOG) else (goto :SET_PATH)
 
 :SET_PATH_LOG
 cd /D "%MINGW%\bin" >>%CURRENT_DIR%\%1.log 2>&1
-set PATH=%CD%;%MSYSBIN%; >>%CURRENT_DIR%\%1.log 2>&1
+set PATH=%CD%;%CD%\..\..\usr\bin; >>%CURRENT_DIR%\%1.log 2>&1
 cd /D "%CURRENT_DIR%" >>%CURRENT_DIR%\%1.log 2>&1
 goto :CHECK_TARGET
 
 :SET_PATH
 cd /D "%MINGW%\bin"
-set PATH=%CD%;MSYSBIN;
+set PATH=%CD%;%CD%\..\..\usr\bin;
 echo PATH = "%PATH%"
 cd /D "%CURRENT_DIR%"
 goto :CHECK_TARGET

@@ -171,7 +171,12 @@ endif
 
 install: runtimeCpp
 	(cd Build; make install)
-	(cd Build; cp -p $(OMDEV)/lib/3rdParty/boost-1_55/lib/*.dll $(builddir_bin)/.)
+	(cd Build; cp -p $(OMDEV)/lib/3rdParty/boost-1_55/lib/boost*vc100*.dll $(builddir_bin)/.)
+ifeq (MINGW32,$(findstring MINGW32,$(shell uname)))
+	(cd Build; cp -p $(OMDEV)/tools/msys/mingw32/bin/libboost*.dll $(builddir_bin)/.)
+else
+	(cd Build; cp -p $(OMDEV)/tools/msys/mingw64/bin/libboost*.dll $(builddir_bin)/.)
+endif
 
 
 clean:
