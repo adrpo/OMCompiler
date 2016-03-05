@@ -1,4 +1,5 @@
 @echo off
+REM %1 should be mingw32 or mingw64, if empty the latter is selected
 REM Clear all environment variables that may interfere during compile and link phases.
 set GCC_EXEC_PREFIX=
 set CPLUS_INCLUDE_PATH=
