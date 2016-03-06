@@ -390,9 +390,6 @@ protected function addUnreplaceable
   output HashSet.HashSet outUnreplaceable = inUnreplaceable;
 protected
   BackendDAE.Variables orderedVars;
-  Integer idx;
-  BackendDAE.SubPartition subPartition;
-  DAE.ComponentRef cr;
 algorithm
   BackendDAE.EQSYSTEM(orderedVars=orderedVars) := syst;
   for var in BackendVariable.varList(orderedVars) loop
@@ -400,14 +397,6 @@ algorithm
       outUnreplaceable := BaseHashSet.add(BackendVariable.varCref(var), outUnreplaceable);
     end if;
   end for;
-  // add discrete states to unreplaceable (#3741)
-  if BackendDAEUtil.isClockedSyst(syst) then
-    BackendDAE.CLOCKED_PARTITION(idx) := syst.partitionKind;
-    subPartition := shared.partitionsInfo.subPartitions[idx];
-    for cr in subPartition.prevVars loop
-      outUnreplaceable := BaseHashSet.add(cr, outUnreplaceable);
-    end for;
-  end if;
 end addUnreplaceable;
 
 protected function fastAcausal1 "author: Frenkel TUD 2012-12
@@ -2116,7 +2105,7 @@ algorithm
         v = BackendVariable.getVarAt(vars, i1);
         // update max
         (replaceable_, replaceble1) = replaceableAlias(v, unReplaceable);
-        state = BackendVariable.isStateVar(v);
+        state = BackendVariable.isStateVar(v) or BackendVariable.isClockedStateVar(v);
         (rmax, smax, unremovable) = getAlias3(v, i1, state, replaceable_ and replaceble1, r, iRmax, iSmax, iUnremovable);
         // go deeper
         neg = if neg then not negate else negate;
@@ -2126,7 +2115,7 @@ algorithm
         v = BackendVariable.getVarAt(vars, i2);
         // update max
         (replaceable_, replaceble1) = replaceableAlias(v, unReplaceable);
-        state = BackendVariable.isStateVar(v);
+        state = BackendVariable.isStateVar(v) or BackendVariable.isClockedStateVar(v);
         (rmax, smax, unremovable) = getAlias3(v, i2, state, replaceable_ and replaceble1, r, rmax, smax, unremovable);
         // go deeper
         (rmax, smax, unremovable, const, cont) = getAliasContinue(cont, next, SOME(i2), mark, simpleeqnsarr, iMT, vars, unReplaceable, neg, stack, rmax, smax, unremovable, const);
@@ -2142,7 +2131,7 @@ algorithm
         v = BackendVariable.getVarAt(vars, i);
         // update max
         (replaceable_, replaceble1) = replaceableAlias(v, unReplaceable);
-        state = BackendVariable.isStateVar(v);
+        state = BackendVariable.isStateVar(v) or BackendVariable.isClockedStateVar(v);
         (rmax, smax, unremovable) = getAlias3(v, i, state, replaceable_ and replaceble1, r, iRmax, iSmax, iUnremovable);
         // go deeper
         neg = if neg then not negate else negate;
@@ -4588,6 +4577,7 @@ algorithm
           end if;
           {cr} = cr_lst;
           false = BackendVariable.isState(cr,vars);
+          false = BackendVariable.isClockedState(cr,vars);
           false = BackendVariable.isOutput(cr,vars);
           false = BackendVariable.isDiscrete(cr,vars);
           eqSolved as BackendDAE.EQUATION(scalar=res) = BackendEquation.solveEquation(eq,Expression.crefExp(cr),NONE());
@@ -4608,6 +4598,7 @@ algorithm
             // true = BackendVariable.isState(cr2,vars);
           // end if;
           false = BackendVariable.isState(cr1,vars) or BackendVariable.isState(cr2,vars);
+          false = BackendVariable.isClockedState(cr1,vars) or BackendVariable.isClockedState(cr2,vars);
           false = BackendVariable.isOutput(cr1,vars) or BackendVariable.isOutput(cr2,vars);
           false = BackendVariable.isDiscrete(cr1,vars) or BackendVariable.isDiscrete(cr2,vars);
 
