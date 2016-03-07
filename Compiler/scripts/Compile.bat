@@ -15,7 +15,7 @@ set CPLUS_INCLUDE_PATH=
 set C_INCLUDE_PATH=
 set LIBRARY_PATH=
 set OLD_PATH=%PATH%
-set MINGW=%OPENMODELICAHOME%\msys\%OM_PLATFORM%
+set MINGW=%OPENMODELICAHOME%\tools\msys\%OM_PLATFORM%
 set ADDITIONAL_ARGS=
 REM If OMDEV is set, use MinGW from there instead of OPENMODELICAHOME
 REM It is not certain that release OMC is installed
