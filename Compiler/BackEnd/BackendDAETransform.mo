@@ -62,6 +62,7 @@ protected import SymbolicJacobian;
 protected import System;
 protected import Util;
 protected import Values;
+protected import MetaModelica.Dangerous;
 
 // =============================================================================
 // strongComponents and stuff
@@ -128,16 +129,10 @@ public function varAssignmentNonScalar
   input array<Integer> mapIncRowEqn;
   output array<Integer> outAcc;
 protected
-  Integer e;
-  list<Integer> acc = {};
+  list<Integer> acc;
 algorithm
-  for i in 1:arrayLength(ass1) loop
-    e := ass1[i];
-    e := if e > 0 then mapIncRowEqn[e] else -1;
-    acc := e :: acc;
-  end for;
-
-  outAcc := listArray(listReverse(acc));
+  acc := list(if ass1[i] > 0 then mapIncRowEqn[ass1[i]] else -1 for i in 1:arrayLength(ass1));
+  outAcc := listArray(acc);
 end varAssignmentNonScalar;
 
 protected function analyseStrongComponentsScalar "author: Frenkel TUD 2011-05
@@ -161,7 +156,7 @@ algorithm
     outComps := acomp :: outComps;
   end for;
 
-  outComps := MetaModelica.Dangerous.listReverseInPlace(outComps);
+  outComps := Dangerous.listReverseInPlace(outComps);
 end analyseStrongComponentsScalar;
 
 protected function analyseStrongComponentScalar "author: Frenkel TUD 2011-05"

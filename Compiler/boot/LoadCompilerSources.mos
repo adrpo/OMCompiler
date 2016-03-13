@@ -318,9 +318,11 @@ if true then /* Suppress output */
     "../Template/TaskSystemDump.mo",
     "../Template/VisualXMLTpl.mo",
 
+    "../Util/AvlTree.mo",
     "../Util/BaseAvlTree.mo",
     "../Util/AvlTreeString2.mo",
 
+    "../Util/DoubleEndedList.mo",
     "../Util/DiffAlgorithm.mo",
     "../Util/FMI.mo",
     "../Util/FMIExt.mo",

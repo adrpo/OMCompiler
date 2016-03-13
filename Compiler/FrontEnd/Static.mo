@@ -2911,9 +2911,9 @@ protected
 algorithm
   DAE.ARRAY(ty = ty1, scalar = sc, array = expl1) := inExp1;
   DAE.ARRAY(ty = ty2, array = expl2) := inExp2;
-  expl1 := listAppend(expl1, expl2);
+  expl2 := listAppend(expl1, expl2);
   ty1 := Expression.concatArrayType(ty1, ty2);
-  outExp := DAE.ARRAY(ty1, sc, expl1);
+  outExp := DAE.ARRAY(ty1, sc, expl2);
 end elabMatrixCatTwo3;
 
 protected function elabMatrixCatOne "author: PA
@@ -3695,7 +3695,7 @@ algorithm
            DAE.ICONST(info.columnNumberEnd),
            DAE.RCONST(info.lastModification)
         };
-        outExp := DAE.METARECORDCALL(Absyn.QUALIFIED("SourceInfo",Absyn.IDENT("SOURCEINFO")),args,{"fileName","isReadOnly","lineNumberStart","columnNumberStart","lineNumberEnd","columnNumberEnd","lastEditTime"},0);
+        outExp := DAE.METARECORDCALL(Absyn.QUALIFIED("SourceInfo",Absyn.IDENT("SOURCEINFO")),args,{"fileName","isReadOnly","lineNumberStart","columnNumberStart","lineNumberEnd","columnNumberEnd","lastEditTime"},0,{});
       then (inCache,outExp,DAE.PROP(DAE.T_SOURCEINFO_DEFAULT,DAE.C_CONST()));
   end match;
 end elabBuiltinSourceInfo;
@@ -6475,8 +6475,8 @@ algorithm
       equation
         expl = flattenArray(expl);
         expl2 = flattenArray(rest_expl);
-        expl = listAppend(expl, expl2);
-      then expl;
+        expl2 = listAppend(expl, expl2);
+      then expl2;
 
     case ((DAE.MATRIX(matrix = {{e}}) :: rest_expl))
       equation
@@ -8025,12 +8025,12 @@ protected function elabCallArgsMetarecord
   output FCore.Cache outCache;
   output Option<tuple<DAE.Exp,DAE.Properties>> expProps;
 algorithm
-  (outCache, expProps) := matchcontinue inType
+  (outCache, expProps) := matchcontinue ty as inType
     local
       Absyn.Path fq_path, ut_path;
       String str, fn_str;
       list<String> field_names;
-      list<DAE.Type> tys;
+      list<DAE.Type> tys, typeVars;
       list<DAE.FuncArg> fargs;
       list<Slot> slots;
       list<DAE.Const> const_lst;
@@ -8038,6 +8038,7 @@ algorithm
       DAE.TupleConst ty_const;
       DAE.Properties prop;
       list<DAE.Exp> args;
+      InstTypes.PolymorphicBindings bindings;
 
     case DAE.T_METARECORD(source = {fq_path})
       algorithm
@@ -8062,16 +8063,24 @@ algorithm
         tys := list(Types.getVarType(var) for var in inType.fields);
         fargs := list(Types.makeDefaultFuncArg(n, t) threaded for n in field_names, t in tys);
         slots := makeEmptySlots(fargs);
-        (outCache, _, slots, const_lst) := elabInputArgs(inCache, inEnv, inPosArgs,
+        (outCache, _, slots, const_lst, bindings) := elabInputArgs(inCache, inEnv, inPosArgs,
           inNamedArgs, slots, true, true, inImplicit, NOT_EXTERNAL_OBJECT_MODEL_SCOPE(),
           inST, inPrefix, inInfo, inType, inType.utPath);
         const := List.fold(const_lst, Types.constAnd, DAE.C_CONST());
         ty_const := elabConsts(inType, const);
-        prop := getProperties(inType, ty_const);
         true := List.fold(slots, slotAnd, true);
         args := slotListArgs(slots);
+        if not listEmpty(bindings) then
+          bindings := Types.solvePolymorphicBindings(bindings, inInfo, inType.source);
+          typeVars := list(Types.fixPolymorphicRestype(tv, bindings, inInfo) for tv in inType.typeVars);
+          ty.typeVars := typeVars;
+          prop := getProperties(ty, ty_const);
+        else
+          typeVars := inType.typeVars;
+          prop := getProperties(ty, ty_const);
+        end if;
       then
-        (outCache, SOME((DAE.METARECORDCALL(fq_path, args, field_names, inType.index), prop)));
+        (outCache, SOME((DAE.METARECORDCALL(fq_path, args, field_names, inType.index, inType.typeVars), prop)));
 
     // MetaRecord failure.
     case DAE.T_METARECORD(source = {fq_path})
@@ -9239,9 +9248,9 @@ algorithm
         pty := evaluateFuncArgTypeDims(pty, inEnv, inCache);
         // append the vectorization dim if argument is vectorized.
         dims1 := Types.getDimensions(pty);
-        dims1 := listAppend(dims1,vdims);
+        vdims := listAppend(dims1,vdims);
         dims2 := Types.getDimensions(sty);
-        true := Expression.dimsEqual(dims1, dims2);
+        true := Expression.dimsEqual(vdims, dims2);
 
         outParam := Types.setFuncArgType(inParam, pty);
       then

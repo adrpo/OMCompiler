@@ -650,7 +650,7 @@ public constant Message BACKENDDAEINFO_STRONGCOMPONENT_STATISTICS = MESSAGE(261,
 public constant Message BACKENDDAEINFO_SYSTEMS = MESSAGE(262, SYMBOLIC(), NOTIFICATION(),
   Util.gettext("Equation system details:\n * Constant Jacobian: %s\n * Linear Jacobian (size,density): %s\n * Non-linear Jacobian: %s\n * Without analytic Jacobian: %s"));
 public constant Message BACKENDDAEINFO_TORN = MESSAGE(263, SYMBOLIC(), NOTIFICATION(),
-  Util.gettext("Torn system details:\n * Linear torn systems: %s\n * Non-linear torn systems: %s"));
+  Util.gettext("Torn system details for %s tearing set:\n * Linear torn systems: %s\n * Non-linear torn systems: %s"));
 public constant Message BACKEND_DAE_TO_MODELICA = MESSAGE(264, SYMBOLIC(), NOTIFICATION(),
   Util.gettext("The following Modelica-like model represents the back-end DAE for the '%s' stage:\n%s"));
 public constant Message NEGATIVE_DIMENSION_INDEX = MESSAGE(265, TRANSLATION(), ERROR(),
@@ -914,6 +914,12 @@ public constant Message IS_PRESENT_WRONG_DIRECTION = MESSAGE(5041, TRANSLATION()
   Util.gettext("isPresent needs to be called on an input or output formal parameter."));
 public constant Message IS_PRESENT_INVALID_EXP = MESSAGE(5042, TRANSLATION(), ERROR(),
   Util.gettext("isPresent needs to be called on an input or output formal parameter, but got a non-identifier expression: %s."));
+public constant Message METARECORD_WITH_TYPEVARS = MESSAGE(5043, TRANSLATION(), ERROR(),
+  Util.gettext("Records inside uniontypes must not contain type variables (got: %s). Put them on the uniontype instead."));
+public constant Message UNIONTYPE_MISSING_TYPEVARS = MESSAGE(5044, TRANSLATION(), ERROR(),
+  Util.gettext("Uniontype %s has type variables, but they were not given in the declaration."));
+public constant Message UNIONTYPE_WRONG_NUM_TYPEVARS = MESSAGE(5045, TRANSLATION(), ERROR(),
+  Util.gettext("Uniontype %s has %s type variables, but got %s."));
 
 public constant Message COMPILER_ERROR = MESSAGE(5999, TRANSLATION(), ERROR(),
   Util.notrans("%s"));

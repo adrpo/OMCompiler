@@ -2252,7 +2252,7 @@ algorithm
       Absyn.Path p;
       String msg;
       DAE.Type ty, iterTp, operTp;
-      list<DAE.Type> tys;
+      list<DAE.Type> tys, typeVars;
       Integer i,i1,i2;
       DAE.Dimension dim;
       DAE.Dimensions iterdims;
@@ -2321,11 +2321,11 @@ algorithm
       then
         DAE.T_TUPLE(tys, NONE(), DAE.emptyTypeSource);
     case (DAE.META_OPTION(_))then DAE.T_METATYPE(DAE.T_NONE_DEFAULT, DAE.emptyTypeSource);
-    case (DAE.METARECORDCALL(path=p, index = i))
+    case (DAE.METARECORDCALL(path=p, index = i, typeVars=typeVars))
       equation
 
       then
-        DAE.T_METATYPE(DAE.T_METARECORD(p, i, {}, false, DAE.emptyTypeSource), DAE.emptyTypeSource);
+        DAE.T_METATYPE(DAE.T_METARECORD(p, typeVars, i, {}, false, DAE.emptyTypeSource), DAE.emptyTypeSource);
     case (DAE.BOX(e))
       equation
          ty = typeof(e);
@@ -5044,6 +5044,7 @@ algorithm
       DAE.ComponentRef cr, cr_1;
       list<list<String>> aliases;
       DAE.ClockKind clk, clk1;
+      list<DAE.Type> typeVars;
 
     case DAE.EMPTY() equation
       (e, ext_arg) = inFunc(inExp, inExtArg);
@@ -5269,9 +5270,9 @@ algorithm
       (e, ext_arg) = inFunc(e, ext_arg);
     then (e, ext_arg);
 
-    case DAE.METARECORDCALL(fn, expl, fieldNames, i) equation
+    case DAE.METARECORDCALL(fn, expl, fieldNames, i, typeVars) equation
       (expl_1, ext_arg) = traverseExpList(expl, inFunc, inExtArg);
-      e = if referenceEq(expl, expl_1) then inExp else DAE.METARECORDCALL(fn, expl_1, fieldNames, i);
+      e = if referenceEq(expl, expl_1) then inExp else DAE.METARECORDCALL(fn, expl_1, fieldNames, i, typeVars);
       (e, ext_arg) = inFunc(e, ext_arg);
     then (e, ext_arg);
     // ---------------------
@@ -5641,6 +5642,7 @@ algorithm
       ComponentRef cr,cr_1;
       list<list<String>> aliases;
       DAE.ClockKind clk, clk1;
+      list<DAE.Type> typeVars;
 
     case (false,_,_,_) then (inExp,inArg);
     case (_,DAE.ICONST(_),_,ext_arg) then (inExp,ext_arg);
@@ -5818,10 +5820,10 @@ algorithm
         (cases, ext_arg) = Patternm.traverseCasesTopDown(cases, rel, ext_arg);
       then (DAE.MATCHEXPRESSION(matchType,expl,aliases,localDecls,cases,et),ext_arg);
 
-    case (_,DAE.METARECORDCALL(fn,expl,fieldNames,i),rel,ext_arg)
+    case (_,DAE.METARECORDCALL(fn,expl,fieldNames,i,typeVars),rel,ext_arg)
       equation
         (expl_1,ext_arg_1) = traverseExpListTopDown(expl, rel, ext_arg);
-      then (DAE.METARECORDCALL(fn,expl_1,fieldNames,i),ext_arg_1);
+      then (DAE.METARECORDCALL(fn,expl_1,fieldNames,i,typeVars),ext_arg_1);
 
     case (_,DAE.UNBOX(e1,tp),rel,ext_arg)
       equation
@@ -6823,6 +6825,7 @@ algorithm
       DAE.CallAttributes attr;
       list<list<String>> aliases;
       ArgT arg;
+      list<DAE.Type> typeVars;
 
     case DAE.ICONST() then (inExp, inArg);
     case DAE.RCONST() then (inExp, inArg);
@@ -6985,11 +6988,11 @@ algorithm
       then
         (DAE.META_OPTION(oe1), arg);
 
-    case DAE.METARECORDCALL(path = path, args = expl, fieldNames = strl, index = index)
+    case DAE.METARECORDCALL(path = path, args = expl, fieldNames = strl, index = index, typeVars = typeVars)
       equation
         (expl, arg) = traverseExpListBidir(expl, inEnterFunc, inExitFunc, inArg);
       then
-        (DAE.METARECORDCALL(path, expl, strl, index), arg);
+        (DAE.METARECORDCALL(path, expl, strl, index, typeVars), arg);
 
     case DAE.MATCHEXPRESSION(matchType = match_ty, inputs = expl, aliases=aliases,
         localDecls = match_decls, cases = match_cases, et = ty)
@@ -7422,6 +7425,42 @@ algorithm
 
   end match;
 end isZero;
+
+
+public function isZeroOrAlmostZero
+"Returns true if an expression is constant
+  and zero or near to zero, otherwise false"
+  input DAE.Exp inExp;
+  output Boolean outBoolean;
+algorithm
+  outBoolean := match (inExp)
+    local
+      Integer ival;
+      Real rval;
+      Type t;
+      DAE.Exp e,e1;
+      list<DAE.Exp> ae;
+      list<list<DAE.Exp>> matrix;
+
+    case (DAE.ICONST(integer = ival)) then intEq(ival,0);
+    case (DAE.RCONST(real = rval)) then realLt(abs(rval),1e-15);
+    case (DAE.CAST(exp = e)) then isZeroOrAlmostZero(e);
+
+    case(DAE.UNARY(DAE.UMINUS(_),e)) then isZeroOrAlmostZero(e);
+    case(DAE.ARRAY(array = ae)) then List.mapAllValueBool(ae,isZeroOrAlmostZero,true);
+
+    case (DAE.MATRIX(matrix = matrix))
+      then List.mapListAllValueBool(matrix,isZeroOrAlmostZero,true);
+
+    case(DAE.UNARY(DAE.UMINUS_ARR(_),e)) then isZeroOrAlmostZero(e);
+
+    case(DAE.IFEXP(_,e,e1)) then (isZeroOrAlmostZero(e) or isZeroOrAlmostZero(e1));
+
+    else false;
+
+  end match;
+end isZeroOrAlmostZero;
+
 
 public function isPositiveOrZero
   "Returns true if an expression is known to be >= 0"
@@ -11758,6 +11797,7 @@ algorithm
       DAE.ReductionIterators riters,riters_1;
       DAE.ComponentRef cr,cr_1;
       list<list<String>> aliases;
+      list<DAE.Type> typeVars;
 
     case ((e as DAE.EMPTY()),rel,ext_arg)
       equation
@@ -12002,10 +12042,10 @@ algorithm
         (e,ext_arg) = rel(e,ext_arg);
       then (e,ext_arg);
 
-    case (DAE.METARECORDCALL(fn,expl,fieldNames,i),rel,ext_arg)
+    case (DAE.METARECORDCALL(fn,expl,fieldNames,i,typeVars),rel,ext_arg)
       equation
         (expl_1,ext_arg) = traverseExpDerPreStartList(expl, rel, ext_arg);
-        e = if referenceEq(expl,expl_1) then inExp else DAE.METARECORDCALL(fn,expl_1,fieldNames,i);
+        e = if referenceEq(expl,expl_1) then inExp else DAE.METARECORDCALL(fn,expl_1,fieldNames,i,typeVars);
         (e,ext_arg) = rel(e,ext_arg);
       then (e,ext_arg);
     // ---------------------

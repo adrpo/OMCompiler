@@ -79,6 +79,7 @@ import DAEDump;
 import DAEUtil;
 import Debug;
 import Differentiate;
+import DoubleEndedList;
 import Error;
 import EvaluateFunctions;
 import Expression;
@@ -318,6 +319,20 @@ algorithm
     // update index of zero-Crossings after equations are created
     zeroCrossings := updateZeroCrossEqnIndex(zeroCrossings, eqBackendSimCodeMapping, BackendDAEUtil.equationArraySizeBDAE(dlow));
 
+    // replace div operator with div operator with check of Division by zero
+    allEquations := List.map(allEquations, addDivExpErrorMsgtoSimEqSystem);
+    odeEquations := List.mapList(odeEquations, addDivExpErrorMsgtoSimEqSystem);
+    algebraicEquations := List.mapList(algebraicEquations, addDivExpErrorMsgtoSimEqSystem);
+    startValueEquations := List.map(startValueEquations, addDivExpErrorMsgtoSimEqSystem);
+    nominalValueEquations := List.map(nominalValueEquations, addDivExpErrorMsgtoSimEqSystem);
+    minValueEquations := List.map(minValueEquations, addDivExpErrorMsgtoSimEqSystem);
+    maxValueEquations := List.map(maxValueEquations, addDivExpErrorMsgtoSimEqSystem);
+    parameterEquations := List.map(parameterEquations, addDivExpErrorMsgtoSimEqSystem);
+    removedEquations := List.map(removedEquations, addDivExpErrorMsgtoSimEqSystem);
+    initialEquations := List.map(initialEquations, addDivExpErrorMsgtoSimEqSystem);
+    initialEquations_lambda0 := List.map(initialEquations_lambda0, addDivExpErrorMsgtoSimEqSystem);
+    removedInitialEquations := List.map(removedInitialEquations, addDivExpErrorMsgtoSimEqSystem);
+
     // update indexNonLinear in SES_NONLINEAR and count
     SymbolicJacsNLS := {};
     (initialEquations, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians, SymbolicJacsTemp) := countandIndexAlgebraicLoops(initialEquations, 0, 0, 0, 0, {});
@@ -368,20 +383,6 @@ algorithm
 
     // create model info
     modelInfo := addNumEqnsandNumofSystems(modelInfo, numberofEqns, numberofLinearSys, numberofNonLinearSys, numberofMixedSys, numberOfJacobians);
-
-    // replace div operator with div operator with check of Division by zero
-    allEquations := List.map(allEquations, addDivExpErrorMsgtoSimEqSystem);
-    odeEquations := List.mapList(odeEquations, addDivExpErrorMsgtoSimEqSystem);
-    algebraicEquations := List.mapList(algebraicEquations, addDivExpErrorMsgtoSimEqSystem);
-    startValueEquations := List.map(startValueEquations, addDivExpErrorMsgtoSimEqSystem);
-    nominalValueEquations := List.map(nominalValueEquations, addDivExpErrorMsgtoSimEqSystem);
-    minValueEquations := List.map(minValueEquations, addDivExpErrorMsgtoSimEqSystem);
-    maxValueEquations := List.map(maxValueEquations, addDivExpErrorMsgtoSimEqSystem);
-    parameterEquations := List.map(parameterEquations, addDivExpErrorMsgtoSimEqSystem);
-    removedEquations := List.map(removedEquations, addDivExpErrorMsgtoSimEqSystem);
-    initialEquations := List.map(initialEquations, addDivExpErrorMsgtoSimEqSystem);
-    initialEquations_lambda0 := List.map(initialEquations_lambda0, addDivExpErrorMsgtoSimEqSystem);
-    removedInitialEquations := List.map(removedInitialEquations, addDivExpErrorMsgtoSimEqSystem);
 
     odeEquations := makeEqualLengthLists(odeEquations, Config.noProc());
     algebraicEquations := makeEqualLengthLists(algebraicEquations, Config.noProc());
@@ -6512,6 +6513,7 @@ algorithm
    end match;
 end simVarString;
 
+
 protected function printVarIndx
   input Option<Integer> i;
   output String s;
@@ -6533,6 +6535,21 @@ algorithm
   end for;
   end if;
 end dumpVarLst;
+
+
+public function printVarLstCrefs
+    input list<SimCodeVar.SimVar> inVars;
+    output String str;
+protected
+    DAE.ComponentRef cref;
+    SimCodeVar.SimVar var;
+algorithm
+    str := "\t\tcrefs: ";
+    for var in inVars loop
+        SimCodeVar.SIMVAR(name= cref) := var;
+        str := str + ComponentReference.debugPrintComponentRefTypeStr(cref) + " , ";
+    end for;
+end printVarLstCrefs;
 
 protected function dumpVariablesString "dumps a list of SimCode.Variables to stdout.
 author: Waurich TUD 2014-09"
@@ -6688,7 +6705,7 @@ algorithm
       list<DAE.ComponentRef> crefs,crefs2,conds;
       list<DAE.Statement> stmts;
       list<SimCode.SimEqSystem> elsebranch,discEqs,eqs,eqs2,residual,residual2;
-      list<SimCodeVar.SimVar> vars,discVars;
+      list<SimCodeVar.SimVar> vars,vars2,discVars;
       list<DAE.Exp> beqs;
       list<tuple<DAE.Exp,list<SimCode.SimEqSystem>>> ifbranches;
       list<tuple<Integer, Integer, SimCode.SimEqSystem>> simJac,simJac2;
@@ -6769,6 +6786,7 @@ algorithm
         dumpJacobianMatrix(jac2);
     then ();
 
+    // no dynamic tearing
     case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=idx,indexNonLinearSystem=idxNLS,jacobianMatrix=jac,eqs=eqs, crefs=crefs), NONE()))
       equation
         print(intString(idx) +": "+ " (NONLINEAR) index:"+intString(idxNLS)+" jacobian: "+boolString(Util.isSome(jac))+"\n");
@@ -6779,6 +6797,7 @@ algorithm
         dumpJacobianMatrix(jac);
     then ();
 
+    // dynamic tearing
     case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=idx,indexNonLinearSystem=idxNLS,jacobianMatrix=jac,eqs=eqs, crefs=crefs), SOME(SimCode.NONLINEARSYSTEM(index=idx2,indexNonLinearSystem=idxNLS2,jacobianMatrix=jac2,eqs=eqs2, crefs=crefs2))))
       equation
         print("strict set:\n" + intString(idx) +": "+ " (NONLINEAR) index:"+intString(idxNLS)+" jacobian: "+boolString(Util.isSome(jac))+"\n");
@@ -7860,6 +7879,7 @@ algorithm
         true = Expression.isConst(e2);
         false = Expression.isZero(e2);
       then (e, source);
+
     case (DAE.BINARY(exp1 = e1, operator = DAE.DIV(ty), exp2 = e2), source)
       then (DAE.CALL(Absyn.IDENT("DIVISION"), {e1, e2}, DAE.CALL_ATTR(ty, false, true, false, false, DAE.NO_INLINE(), DAE.NO_TAIL())), source);
 
@@ -7981,8 +8001,9 @@ algorithm
         simJac1 = List.map(simJac, addDivExpErrorMsgtosimJac);
         symJac = addDivExpErrorMsgtosymJac(symJac);
         elst1 = List.map1(elst, addDivExpErrorMsgtoExp, DAE.emptyElementSource);
+        discEqs1 =  List.map(discEqs, addDivExpErrorMsgtoSimEqSystem);
       then
-        SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, elst1, simJac1, discEqs, symJac, sources, indexSys), NONE());
+        SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, elst1, simJac1, discEqs1, symJac, sources, indexSys), NONE());
 
     case SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=index, eqs=discEqs, crefs=crefs, indexNonLinearSystem=indexSys, jacobianMatrix=symJac, linearTearing=linearTearing, homotopySupport=homotopySupport, mixedSystem=mixedSystem), NONE())
       equation
@@ -7995,16 +8016,22 @@ algorithm
     case SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, elst, simJac, discEqs, symJac, sources, indexSys), SOME(SimCode.LINEARSYSTEM(index1, partOfMixed1, vars1, elst1, simJac1, discEqs1, symJac1, sources1, indexSys1)))
       equation
         simJac = List.map(simJac, addDivExpErrorMsgtosimJac);
+        symJac = addDivExpErrorMsgtosymJac(symJac);
         elst = List.map1(elst, addDivExpErrorMsgtoExp, DAE.emptyElementSource);
+        discEqs =  List.map(discEqs, addDivExpErrorMsgtoSimEqSystem);
         simJac1 = List.map(simJac1, addDivExpErrorMsgtosimJac);
+        symJac1 = addDivExpErrorMsgtosymJac(symJac1);
         elst1 = List.map1(elst1, addDivExpErrorMsgtoExp, DAE.emptyElementSource);
+        discEqs1 =  List.map(discEqs1, addDivExpErrorMsgtoSimEqSystem);
       then
         SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(index, partOfMixed, vars, elst, simJac, discEqs, symJac, sources, indexSys), SOME(SimCode.LINEARSYSTEM(index1, partOfMixed1, vars1, elst1, simJac1, discEqs1, symJac1, sources1, indexSys1)));
 
     case SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index=index, eqs=discEqs, crefs=crefs, indexNonLinearSystem=indexSys, jacobianMatrix=symJac, linearTearing=linearTearing, homotopySupport=homotopySupport, mixedSystem=mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index=index1, eqs=discEqs1, crefs=crefs1, indexNonLinearSystem=indexSys1, jacobianMatrix=symJac1, linearTearing=linearTearing1, homotopySupport=homotopySupport1, mixedSystem=mixedSystem1)))
       equation
         discEqs =  List.map(discEqs, addDivExpErrorMsgtoSimEqSystem);
+        symJac = addDivExpErrorMsgtosymJac(symJac);
         discEqs1 =  List.map(discEqs1, addDivExpErrorMsgtoSimEqSystem);
+        symJac1 = addDivExpErrorMsgtosymJac(symJac1);
       then
         SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(index, discEqs, crefs, indexSys, symJac, linearTearing, homotopySupport, mixedSystem), SOME(SimCode.NONLINEARSYSTEM(index1, discEqs1, crefs1, indexSys1, symJac1, linearTearing1, homotopySupport1, mixedSystem1)));
 
@@ -11029,41 +11056,6 @@ algorithm
   b := listMember(bEq,bEq1);
 end findBEqs;
 
-/*
-This is wrong!
-public function getSimVarByIndex
-  input Integer idx;
-  input SimCodeVar.SimVars allSimVars;
-  output SimCodeVar.SimVar simVar;
-algorithm
-  simVar := matchcontinue(idx,allSimVars)
-    local
-      Integer size,idx2;
-      list<SimCodeVar.SimVar> stateVars,algVars;
-      SimCodeVar.SimVar var;
-  case(_,SimCodeVar.SIMVARS(stateVars=stateVars,algVars=algVars))
-    equation
-      size = listLength(stateVars);
-      true = idx > size;
-      //its not a stateVar
-      idx2 = idx - 2*size + 1;
-      var = listGet(algVars,idx2);
-      then var;
-  case(_,SimCodeVar.SIMVARS(stateVars=stateVars,algVars=algVars))
-    equation
-      size = listLength(stateVars);
-      true = idx <= size;
-      //its a stateVar
-      var = listGet(stateVars,idx);
-      then var;
-  else
-    equation
-      print("SimCodeUtil.getSimVarByIndex failed!\n");
-    then fail();
-  end matchcontinue;
-end getSimVarByIndex;
-*/
-
 public function getAssignedCrefsOfSimEq"gets the crefs of the vars that are assigned (the lhs) of the simEqSystems
 author:Waurich TUD 2014-05"
   input Integer idx;
@@ -11079,7 +11071,7 @@ algorithm
       equation
         simEqSyst = List.getMemberOnTrue(idx,allEqs,indexIsEqual);
         crefs = getSimEqSystemCrefsLHS(simEqSyst);
-    then crefs;
+      then crefs;
   end match;
 end getAssignedCrefsOfSimEq;
 
@@ -11098,17 +11090,15 @@ algorithm
     case(SimCode.SES_RESIDUAL())
       equation
         print("implement SES_RESIDUAL in SimCodeUtil.getSimEqSystemCrefsLHS!\n");
-    then {};
+      then {};
     case(SimCode.SES_SIMPLE_ASSIGN(cref=cref))
-      equation
-    then {cref};
+      then {cref};
     case(SimCode.SES_ARRAY_CALL_ASSIGN(lhs=lhs))
-      equation
-    then {Expression.expCref(lhs)};
+      then {Expression.expCref(lhs)};
     case(SimCode.SES_IFEQUATION())
       equation
         print("implement SES_IFEQUATION in SimCodeUtil.getSimEqSystemCrefsLHS!\n");
-    then {};
+      then {};
     case(SimCode.SES_ALGORITHM()) equation
       print("implement SES_ALGORITHM in SimCodeUtil.getSimEqSystemCrefsLHS!\n");
     then {};
@@ -11117,20 +11107,15 @@ algorithm
     then {};
     case(SimCode.SES_LINEAR(SimCode.LINEARSYSTEM(vars=simVars,residual=residual)))
       equation
-        crefs2 = List.flatten(List.map(residual,getSimEqSystemCrefsLHS));
-        crefs = list(SimCodeFunctionUtil.varName(v) for v in simVars);
-        crefs = listAppend(crefs,crefs2);
-    then crefs;
+        crefs = List.flatten(List.map(residual,getSimEqSystemCrefsLHS));
+        crefs2 = list(SimCodeFunctionUtil.varName(v) for v in simVars);
+      then listAppend(crefs2,crefs2);
     case(SimCode.SES_NONLINEAR(SimCode.NONLINEARSYSTEM(crefs=crefs)))
-      equation
-    then crefs;
-    case(SimCode.SES_MIXED(discVars=simVars))
-      equation
-        crefs = list(SimCodeFunctionUtil.varName(v) for v in simVars);
       then crefs;
+    case(SimCode.SES_MIXED(discVars=simVars))
+      then list(SimCodeFunctionUtil.varName(v) for v in simVars);
     case(SimCode.SES_WHEN(whenStmtLst={BackendDAE.ASSIGN(left=cref)}))
-      equation
-    then {cref};
+      then {cref};
   end match;
 end getSimEqSystemCrefsLHS;
 
@@ -11600,10 +11585,11 @@ protected
    list<tuple<DAE.ComponentRef, list<DAE.ComponentRef>>> spTA, spTB;
    list<tuple<Integer, list<Integer>>> sparseInts;
    list<SimCode.FmiUnknown> derivatives, outputs, discreteStates;
-   list<SimCodeVar.SimVar> varsA, varsB, clockedStates;
+   list<SimCodeVar.SimVar> varsA, varsB, varsC, clockedStates;
    SimCode.HashTableCrefToSimVar crefSimVarHT;
    list<DAE.ComponentRef> diffCrefsA, diffedCrefsA, derdiffCrefsA;
    list<DAE.ComponentRef> diffCrefsB, diffedCrefsB;
+   DoubleEndedList<SimCodeVar.SimVar> delst;
 algorithm
   try
     //print("Start creating createFMIModelStructure\n");
@@ -11643,13 +11629,12 @@ algorithm
     spTA  := mergeSparsePatter(spTA, spTB, {});
     //print("-- merged matrixes CD\n");
 
-    varsB := getSimVars2Crefs(diffedCrefsB, crefSimVarHT);
-    varsA := getSimVars2Crefs(diffCrefsB, crefSimVarHT);
-    varsA := listAppend(varsA, varsB);
-    varsB := getSimVars2Crefs(diffedCrefsA, crefSimVarHT);
-    varsA := listAppend(varsA, varsB);
-    varsB := getSimVars2Crefs(diffCrefsA, crefSimVarHT);
-    varsA := listAppend(varsA, varsB);
+    delst := DoubleEndedList.fromList(getSimVars2Crefs(diffedCrefsB, crefSimVarHT));
+    DoubleEndedList.push_list_back(delst, getSimVars2Crefs(diffCrefsB, crefSimVarHT));
+    DoubleEndedList.push_list_back(delst, getSimVars2Crefs(diffedCrefsA, crefSimVarHT));
+    DoubleEndedList.push_list_back(delst, getSimVars2Crefs(diffCrefsA, crefSimVarHT));
+    varsA := DoubleEndedList.toListAndClear(delst);
+
     //print("-- created vars for CD\n");
 
     sparseInts := sortSparsePattern(varsA, spTA, true);

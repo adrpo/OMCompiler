@@ -4078,12 +4078,18 @@ package '1.9.3' "Version 1.9.3 (2015-09-08)"
   <body>Redirecting to the <a href=\"https://trac.openmodelica.org/OpenModelica/wiki/ReleaseNotes/1.9.3\">on-line release notes</a>.</body>
 </html>"));
 end '1.9.3';
-package '1.9.4' "Version 1.9.4 (2015-09-08)"
+package '1.9.4' "Version 1.9.4 (2016-03-09)"
   annotation(Documentation(info = "<html>
   <head><meta http-equiv=\"refresh\" content=\"0; url=https://trac.openmodelica.org/OpenModelica/wiki/ReleaseNotes/1.9.4\"></head>
   <body>Redirecting to the <a href=\"https://trac.openmodelica.org/OpenModelica/wiki/ReleaseNotes/1.9.4\">on-line release notes</a>.</body>
 </html>"));
 end '1.9.4';
+package '1.9.5' "Version 1.9.5 (2016-05-01)"
+  annotation(Documentation(info = "<html>
+  <head><meta http-equiv=\"refresh\" content=\"0; url=https://trac.openmodelica.org/OpenModelica/wiki/ReleaseNotes/1.9.5\"></head>
+  <body>Redirecting to the <a href=\"https://trac.openmodelica.org/OpenModelica/wiki/ReleaseNotes/1.9.5\">on-line release notes</a>.</body>
+</html>"));
+end '1.9.5';
 annotation(Documentation(info="<html>
 This section summarizes the major releases of OpenModelica and what changed between the major versions.
 Note that OpenModelica is developed rapidly.
