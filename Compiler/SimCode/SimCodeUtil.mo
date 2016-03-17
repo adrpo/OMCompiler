@@ -87,6 +87,7 @@ import ExpressionDump;
 import ExpressionSimplify;
 import ExpressionSolve;
 import Flags;
+import FMI;
 import Graph;
 import HashSet;
 import HpcOmSimCode;
@@ -168,6 +169,7 @@ public function createSimCode "entry point to create SimCode from BackendDAE."
   input tuple<Integer, HashTableExpToIndex.HashTable, list<DAE.Exp>> literals;
   input Absyn.FunctionArgs args;
   input Boolean isFMU=false;
+  input String FMUVersion="";
   output SimCode.SimCode simCode;
   output tuple<Integer, list<tuple<Integer, Integer>>> outMapping "the highest simEqIndex in the mapping and the mapping simEq-Index -> scc-Index itself";
 protected
@@ -403,7 +405,11 @@ algorithm
     backendMapping := setBackendVarMapping(inBackendDAE, crefToSimVarHT, modelInfo, backendMapping);
     //dumpBackendMapping(backendMapping);
 
-    modelStruct := createFMIModelStructure(symJacs, modelInfo);
+    if if isFMU then FMI.isFMIVersion20(FMUVersion) else false then
+      modelStruct := createFMIModelStructure(symJacs, modelInfo);
+    else
+      modelStruct := NONE();
+    end if;
 
     (varToArrayIndexMapping, varToIndexMapping) := createVarToArrayIndexMapping(modelInfo);
     //print("HASHTABLE MAPPING\n\n");
@@ -3231,6 +3237,64 @@ algorithm
   end match;
 end solveOtherEquations1;
 
+//protected function createTornSystemOtherEqns
+//  input list<tuple<Integer, list<Integer>>> otherEqns;
+//  input Boolean skipDiscInAlgorithm "if true skip discrete algorithm vars";
+//  input BackendDAE.EqSystem isyst;
+//  input BackendDAE.Shared ishared;
+//  input Integer iuniqueEqIndex;
+//  input list<SimCodeVar.SimVar> itempvars;
+//  input list<SimCode.SimEqSystem> isimequations;
+//  output list<SimCode.SimEqSystem> equations_;
+//  output Integer ouniqueEqIndex;
+//  output list<SimCodeVar.SimVar> otempvars;
+//algorithm
+//  (equations_, ouniqueEqIndex, otempvars) :=
+//  createTornSystemOtherEqns_2(otherEqns, skipDiscInAlgorithm, isyst, ishared,
+//  iuniqueEqIndex, itempvars, isimequations);
+//  print(anyString(equations_) + "\n");
+//end createTornSystemOtherEqns;
+//
+//protected function createTornSystemOtherEqns_2
+//  input list<tuple<Integer, list<Integer>>> otherEqns;
+//  input Boolean skipDiscInAlgorithm "if true skip discrete algorithm vars";
+//  input BackendDAE.EqSystem isyst;
+//  input BackendDAE.Shared ishared;
+//  input Integer iuniqueEqIndex;
+//  input list<SimCodeVar.SimVar> itempvars;
+//  input list<SimCode.SimEqSystem> isimequations;
+//  output list<SimCode.SimEqSystem> equations_;
+//  output Integer ouniqueEqIndex;
+//  output list<SimCodeVar.SimVar> otempvars;
+//algorithm
+//   (equations_, ouniqueEqIndex, otempvars) :=
+//   match(otherEqns, skipDiscInAlgorithm, isyst, ishared, iuniqueEqIndex, itempvars, isimequations)
+//     local
+//       BackendDAE.EquationArray eqns;
+//       list<SimCodeVar.SimVar> tempvars;
+//       list<SimCode.SimEqSystem> simequations;
+//       Integer uniqueEqIndex, eqnindx;
+//       BackendDAE.Equation eqn;
+//       list<Integer> vars;
+//       list<tuple<Integer, list<Integer>>> rest;
+//       BackendDAE.StrongComponent comp;
+//
+//     case({}, _, _, _, _, _, _)
+//     then (isimequations, iuniqueEqIndex, itempvars);
+//
+//     case((eqnindx, vars)::rest, _, BackendDAE.EQSYSTEM(orderedEqs=eqns), _, _, _, _) equation
+//       // get Eqn
+//       eqn = BackendEquation.equationNth1(eqns, eqnindx);
+//       // generate comp
+//       comp = createTornSystemOtherEqns1(eqn, eqnindx, vars);
+//       (simequations, _, uniqueEqIndex, tempvars) = createEquations(true, false, true, skipDiscInAlgorithm, isyst, ishared, {comp}, iuniqueEqIndex, itempvars);
+//       simequations = listAppend(isimequations, simequations);
+//       // generade other equations
+//       (simequations, uniqueEqIndex, tempvars) = createTornSystemOtherEqns_2(rest, skipDiscInAlgorithm, isyst, ishared, uniqueEqIndex, tempvars, simequations);
+//     then (simequations, uniqueEqIndex, tempvars);
+//   end match;
+//end createTornSystemOtherEqns_2;
+
 protected function createTornSystemOtherEqns
   input list<tuple<Integer, list<Integer>>> otherEqns;
   input Boolean skipDiscInAlgorithm "if true skip discrete algorithm vars";
@@ -3240,35 +3304,38 @@ protected function createTornSystemOtherEqns
   input list<SimCodeVar.SimVar> itempvars;
   input list<SimCode.SimEqSystem> isimequations;
   output list<SimCode.SimEqSystem> equations_;
-  output Integer ouniqueEqIndex;
-  output list<SimCodeVar.SimVar> otempvars;
+  output Integer ouniqueEqIndex = iuniqueEqIndex;
+  output list<SimCodeVar.SimVar> otempvars = itempvars;
+protected
+  BackendDAE.EquationArray eqns;
+  Integer eqnindx;
+  list<Integer> vars;
+  BackendDAE.Equation eqn;
+  BackendDAE.StrongComponent comp;
+  list<SimCode.SimEqSystem> simequations;
+  DoubleEndedList<SimCode.SimEqSystem> equations;
 algorithm
-   (equations_, ouniqueEqIndex, otempvars) :=
-   match(otherEqns, skipDiscInAlgorithm, isyst, ishared, iuniqueEqIndex, itempvars, isimequations)
-     local
-       BackendDAE.EquationArray eqns;
-       list<SimCodeVar.SimVar> tempvars;
-       list<SimCode.SimEqSystem> simequations;
-       Integer uniqueEqIndex, eqnindx;
-       BackendDAE.Equation eqn;
-       list<Integer> vars;
-       list<tuple<Integer, list<Integer>>> rest;
-       BackendDAE.StrongComponent comp;
+  if listEmpty(otherEqns) then
+    equations_ := isimequations;
+    return;
+  end if;
 
-     case({}, _, _, _, _, _, _)
-     then (isimequations, iuniqueEqIndex, itempvars);
+  BackendDAE.EQSYSTEM(orderedEqs = eqns) := isyst;
+  equations := DoubleEndedList.fromList(isimequations);
 
-     case((eqnindx, vars)::rest, _, BackendDAE.EQSYSTEM(orderedEqs=eqns), _, _, _, _) equation
-       // get Eqn
-       eqn = BackendEquation.equationNth1(eqns, eqnindx);
-       // generate comp
-       comp = createTornSystemOtherEqns1(eqn, eqnindx, vars);
-       (simequations, _, uniqueEqIndex, tempvars) = createEquations(true, false, true, skipDiscInAlgorithm, isyst, ishared, {comp}, iuniqueEqIndex, itempvars);
-       simequations = listAppend(isimequations, simequations);
-       // generade other equations
-       (simequations, uniqueEqIndex, tempvars) = createTornSystemOtherEqns(rest, skipDiscInAlgorithm, isyst, ishared, uniqueEqIndex, tempvars, simequations);
-     then (simequations, uniqueEqIndex, tempvars);
-   end match;
+  for eq in otherEqns loop
+    // get Eqn
+    (eqnindx, vars) := eq;
+    eqn := BackendEquation.equationNth1(eqns, eqnindx);
+    // generate comp
+    comp := createTornSystemOtherEqns1(eqn, eqnindx, vars);
+    (simequations, _, ouniqueEqIndex, otempvars) :=
+      createEquations(true, false, true, skipDiscInAlgorithm, isyst, ishared,
+        {comp}, ouniqueEqIndex, otempvars);
+    DoubleEndedList.push_list_back(equations, simequations);
+  end for;
+
+  equations_ := DoubleEndedList.toListAndClear(equations);
 end createTornSystemOtherEqns;
 
 protected function createTornSystemOtherEqns1
@@ -10365,98 +10432,61 @@ public function getEnumerationTypes
   output list<SimCodeVar.SimVar> outVars;
 algorithm
   outVars := match (inVars)
-    local
-      list<SimCodeVar.SimVar> stateVars_;
-      list<SimCodeVar.SimVar> derivativeVars_;
-      list<SimCodeVar.SimVar> algVars_;
-      list<SimCodeVar.SimVar> discreteAlgVars_;
-      list<SimCodeVar.SimVar> intAlgVars_;
-      list<SimCodeVar.SimVar> boolAlgVars_;
-      list<SimCodeVar.SimVar> inputVars_;
-      list<SimCodeVar.SimVar> outputVars_;
-      list<SimCodeVar.SimVar> aliasVars_;
-      list<SimCodeVar.SimVar> intAliasVars_;
-      list<SimCodeVar.SimVar> boolAliasVars_;
-      list<SimCodeVar.SimVar> paramVars_;
-      list<SimCodeVar.SimVar> intParamVars_;
-      list<SimCodeVar.SimVar> boolParamVars_;
-      list<SimCodeVar.SimVar> stringAlgVars_;
-      list<SimCodeVar.SimVar> stringParamVars_;
-      list<SimCodeVar.SimVar> stringAliasVars_;
-      list<SimCodeVar.SimVar> extObjVars_;
-      list<SimCodeVar.SimVar> constVars_;
-      list<SimCodeVar.SimVar> intConstVars_;
-      list<SimCodeVar.SimVar> boolConstVars_;
-      list<SimCodeVar.SimVar> stringConstVars_;
-      list<SimCodeVar.SimVar> jacobianVars_;
-      list<SimCodeVar.SimVar> realOptimizeConstraintsVars_;
-      list<SimCodeVar.SimVar> realOptimizeFinalConstraintsVars_;
-      list<SimCodeVar.SimVar> enumTypesList;
-    case (SimCodeVar.SIMVARS(stateVars = stateVars_, derivativeVars = derivativeVars_, algVars = algVars_, discreteAlgVars = discreteAlgVars_, intAlgVars = intAlgVars_,
-                          boolAlgVars = boolAlgVars_, inputVars = inputVars_, outputVars = outputVars_, aliasVars = aliasVars_, intAliasVars = intAliasVars_,
-                          boolAliasVars = boolAliasVars_, paramVars = paramVars_, intParamVars = intParamVars_, boolParamVars = boolParamVars_,
-                          stringAlgVars = stringAlgVars_, stringParamVars = stringParamVars_, stringAliasVars = stringAliasVars_, extObjVars = extObjVars_,
-                          constVars = constVars_, intConstVars = intConstVars_, boolConstVars = boolConstVars_, stringConstVars = stringConstVars_,
-                          jacobianVars = jacobianVars_, realOptimizeConstraintsVars = realOptimizeConstraintsVars_, realOptimizeFinalConstraintsVars = realOptimizeFinalConstraintsVars_))
-      equation
-        enumTypesList = getEnumerationTypesHelper(stateVars_, {});
-        enumTypesList = getEnumerationTypesHelper(derivativeVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(algVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(discreteAlgVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(intAlgVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(boolAlgVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(inputVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(outputVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(aliasVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(intAliasVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(boolAliasVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(paramVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(intParamVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(boolParamVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(stringAlgVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(stringParamVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(stringAliasVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(extObjVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(constVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(intConstVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(boolConstVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(stringConstVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(jacobianVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(realOptimizeConstraintsVars_, enumTypesList);
-        enumTypesList = getEnumerationTypesHelper(realOptimizeFinalConstraintsVars_, enumTypesList);
-
+    case SimCodeVar.SIMVARS()
+      algorithm
+        outVars := getEnumerationTypesHelper(inVars.stateVars, {});
+        outVars := getEnumerationTypesHelper(inVars.derivativeVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.algVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.discreteAlgVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.intAlgVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.boolAlgVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.inputVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.outputVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.aliasVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.intAliasVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.boolAliasVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.paramVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.intParamVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.boolParamVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.stringAlgVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.stringParamVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.stringAliasVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.extObjVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.constVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.intConstVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.boolConstVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.stringConstVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.jacobianVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.realOptimizeConstraintsVars, outVars);
+        outVars := getEnumerationTypesHelper(inVars.realOptimizeFinalConstraintsVars, outVars);
       then
-        enumTypesList;
-    case (_) then {};
+        listReverse(outVars); // TODO: Is the order actually important?
+
+    else {};
   end match;
 end getEnumerationTypes;
 
 protected function getEnumerationTypesHelper
   input list<SimCodeVar.SimVar> inVars;
-  input list<SimCodeVar.SimVar> inExistsList;
-  output list<SimCodeVar.SimVar> outVars;
+  input list<SimCodeVar.SimVar> inAccumVars;
+  output list<SimCodeVar.SimVar> outVars = inAccumVars;
 algorithm
-  outVars := matchcontinue (inVars, inExistsList)
-    local
-      list<SimCodeVar.SimVar> vars;
-      list<SimCodeVar.SimVar> existsList;
-      SimCodeVar.SimVar var;
-      DAE.Type ty;
-    case (((var as SimCodeVar.SIMVAR(type_ = ty)) :: vars), existsList)
-      equation
-        true = Types.isEnumeration(ty);
-        false = List.exist1(existsList, enumerationTypeExists, ty);
-        existsList = listAppend(existsList, {var});
-        existsList = getEnumerationTypesHelper(vars, existsList);
-      then
-        existsList;
-    case ((_ :: vars), existsList)
-      equation
-        existsList = getEnumerationTypesHelper(vars, existsList);
-      then
-        existsList;
-    case ({}, existsList) then existsList;
-  end matchcontinue;
+  for var in inVars loop
+    _ := match var
+      case SimCodeVar.SIMVAR()
+        algorithm
+          // Add the variable to the list if it's an enumeration variable which
+          // doesn't already exist in the list.
+          if Types.isEnumeration(var.type_) and not
+             List.exist1(outVars, enumerationTypeExists, var.type_) then
+            outVars := var :: outVars;
+          end if;
+        then
+          ();
+
+      else ();
+    end match;
+  end for;
 end getEnumerationTypesHelper;
 
 protected function enumerationTypeExists
@@ -10466,12 +10496,10 @@ protected function enumerationTypeExists
 algorithm
   b := match (var, inType)
     local
-      DAE.Type ty, ty1;
-      Boolean res;
-    case (SimCodeVar.SIMVAR(type_ = ty), ty1)
-      equation
-        res = stringEq(Types.unparseType(ty), Types.unparseType(ty1));
-      then res;
+      DAE.Type ty;
+
+    case (SimCodeVar.SIMVAR(type_ = ty as DAE.T_ENUMERATION()), DAE.T_ENUMERATION())
+      then Absyn.pathEqual(ty.path, inType.path);
     else false;
   end match;
 end enumerationTypeExists;
@@ -11575,7 +11603,7 @@ algorithm
    noOut := noIn+1;
 end dumpVarMappingTuple;
 
-public function createFMIModelStructure
+protected function createFMIModelStructure
 " function detectes the model stucture for FMI 2.0
   by analyzing the symbolic jacobian matrixes and sparsity pattern"
   input BackendDAE.SymbolicJacobians inSymjacs;
@@ -11585,7 +11613,7 @@ protected
    list<tuple<DAE.ComponentRef, list<DAE.ComponentRef>>> spTA, spTB;
    list<tuple<Integer, list<Integer>>> sparseInts;
    list<SimCode.FmiUnknown> derivatives, outputs, discreteStates;
-   list<SimCodeVar.SimVar> varsA, varsB, varsC, clockedStates;
+   list<SimCodeVar.SimVar> varsA, varsB, clockedStates;
    SimCode.HashTableCrefToSimVar crefSimVarHT;
    list<DAE.ComponentRef> diffCrefsA, diffedCrefsA, derdiffCrefsA;
    list<DAE.ComponentRef> diffCrefsB, diffedCrefsB;
@@ -11630,7 +11658,7 @@ algorithm
     //print("-- merged matrixes CD\n");
 
     delst := DoubleEndedList.fromList(getSimVars2Crefs(diffedCrefsB, crefSimVarHT));
-    DoubleEndedList.push_list_back(delst, getSimVars2Crefs(diffCrefsB, crefSimVarHT));
+    DoubleEndedList.push_list_front(delst, getSimVars2Crefs(diffCrefsB, crefSimVarHT));
     DoubleEndedList.push_list_back(delst, getSimVars2Crefs(diffedCrefsA, crefSimVarHT));
     DoubleEndedList.push_list_back(delst, getSimVars2Crefs(diffCrefsA, crefSimVarHT));
     varsA := DoubleEndedList.toListAndClear(delst);
@@ -11649,7 +11677,8 @@ algorithm
     //print("-- finished createFMIModelStructure\n");
     outFmiModelStructure := SOME(SimCode.FMIMODELSTRUCTURE(SimCode.FMIOUTPUTS(outputs), SimCode.FMIDERIVATIVES(derivatives), SimCode.FMIDISCRETESTATES(discreteStates), SimCode.FMIINITIALUNKNOWNS({})));
 else
-  outFmiModelStructure := NONE();
+  Error.addInternalError("SimCodeUtil.createFMIModelStructure failed", sourceInfo());
+  fail();
 end try;
 end createFMIModelStructure;
 
