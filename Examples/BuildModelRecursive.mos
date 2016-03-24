@@ -17,7 +17,7 @@ settingsStr :=
   ;
 setCommandLineOptions("-d=nogen");
 if not regularFileExists("CustomCommands.mos") then
-  customCommands := "setCommandLineOptions(\"-d=nogen,initialization,backenddaeinfo,discreteinfo,stateselection\");
+  customCommands := "setCommandLineOptions(\"-d=nogen,initialization,backenddaeinfo,discreteinfo,stateselection,execstat\");
 setMatchingAlgorithm(\"PFPlusExt\");
 setIndexReductionMethod(\"dynamicStateSelection\");";
   writeFile("CustomCommands.mos",customCommands);
@@ -185,7 +185,7 @@ elseif referenceExists then
   variableFilter := sum(stringReplace(stringReplace(stringReplace(stringReplace(s,\"[\",\".\"),\"]\",\".\"),\"(\",\".\"),\")\",\".\") + \"|\" for s in vars);
   numCompared := size(vars,1);
   emit_protected := \" -emit_protected\";
-  print(variableFilter + \"\n\");
+  /* print(variableFilter + \"\n\"); */
 else
   variableFilter := \"\";
   outputFormat := \"empty\";

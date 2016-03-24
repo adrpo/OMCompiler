@@ -125,6 +125,7 @@ import Debug;
 import Dump;
 import Error;
 import ErrorExt;
+import ExecStat;
 import Expression;
 import ExpressionDump;
 import Flags;
@@ -195,6 +196,7 @@ algorithm
         cache = FCore.setCacheClassName(cache,path);
         if doSCodeDep then
           cdecls = InstUtil.scodeFlatten(cdecls, inPath);
+          ExecStat.execStat("FrontEnd - scodeFlatten");
         end if;
         (cache,env) = Builtin.initialGraph(cache);
         env_1 = FGraphBuildEnv.mkProgramGraph(cdecls, FCore.USERDEFINED(), env);
@@ -205,6 +207,7 @@ algorithm
         if Flags.isSet(Flags.GC_PROF) then
           print(GC.profStatsStr(GC.getProfStats(), head="GC stats after pre-frontend work (building graphs):") + "\n");
         end if;
+        ExecStat.execStat("FrontEnd - mkProgramGraph");
 
         (cache,env_2,ih,dae2) = instClassInProgram(cache, env_1, ih, cdecls, path, source);
         // check the models for balancing
@@ -222,6 +225,7 @@ algorithm
         cache = FCore.setCacheClassName(cache,path);
         if doSCodeDep then
           cdecls = InstUtil.scodeFlatten(cdecls, inPath);
+          ExecStat.execStat("FrontEnd - scodeFlatten");
         end if;
         pathstr = Absyn.pathString(path);
 
@@ -249,6 +253,7 @@ algorithm
         if Flags.isSet(Flags.GC_PROF) then
           print(GC.profStatsStr(GC.getProfStats(), head="GC stats after pre-frontend work (building graphs):") + "\n");
         end if;
+        ExecStat.execStat("FrontEnd - mkProgramGraph");
 
         (cache,env_2,ih,_,dae,_,_,_,_,_) = instClass(cache,env_2,ih,
           UnitAbsynBuilder.emptyInstStore(),DAE.NOMOD(), makeTopComponentPrefix(env_2, n), cdef,
@@ -1137,7 +1142,7 @@ algorithm
         */
         ci_state_1 = ClassInf.trans(ci_state, ClassInf.NEWDEF());
         comp = InstUtil.addNomod(els);
-        (cache,env_1,ih) = InstUtil.addComponentsToEnv(cache,env,ih, mods, pre, ci_state_1, comp, comp, {}, inst_dims, impl);
+        (cache,env_1,ih) = InstUtil.addComponentsToEnv(cache,env,ih, mods, pre, ci_state_1, comp, impl);
 
         // we should instantiate with no modifications, they don't belong to the class, they belong to the component!
         (cache,env_2,ih,store,_,csets,ci_state_1,tys1,graph,_) =
@@ -2192,7 +2197,7 @@ algorithm
         //later in instElementList (where update_variable is called)"
         checkMods = Mod.merge(mods,emods, className);
         mods = checkMods;
-        (cache,env3,ih) = InstUtil.addComponentsToEnv(cache, env2, ih, mods, pre, ci_state, compelts_1, compelts_1, eqs_1, inst_dims, impl);
+        (cache,env3,ih) = InstUtil.addComponentsToEnv(cache, env2, ih, mods, pre, ci_state, compelts_1, impl);
 
         //Instantiate components
         compelts_2_elem = List.map(compelts_1,Util.tuple21);
@@ -2977,8 +2982,7 @@ algorithm
 
         // Add inherited classes to env.
         (outCache, outEnv, outIH) := InstUtil.addComponentsToEnv(outCache,
-          outEnv, outIH, mod, inPrefix, inState, const_els, const_els, {},
-          inInstDims, false);
+          outEnv, outIH, mod, inPrefix, inState, const_els, false);
 
         // Instantiate constants.
         (outCache, outEnv, outIH, _, _, _, outState, outVars, _, _) := instElementList(
@@ -3600,7 +3604,7 @@ algorithm
            " mod_1: " + Mod.printModStr(mod_1) +
            "\n");*/
 
-        dae_attr = DAEUtil.translateSCodeAttrToDAEAttr(attr, prefixes, comment);
+        dae_attr = DAEUtil.translateSCodeAttrToDAEAttr(attr, prefixes);
         ty = Types.traverseType(ty, 1, Types.setIsFunctionPointer);
         new_var = DAE.TYPES_VAR(name, dae_attr, ty, binding, NONE());
 
@@ -3675,7 +3679,7 @@ algorithm
         (cache, binding) = InstBinding.makeBinding(cache, env, attr, m_1, ty, pre, name, info);
 
         // true in update_frame means the variable is now instantiated.
-        dae_attr = DAEUtil.translateSCodeAttrToDAEAttr(attr, prefixes, comment);
+        dae_attr = DAEUtil.translateSCodeAttrToDAEAttr(attr, prefixes);
         ty = Types.traverseType(ty, 1, Types.setIsFunctionPointer);
         new_var = DAE.TYPES_VAR(name, dae_attr, ty, binding, NONE()) ;
 

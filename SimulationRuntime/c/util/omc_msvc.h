@@ -119,7 +119,24 @@ unsigned int alarm (unsigned int seconds);
 #endif
 
 #if defined(__MINGW32__) || defined(_MSC_VER)
-char *mkdtemp(char *tpl);
+static int RTLD_LAZY=0;
+char* mkdtemp(char *tpl);
+void* omc_dlopen(const char *filename, int flag);
+char* omc_dlerror();
+void* omc_dlsym(void *handle, const char *symbol);
+int omc_dlclose(void *handle);
+static OMC_INLINE void* dlopen(const char *filename, int flag) {
+  return omc_dlopen(filename, flag);
+}
+static OMC_INLINE char* dlerror() {
+  return omc_dlerror();
+}
+static OMC_INLINE void* dlsym(void *handle, const char *symbol) {
+  return omc_dlsym(handle, symbol);
+}
+static OMC_INLINE int dlclose(void *handle) {
+  return omc_dlclose(handle);
+}
 #endif
 
 /* for non GNU compilers */

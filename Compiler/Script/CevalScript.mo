@@ -96,6 +96,7 @@ import Parser;
 import Print;
 import SCodeDump;
 import SimCodeFunction;
+import ExecStat.{execStat,execStatReset};
 import StackOverflow;
 import System;
 import Static;
@@ -1329,7 +1330,7 @@ algorithm
             GlobalScript.SYMBOLTABLE(p,sp,ic,iv,(path,t)::cf),
             but where to get t? */
       equation
-        SimCodeFunctionUtil.execStatReset();
+        execStatReset();
         mp = Settings.getModelicaPath(Config.getRunningTestsuite());
         strings = List.map(cvars, ValuesUtil.extractValueString);
         /* If the user requests a custom version to parse as, set it up */
@@ -1344,7 +1345,7 @@ algorithm
         end if;
         Print.clearBuf();
         newst = GlobalScript.SYMBOLTABLE(p,NONE(),{},iv,cf,lf);
-        SimCodeFunctionUtil.execStat("loadModel("+Absyn.pathString(path)+")");
+        execStat("loadModel("+Absyn.pathString(path)+")");
       then
         (FCore.emptyCache(),Values.BOOL(b),newst);
 
@@ -1361,10 +1362,10 @@ algorithm
             lstVarVal = iv,compiledFunctions = cf,
             loadedFiles = lf)),_)
       equation
-        SimCodeFunctionUtil.execStatReset();
+        execStatReset();
         name = Util.testsuiteFriendlyPath(name);
         newp = loadFile(name, encoding, p, b);
-        SimCodeFunctionUtil.execStat("loadFile("+name+")");
+        execStat("loadFile("+name+")");
       then
         (FCore.emptyCache(),Values.BOOL(true),GlobalScript.SYMBOLTABLE(newp,NONE(),ic,iv,cf,lf));
 
@@ -2152,12 +2153,8 @@ algorithm
   try
     ErrorExt.setCheckpoint("getNonPartialElementsForInstantiatedClass");
     (, env) := Inst.instantiateClass(FCore.emptyCache(), InnerOuter.emptyInstHierarchy, sp, Absyn.makeNotFullyQualified(p), doSCodeDep=false);
-    for v in FNode.getAvlValues(FNode.children(arrayGet(FGraph.lastScopeRef(env),1))) loop
-      elts := match v[1]
-        case FCore.N(data=FCore.CL(e=elt as SCode.CLASS(partialPrefix=SCode.NOT_PARTIAL()))) then elt::elts;
-        else elts;
-      end match;
-    end for;
+    elts := FCore.RefTree.fold(FNode.children(FNode.fromRef(FGraph.lastScopeRef(env))),
+      addNonPartialClassRef, {});
     ErrorExt.rollBack("getNonPartialElementsForInstantiatedClass");
     return;
   else
@@ -2171,6 +2168,22 @@ algorithm
     else {};
   end match;
 end getNonPartialElementsForInstantiatedClass;
+
+protected function addNonPartialClassRef
+  input FCore.Name name;
+  input FCore.Ref ref;
+  input list<SCode.Element> accum;
+  output list<SCode.Element> classes;
+protected
+  SCode.Element e;
+algorithm
+  classes := match FNode.fromRef(ref)
+    case FCore.N(data = FCore.CL(e = e as SCode.CLASS(partialPrefix = SCode.NOT_PARTIAL())))
+      then e :: accum;
+
+    else accum;
+  end match;
+end addNonPartialClassRef;
 
 public function cevalCallFunction "This function evaluates CALL expressions, i.e. function calls.
   They are currently evaluated by generating code for the function and

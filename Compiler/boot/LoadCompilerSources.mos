@@ -153,6 +153,7 @@ if true then /* Suppress output */
   // "Util";
     "../Util/Array.mo",
     "../Util/AvlTreeString.mo",
+    "../Util/BaseAvlTree.mo",
     "../Util/BaseHashTable.mo",
     "../Util/BaseHashSet.mo",
     "../Util/ClockIndexes.mo",
@@ -163,6 +164,7 @@ if true then /* Suppress output */
     "../Util/DynLoad.mo",
     "../Util/ErrorExt.mo",
     "../Util/Error.mo",
+    "../Util/ExecStat.mo",
     "../Util/Flags.mo",
     "../Util/GC.mo",
     "../Util/Graph.mo",
@@ -319,7 +321,6 @@ if true then /* Suppress output */
     "../Template/VisualXMLTpl.mo",
 
     "../Util/AvlTree.mo",
-    "../Util/BaseAvlTree.mo",
     "../Util/AvlTreeString2.mo",
 
     "../Util/DoubleEndedList.mo",

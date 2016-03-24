@@ -719,14 +719,12 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   #      https://trac.modelica.org/Modelica/ticket/1962
   #  - add the target triplet, e.g. i686-w64-mingw32, to
   #      OMCompiler/SimulationRuntime/cpp/Makefile
-  #  - provide a link to boost includes outside /usr/include, e.g.
-  #      ln -s /usr/include/boost OMCompiler/SimulationRuntime/cpp/boost
   #  - rebuild omc to add the new platform
-  #  - link boost includes in the work directory and invoke the omc commands
+  #  - invoke the omc commands
   #      setCommandLineOptions("+simCodeTarget=Cpp");
   #      buildModelFMU(MyModel, platforms={"i686-w64-mingw32"});
   #  - alternatively call this Makefile with
-  #      make TARGET_TRIPLET=i686-w64-mingw32
+  #      make TARGET_TRIPLET=i686-w64-mingw32 -f <%fileNamePrefix%>_FMU.makefile
 
   #TARGET_TRIPLET=
   OMHOME=<%makefileParams.omhome%>
@@ -738,17 +736,18 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
 
   # native build or cross compilation
   ifeq ($(TARGET_TRIPLET),)
+    TRIPLET=<%getTriple()%>
     CC=<%makefileParams.ccompiler%>
     CXX=<%makefileParams.cxxcompiler%>
     DLLEXT=<%makefileParams.dllext%>
-    TRIPLET=<%getTriple()%>
     PLATFORM=<%platformstr%>
   else
-    CC=$(TARGET_TRIPLET)-gcc
-    CXX=$(TARGET_TRIPLET)-g++
-    DLLEXT=$(if $(findstring mingw,$(TARGET_TRIPLET)),.dll,.so)
     TRIPLET=$(TARGET_TRIPLET)
-    PLATFORM=$(if $(findstring darwin,$(TRIPLET)),darwin,$(if $(findstring mingw,$(TRIPLET)),win,linux))$(if $(findstring x86_64,$(TRIPLET)),64,32)
+    CC=$(TRIPLET)-gcc
+    CXX=$(TRIPLET)-g++
+    DLLEXT=$(if $(findstring mingw,$(TRIPLET)),.dll,.so)
+    WORDSIZE=$(if $(findstring x86_64,$(TRIPLET)),64,32)
+    PLATFORM=$(if $(findstring darwin,$(TRIPLET)),darwin,$(if $(findstring mingw,$(TRIPLET)),win,linux))$(WORDSIZE)
   endif
 
   CFLAGS_BASED_ON_INIT_FILE=<%extraCflags%>
@@ -780,7 +779,7 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
 
   # link with simple dgesv or full lapack
   ifeq ($(USE_DGESV),ON)
-    $(eval LIBS=$(LIBS) $(LIBOMCPPDGESV))
+    $(eval LIBS=$(LIBS) -lOMCppDgesv_static)
   else
     $(eval LIBS=$(LIBS) -L$(LAPACK_LIBS) $(LAPACK_LIBRARIES))
     $(eval BINARIES=$(BINARIES) <%lapackbins%>)
@@ -790,10 +789,8 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
   ifeq ($(findstring USE_CPP_03,$(CFLAGS)),USE_CPP_03)
     $(eval LIBS=$(LIBS) -L"$(BOOST_LIBS)" -l$(BOOST_SYSTEM_LIB))
     $(eval BINARIES=$(BINARIES) $(BOOST_LIBS)/lib$(BOOST_SYSTEM_LIB)$(DLLEXT) <%platformbins%>)
-  endif
-
   # link static gcc libs under Windows to avoid dependencies
-  ifeq ($(findstring win,$(PLATFORM)),win)
+  else ifeq ($(findstring win,$(PLATFORM)),win)
     $(eval LIBS=$(LIBS) -static-libstdc++ -static-libgcc)
   endif
 

@@ -3961,6 +3961,19 @@ template zeroCrossingTpl(Integer index1, Exp relation, Text &varDecls, Text &aux
     <%preExp%>
     gout[<%index1%>] = (ceil(<%e1%>) != ceil(data->simulationInfo->mathEventsValuePre[<%indx%>])) ? 1 : -1;
     >>
+  case CALL(path=IDENT(name="mod"), expLst={exp1, exp2, idx}) then
+    let &preExp = buffer ""
+    let e1 = daeExp(exp1, contextZeroCross, &preExp, &varDecls, &auxFunction)
+    let e2 = daeExp(exp2, contextZeroCross, &preExp, &varDecls, &auxFunction)
+    let indx = daeExp(idx, contextZeroCross, &preExp, &varDecls, &auxFunction)
+    let tvar1 = tempDecl("modelica_real", &varDecls)
+    let tvar2 = tempDecl("modelica_real", &varDecls)
+    let &preExp += '<%tvar1%> = floor((<%e1%>) / (<%e2%>));<%\n%>'
+    let &preExp += '<%tvar2%> = floor((data->simulationInfo->mathEventsValuePre[<%indx%>]) / (data->simulationInfo->mathEventsValuePre[<%indx%>+1]));<%\n%>'
+    <<
+    <%preExp%>
+    gout[<%index1%>] = <%tvar1%> != <%tvar2%> ? 1 : -1;
+    >>
   case CALL(path=IDENT(name="div"), expLst={exp1, exp2, idx}) then
     let &preExp = buffer ""
     let e1 = daeExp(exp1, contextZeroCross, &preExp, &varDecls, &auxFunction)
@@ -4166,18 +4179,12 @@ end functionlinearmodel;
 template getVarName(list<SimVar> simVars, String arrayName, Integer arraySize) "template getVarName
   Generates name for a varables."
 ::=
-  match simVars
-  case {} then
-    <<
-    >>
-  case (var :: restVars) then
-    let rest = getVarName(restVars, arrayName, arraySize)
-    let arrindex = decrementInt(arraySize,listLength(restVars))
-    match var
+  simVars |> var hasindex arrindex fromindex 1 =>
+    (match var
     case SIMVAR(__) then
-      <<Real <%arrayName%>_<%crefM(name)%> = <%arrayName%>[<%arrindex%>];\n  <%rest%>>>
-    end match
-  end match
+      '  Real <%arrayName%>_<%crefM(name)%> = <%arrayName%>[<%arrindex%>];\n'
+    end match)
+  ; empty
 end getVarName;
 
 template genMatrix(String name, Integer row, Integer col) "template genMatrix
@@ -4757,7 +4764,7 @@ case e as SES_LINEAR(lSystem=ls as LINEARSYSTEM(__), alternativeTearing = at) th
   /* check if solution process was successful */
   if (retValue > 0){
     const int indexes[2] = {1,<%ls.index%>};
-    throwStreamPrintWithEquationIndexes(threadData, indexes, "Solving linear system <%ls.index%> failed at time=%.15g.\nFor more information please use -lv LOG_LS.", time);
+    throwStreamPrintWithEquationIndexes(threadData, indexes, "Solving linear system <%ls.index%> failed at time=%.15g.\nFor more information please use -lv LOG_LS.", data->localData[0]->timeValue);
     <%returnval2%>
   }
   /* write solution */
