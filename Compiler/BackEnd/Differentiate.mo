@@ -555,6 +555,7 @@ algorithm
       DAE.Type tp;
       Integer i;
       String s1, s2;
+      list<String> strLst;
       //String se1;
       list<DAE.Exp> sub, expl;
       list<list<DAE.Exp>> matrix, dmatrix;
@@ -563,6 +564,18 @@ algorithm
     case DAE.BCONST(bool=b) then (DAE.BCONST(b), inFunctionTree);
     case DAE.ICONST() then (DAE.ICONST(0), inFunctionTree);
     case DAE.RCONST() then (DAE.RCONST(0.0), inFunctionTree);
+    case DAE.SCONST() then (inExp, inFunctionTree);
+
+
+    case DAE.RECORD(path = p, exps = expl, comp = strLst, ty=tp)
+      algorithm
+       sub := {};
+       functionTree := inFunctionTree;
+       for e in expl loop
+         (e1, functionTree) := differentiateExp(e,inDiffwrtCref, inInputData, inDiffType, functionTree, maxIter, inExpStack);
+          sub := e1 :: sub;
+       end for;
+    then  (DAE.RECORD(p, listReverse(sub), strLst, tp), functionTree);
 
     // differentiate cref
     case DAE.CREF() equation
@@ -1420,9 +1433,9 @@ algorithm
     case (e as DAE.CALL(), _, _, _, _)
       equation
         (e1, funcs) = differentiateFunctionCall(e, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
-        (e,_,_,_) = Inline.inlineExp(e1,(SOME(funcs),{DAE.NORM_INLINE(),DAE.NO_INLINE()}),DAE.emptyElementSource/*TODO:Can we propagate source?*/);
+        (e1,_,_,_) = Inline.inlineExp(e1,(SOME(funcs),{DAE.NORM_INLINE()}),DAE.emptyElementSource/*TODO:Can we propagate source?*/);
       then
-        (e, funcs);
+        (e1, funcs);
 /*
     case (e as DAE.CALL(expLst = _), _, _, _, _)
       equation
@@ -2105,7 +2118,7 @@ algorithm
     case (DAE.CALL(attr=DAE.CALL_ATTR(builtin=false)), _, _, _, _)
       equation
         failure(BackendDAE.DIFF_FULL_JACOBIAN() = inDiffType);
-        (e,_,true) = Inline.forceInlineExp(inExp,(SOME(inFunctionTree),{DAE.NORM_INLINE(),DAE.NO_INLINE()}),DAE.emptyElementSource);
+        (e,_,true) = Inline.forceInlineExp(inExp,(SOME(inFunctionTree),{DAE.NORM_INLINE(),DAE.DEFAULT_INLINE()}),DAE.emptyElementSource);
         e = Expression.addNoEventToRelations(e);
         (e, functions) = differentiateExp(e, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
       then
@@ -2125,7 +2138,7 @@ algorithm
           BackendDump.debugStrExpStr("### Differentiate call\n ", e, " w.r.t. " + ComponentReference.crefStr(inDiffwrtCref) + "\n");
         end if;
         (de, functions) = differentiateFunctionCallPartial(e, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter, expStack);
-        (e,_,b) = Inline.forceInlineExp(de,(SOME(functions),{DAE.NORM_INLINE(),DAE.NO_INLINE()}),DAE.emptyElementSource);
+        (e,_,b) = Inline.forceInlineExp(de,(SOME(functions),{DAE.NORM_INLINE(),DAE.DEFAULT_INLINE()}),DAE.emptyElementSource);
         if b then
           de = e;
         end if;
@@ -2354,7 +2367,7 @@ algorithm
     then DAE.CALL(path, listAppend(inOrginalExpl,inArgs), attr);
 
     case (DAE.T_TUPLE(types = tys), _) equation
-      expLst = createPartialArgumentsTuple(tys, inArgs, inDiffedArgs, inOrginalExpl, 1, inCall, {});
+      expLst = createPartialArgumentsTuple(tys, inArgs, inDiffedArgs, inOrginalExpl, inCall);
     then DAE.TUPLE(expLst);
 
     else
@@ -2371,25 +2384,13 @@ protected function createPartialArgumentsTuple
   input list<DAE.Exp> inArgs;
   input list<DAE.Exp> inDiffedArgs;
   input list<DAE.Exp> inOrginalExpl;
-  input Integer number;
   input DAE.Exp inCall;
-  input list<DAE.Exp> inAccum;
   output list<DAE.Exp> outExpLst;
 algorithm
-  outExpLst := match(inTypesLst, inArgs, inDiffedArgs, inOrginalExpl, number, inCall, inAccum)
-    local
-      list<DAE.Type> expTypes;
-      DAE.Type tp;
-      DAE.Exp e, res;
-
-    case ({}, _, _, _, _, _, _)
-    then listReverse(inAccum);
-
-    case (tp::expTypes, _, _, _, _, _, _) equation
-      res = DAE.TSUB(inCall, number, tp);
-      e = createPartialArguments(tp, inArgs, inDiffedArgs, inOrginalExpl, res);
-    then createPartialArgumentsTuple(expTypes, inArgs, inDiffedArgs, inOrginalExpl, number+1, inCall, e::inAccum);
-  end match;
+  outExpLst := list( createPartialArguments(
+                                             tp, inArgs, inDiffedArgs, inOrginalExpl, (DAE.TSUB(inCall, number, tp))
+                                           )
+                     threaded  for tp in inTypesLst, number  in 1:listLength(inTypesLst));
 end createPartialArgumentsTuple;
 
 protected function createPartialDifferentiatedExp

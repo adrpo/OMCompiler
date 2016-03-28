@@ -458,7 +458,7 @@ template daeExpCrefIndexSpec(list<Subscript> subs, Context context,
 ::=
   let tmp_slice = tempDecl("vector<Slice>", &varDecls /*BUFD*/)
   let &preExp += '<%tmp_slice%>.clear();<%\n%>'
-  let idx_str = (subs |> sub hasindex i1 =>
+  let _ = (subs |> sub hasindex i1 =>
     match sub
       case INDEX(__) then
         let expPart = daeExp(exp, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
@@ -468,12 +468,23 @@ template daeExpCrefIndexSpec(list<Subscript> subs, Context context,
         let &preExp += '<%tmp_slice%>.push_back(Slice());<%\n%>'
         ''
       case SLICE(__) then
-        let expPart = daeExp(exp, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-        let &preExp += '<%tmp_slice%>.push_back(Slice(<%expPart%>));<%\n%>'
-        ''
+        match exp
+        case RANGE(__) then
+          let start_exp = daeExp(start, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
+          let stop_exp = daeExp(stop, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
+          let step_exp = match step case SOME(stepExp) then daeExp(stepExp, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) else "1"
+          let &preExp += '<%tmp_slice%>.push_back(Slice(<%start_exp%>, <%step_exp%>, <%stop_exp%>));<%\n%>'
+          ''
+        else
+          // this default branch should not be used because exp is a range
+          let expPart = daeExp(exp, context, &preExp /*BUFC*/, &varDecls /*BUFD*/, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
+          let &preExp += '<%tmp_slice%>.push_back(Slice(<%expPart%>));<%\n%>'
+          ''
+        end match
     ;separator="\n ")
-  <<<%tmp_slice%>>>
+  '<%tmp_slice%>'
 end daeExpCrefIndexSpec;
+
 template daeExpCrefRhsArrayBox(ComponentRef cr,DAE.Type ty, Context context, Text &preExp /*BUFP*/,
                                Text &varDecls /*BUFP*/,SimCode simCode, Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
  "Helper to daeExpCrefRhs."
@@ -913,9 +924,9 @@ template expTypeArrayDims(DAE.Type elty, DAE.Dimensions dims)
   let dimstr = listDimsFlat(dims, elty)
   match dimstr
   case "" then
-    'DynArrayDim<%nDimsFlat(dims, elty, 0)%><<%typeShort%>>/*expTypeArrayDims*/'
+    'DynArrayDim<%nDimsFlat(dims, elty, 0)%><<%typeShort%>>'
   else
-    'StatArrayDim<%nDimsFlat(dims, elty, 0)%><<%typeShort%>, <%dimstr%>>/*expTypeArrayDims*/'
+    'StatArrayDim<%nDimsFlat(dims, elty, 0)%><<%typeShort%>, <%dimstr%>>'
   end match
 end expTypeArrayDims;
 
@@ -1042,26 +1053,17 @@ template daeExpRange(Exp exp, Context context, Text &preExp, Text &varDecls, Sim
     let ty_str = expTypeShort(ty)
     let start_exp = daeExp(start, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let stop_exp = daeExp(stop, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-    //previous multi_array     let tmp = tempDecl('multi_array<<%ty_str%>,1>', &varDecls /*BUFD*/)
     let tmp = tempDecl('DynArrayDim1<<%ty_str%>>', &varDecls /*BUFD*/)
     let step_exp = match step case SOME(stepExp) then daeExp(stepExp, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) else "1"
-    /* previous multi_array
-  let &preExp += 'int num_elems =(<%stop_exp%>-<%start_exp%>)/<%step_exp%>+1;
-    <%tmp%>.resize((boost::extents[num_elems]));
-    <%tmp%>.reindex(1);
-    for(int i= 1;i<=num_elems;i++)
-        <%tmp%>[i] =<%start_exp%>+(i-1)*<%step_exp%>;
-    '
-    '<%tmp%>'
-  */
-  let &preExp += 'int <%tmp%>_num_elems =(<%stop_exp%>-<%start_exp%>)/<%step_exp%>+1;
-    <%tmp%>.setDims(<%tmp%>_num_elems)/*setDims 2*/;
-    for (int <%tmp%>_i = 1; <%tmp%>_i <= <%tmp%>_num_elems; <%tmp%>_i++)
-      <%tmp%>(<%tmp%>_i) = <%start_exp%>+(<%tmp%>_i-1)*<%step_exp%>;
-    '
+    let &preExp +=
+      <<
+      int <%tmp%>_num_elems =(<%stop_exp%>-<%start_exp%>)/<%step_exp%>+1;
+      <%tmp%>.setDims(<%tmp%>_num_elems) /*daeExpRange*/;
+      for (int <%tmp%>_i = 1; <%tmp%>_i <= <%tmp%>_num_elems; <%tmp%>_i++)
+        <%tmp%>(<%tmp%>_i) = <%start_exp%>+(<%tmp%>_i-1)*<%step_exp%>;<%\n%>
+      >>
     '<%tmp%>'
 end daeExpRange;
-
 
 template daeExpReduction(Exp exp, Context context, Text &preExp,
                          Text &varDecls,SimCode simCode, Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
@@ -1724,7 +1726,9 @@ template daeExpRecord(Exp rec, Context context, Text &preExp, Text &varDecls, Si
   match rec
   case RECORD(__) then
   let name = tempDecl(underscorePath(path) + "Type", &varDecls)
-  let ass = threadTuple(exps,comp) |>  (exp,compn) => '<%name%>.<%compn%> = <%daeExp(exp, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>;<%\n%>'
+  let ass = threadTuple(exps,comp) |>  (exp,compn) =>
+    let compnStr = crefStr(makeUntypedCrefIdent(compn))
+    '<%name%>.<%compnStr%> = <%daeExp(exp, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>;<%\n%>'
   let &preExp += ass
   name
 end daeExpRecord;
@@ -1855,11 +1859,6 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
     let exp = daeExp(inExp, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
    'integer(<%exp%>)'
 
-   case CALL(path=IDENT(name="modelica_mod_int"), expLst={e1,e2}) then
-    let var1 = daeExp(e1, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-    let var2 = daeExp(e2, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-    '<%var1%>%<%var2%>)'
-
   case CALL(path=IDENT(name="max"), attr=CALL_ATTR(ty = T_REAL(__)), expLst={e1,e2}) then
     let var1 = daeExp(e1, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let var2 = daeExp(e2, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
@@ -1955,6 +1954,7 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
     let var2 = daeExp(e2, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     'omcpp::trunc(<%var1%>/<%var2%>)'
 
+  case CALL(path=IDENT(name="mod"), expLst={e1,e2,index}, attr=attr as CALL_ATTR(__))
   case CALL(path=IDENT(name="mod"), expLst={e1,e2}, attr=attr as CALL_ATTR(__)) then
     let var1 = daeExp(e1, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     let var2 = daeExp(e2, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
@@ -1987,6 +1987,18 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
     let arr_tp_str = expTypeShort(ty)
     let tvar = tempDecl(arr_tp_str, &varDecls /*BUFD*/)
     let &preExp += '<%tvar%> = min_max<<%arr_tp_str%>>(<%expVar%>).first;<%\n%>'
+    '<%tvar%>'
+
+  case call as CALL(path=IDENT(name="vector"), expLst={exp}, attr=CALL_ATTR(ty=ty)) then
+    let expVar = daeExp(exp, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
+    let tvar = match ty
+    case T_ARRAY(ty=elty) then
+      // use dynamic array as static arrays are treated during translation
+      'DynArrayDim1<<%expTypeShort(elty)%>>(<%expVar%>.getNumElems(), ConstArray(<%expVar%>).getData())'
+    else
+      // this should never happen because it is eliminated during translation
+      'StatArrayDim1<<%expTypeShort(ty)%>, 1, true>(&<%expVar%>)'
+    end match
     '<%tvar%>'
 
   case CALL(path=IDENT(name="fill"), expLst=val::dims, attr=attr as CALL_ATTR(__)) then
@@ -2024,11 +2036,12 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
     let arrays_exp = (arrays |> array =>
     '<%tvar%>_list.push_back(&<%daeExp(array, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>);' ;separator="\n")
     let &preExp +=
-    'vector<const BaseArray<<%ty_str%>>*> <%tvar%>_list;
-     <%tvar%>_list.push_back(&<%a0str%>);
-     <%arrays_exp%>
-     cat_array<<%ty_str%>>(<%dim_exp%>, <%tvar%>_list, <%tvar%>);
-    '
+      <<
+      vector<const BaseArray<<%ty_str%>>*> <%tvar%>_list;
+      <%tvar%>_list.push_back(&<%a0str%>);
+      <%arrays_exp%>
+      cat_array<<%ty_str%>>(<%dim_exp%>, <%tvar%>_list, <%tvar%>);<%\n%>
+      >>
     '<%tvar%>'
 
   case CALL(path=IDENT(name="promote"), expLst={A, n}, attr=attr as CALL_ATTR(ty=ty)) then
@@ -2044,8 +2057,7 @@ template daeExpCall(Exp call, Context context, Text &preExp /*BUFP*/, Text &varD
 
    // let arr_tp_str = '<%expTypeFromExpArray(A)%>'
     //let tvar = tempDecl(arr_tp_str, &varDecls /*BUFD*/)
-    let &preExp += 'promote_array(<%var2%>,<%var1%>, <%tmp%>);<%\n%>'
-
+    let &preExp += 'promote_array(<%var2%>, <%var1%>, <%tmp%>);<%\n%>'
 
     '<%tmp%> '
    //else
@@ -2730,7 +2742,6 @@ template algStmtTupleAssign(DAE.Statement stmt, Context context, Text &varDecls,
 match stmt
 case STMT_TUPLE_ASSIGN(exp=CALL(__)) then
   let &preExp = buffer "" /*BUFD*/
-  let &afterExp = buffer "" /*BUFD*/
   let crefs = (expExpLst |> e => ExpressionDump.printExpStr(e) ;separator=", ")
   let marker = '(<%crefs%>) = <%ExpressionDump.printExpStr(exp)%>'
   let retStruct = daeExp(exp, context, &preExp /*BUFC*/, &varDecls /*BUFD*/, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
@@ -2741,12 +2752,10 @@ case STMT_TUPLE_ASSIGN(exp=CALL(__)) then
                     writeLhsCref(cr, rhsStr, context, &preExp, &varDecls, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
                   ;separator="\n";empty)
   <<
-  // algStmtTupleAssign: preExp printout <%marker%>
+  // algStmtTupleAssign: preExp <%marker%>
   <%preExp%>
   // algStmtTupleAssign: writeLhsCref
   <%lhsCrefs%>
-  // algStmtTupleAssign: afterExp
-  <%afterExp%>
   >>
 
 else error(sourceInfo(), 'algStmtTupleAssign failed')

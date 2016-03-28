@@ -84,9 +84,9 @@ class Slice {
     iset = &indices;
   }
 
-  size_t start;
-  size_t step;
-  size_t stop;
+  int start;
+  int step;
+  int stop;
   const BaseArray<int> *iset;
 };
 
@@ -109,33 +109,35 @@ class ArraySliceConst: public BaseArray<T> {
                                     "Wrong dimensions for ArraySlice");
     // create an explicit index set per dimension,
     // except for all indices that are indicated with an empty index set
-    size_t dim;
+    size_t dim, size;
     vector<Slice>::const_iterator sit;
     vector< vector<size_t> >::iterator dit = _idxs.begin();
     for (dim = 1, sit = slice.begin(); sit != slice.end(); dim++, sit++) {
-      if (sit->step == 0)
+      if (sit->iset != NULL) {
         _isets[dim - 1] = sit->iset;
+        size = sit->iset->getNumElems();
+      }
       else {
         _isets[dim - 1] = NULL;
-        size_t maxIndex = baseArray.getDim(dim);
-        size_t start = sit->start > 0? sit->start: maxIndex;
-        size_t stop = sit->stop > 0? sit->stop: maxIndex;
-        if (start > maxIndex || stop > maxIndex)
+        int maxIndex = baseArray.getDim(dim);
+        int start = sit->start > 0? sit->start: maxIndex;
+        int stop = sit->stop > 0? sit->stop: maxIndex;
+        int step = sit->step;
+        if (start > maxIndex || stop > maxIndex || step == 0)
           throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,
                                         "Wrong slice exceeding array size");
-        if (start > 1 || sit->step > 1 || stop < maxIndex)
-          for (size_t i = start; i <= stop; i += sit->step)
-            dit->push_back(i);
+        size = std::max(0, (stop - start) / step + 1);
+        // avoid trivial fill of _idxs if slice accesses all indices
+        if (start > 1 || step != 1 || stop < maxIndex || size == 1)
+          for (size_t i = 0; i < size; i++)
+            dit->push_back(start + i * step);
       }
-      if (dit->size() == 1)
-        // prefill constant _baseIdx in case of reduction
-        _baseIdx[dim - 1] = (*dit)[0];
+      if (size == 1)
+        // preset constant _baseIdx in case of reduction
+        _baseIdx[dim - 1] = sit->iset != NULL? (*_isets[dim - 1])(1): (*dit)[0];
       else
-	// store dimension of array slice
-	if(_isets[dim-1] !=NULL && _isets[dim-1]->getDim(0) > 1)
-	   _dims.push_back(_isets[dim-1]->getData()[1]-_isets[dim-1]->getData()[0] +1);
-	else
-	   _dims.push_back(dit->size() != 0? dit->size(): _baseArray.getDim(dim));
+        // store dimension of array slice
+        _dims.push_back(size);
       dit++;
     }
   }

@@ -1439,19 +1439,23 @@ protected function markStateEquationsWork
 protected
   list<Integer> queue = inEqns;
   list<Integer> queue_tmp,vlst;
-  Integer eqn;
+  Integer j, eqn, len = arrayLength(ass1);
 algorithm
 
  while not listEmpty(queue) loop
    eqn :: queue := queue;
    if oMark[eqn] == 0 then // "Mark an unmarked node/equation"
-    arrayUpdate(oMark, eqn, 1);
-    vlst := List.select(m[eqn], Util.intPositive) "vars of equation";
-    vlst := List.removeOnTrue(arrayLength(ass1), intLt, vlst) "take care we access not behind ass1 length";
-    queue_tmp := List.map1r(vlst,arrayGet,ass1) "equations of vars";
-    queue_tmp := List.select(queue_tmp, Util.intPositive);
-    queue := List.appendNoCopy(queue_tmp, queue);
-    queue := list(e for e guard arrayGet(oMark,e) == 0 in queue);
+     arrayUpdate(oMark, eqn, 1);
+     for i in m[eqn] loop
+       if i>0 and i<=len then
+         // We already did bounds checking above
+         j := Dangerous.arrayGetNoBoundsChecking(ass1, i);
+         if if j>0 then arrayGet(oMark, j) == 0 else false then
+           // Only add positive, unmarked variables to the queue
+           queue := j::queue;
+          end if;
+       end if;
+     end for;
    end if;
  end while;
 
@@ -2746,7 +2750,7 @@ algorithm
 
     // use the inlined function to analyze the ocuring variables
     case (DAE.CALL(), tpl as (_, _, SOME(functionTree))) equation
-      (e1,(_, true, _)) = Inline.forceInlineCall(inExp, ((SOME(functionTree), {DAE.NORM_INLINE(),DAE.NO_INLINE()}),false,{}));
+      (e1,(_, true, _)) = Inline.forceInlineCall(inExp, ((SOME(functionTree), {DAE.NORM_INLINE(),DAE.DEFAULT_INLINE()}),false,{}));
       (_, tpl) = Expression.traverseExpTopDown(e1, traversingincidenceRowExpSolvableFinder, tpl);
     then (inExp, false, tpl);
 
@@ -5660,7 +5664,7 @@ algorithm
   case (false,_,(_,_,funcs,_))
     equation
       // try to inline
-      (e,_,true) = Inline.forceInlineExp(inExp,(funcs,{DAE.NORM_INLINE(),DAE.NO_INLINE()}),DAE.emptyElementSource);
+      (e,_,true) = Inline.forceInlineExp(inExp,(funcs,{DAE.NORM_INLINE(),DAE.DEFAULT_INLINE()}),DAE.emptyElementSource);
       e = Expression.addNoEventToRelations(e);
       (e,(_,_,_,notfound)) = Expression.traverseExpTopDown(e, getEqnsysRhsExp1, iTpl);
     then
@@ -7228,6 +7232,7 @@ protected function allPostOptimizationModules
     (BackendDAEOptimize.addedScaledVars_inputs, "addScaledVars_inputs"),
     (RemoveSimpleEquations.removeSimpleEquations, "removeSimpleEquations"),
     (BackendDAEOptimize.simplifyComplexFunction, "simplifyComplexFunction"),
+    (ExpressionSolve.solveSimpleEquations, "solveSimpleEquations"),
     (BackendDAEOptimize.symEuler, "symEuler"),
     (ResolveLoops.reshuffling_post, "reshufflePost"),
     (DynamicOptimization.reduceDynamicOptimization, "reduceDynamicOptimization"), // before tearing
@@ -7244,7 +7249,6 @@ protected function allPostOptimizationModules
     (SymbolicJacobian.detectSparsePatternODE, "detectJacobianSparsePattern"),
     (SymbolicJacobian.generateSymbolicJacobianPast, "generateSymbolicJacobian"),
     (SymbolicJacobian.generateSymbolicLinearizationPast, "generateSymbolicLinearization"),
-    (ExpressionSolve.solveSimpleEquations, "solveSimpleEquations"),
     (BackendDAEOptimize.removeConstants, "removeConstants"),
     (BackendDAEOptimize.simplifyTimeIndepFuncCalls, "simplifyTimeIndepFuncCalls"),
     (BackendDAEOptimize.simplifyAllExpressions, "simplifyAllExpressions"),

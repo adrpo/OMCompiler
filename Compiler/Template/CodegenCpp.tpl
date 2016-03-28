@@ -4839,8 +4839,6 @@ case FUNCTION(__) then
   }
   >>
   %>
-
-
   >>
 end functionBodyRegularFunction;
 
@@ -4885,8 +4883,6 @@ case efn as EXTERNAL_FUNCTION(extArgs=extArgs) then
     )
    end match
 
-   let &varDecls1 = buffer ""
-   let &outVarInits1 = buffer ""
    let &outVarCopy1 = buffer ""
    let &outVarAssign1 = buffer ""
 
@@ -4895,16 +4891,16 @@ case efn as EXTERNAL_FUNCTION(extArgs=extArgs) then
    case {var} then "1"
 
    else
-     //(List.restOrEmpty(outVars) |> var hasindex i1 fromindex 1 =>  varOutputTuple(fn, var,i1, &varDecls1, &outVarInits1, &outVarCopy1, &outVarAssign1, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, useFlatArrayNotation)
      (outVars |> var hasindex i1 fromindex 0 =>  varOutputTuple(fn, var, i1, &varDeclsvOutputTuple, &outVarInits, &outVarCopy1, &outVarAssign1, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
      ;separator="\n"; empty /* increase the counter! */)
   end match
-    let functionBodyExternalFunctionreturn = match outVarAssign1
-   case "" then << <%if retVar then 'output = <%retVar%>;' else '/*no output*/' %> >>
-   else outVarAssign1
+  let functionBodyExternalFunctionreturn = match outVarAssign1
+    case "" then <<<%if retVar then 'output = <%retVar%>;' else '/*no output*/' %>>>
+    else outVarAssign1
 
-  let fnBody = <<
-  void /*<%retType%>*/ Functions::<%fname%>(<%funArgs |> var => funArgDefinition(var,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%><%if funArgs then if outVars then "," else ""%> <%if retVar then '<%retType%>& output' %>)/*function2*/
+  let fnBody =
+  <<
+  void /*<%retType%>*/ Functions::<%fname%>(<%funArgs |> var => funArgDefinition(var,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator=", "%><%if funArgs then if outVars then "," else ""%> <%if retVar then '<%retType%>& output' %>)
   {
     /* functionBodyExternalFunction: varDecls */
     /*1*/
@@ -4917,10 +4913,10 @@ case efn as EXTERNAL_FUNCTION(extArgs=extArgs) then
     <%varDeclsvOutputTuple%>
     /* functionBodyExternalFunction: preExp */
     <%preExp%>
-    <%inputAssign%>
     /* functionBodyExternalFunction: outVarInits */
     <%outVarInits%>
     /* functionBodyExternalFunction: callPart */
+    <%inputAssign%>
     <%callPart%>
     <%outputAssign%>
     /* functionBodyExternalFunction: return */
@@ -4948,8 +4944,6 @@ case efn as EXTERNAL_FUNCTION(extArgs=extArgs) then
     return 0;
   }
   >> %>
-
-
   >>
 end functionBodyExternalFunction;
 
@@ -5109,16 +5103,11 @@ case EXTERNAL_FUNCTION(__) then
   <%varDecs%>
   <%match extReturn case SIMEXTARG(__) then extFunCallVardecl(extReturn, &varDecls /*BUFD*/)%>
   <%dynamicCheck%>
-  /*test0*/
   <%returnAssign%><%extName%>(<%args%>);
   >>
-   /*test1*/
- // <%extArgs |> arg => extFunCallVarcopy(arg,fname,useTuple, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) ;separator="\n"%>
-  /*test2*/
-  //<%match extReturn case SIMEXTARG(__) then extFunCallVarcopy(extReturn,fname,useTuple, simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
-  /*test3*/
-
 end extFunCallC;
+
+
 template extFunCallVarcopy(SimExtArg arg, String fnName,Boolean useTuple, SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
  "Helper to extFunCall."
 ::=
@@ -5193,12 +5182,8 @@ template extArg(SimExtArg extArg, Text &preExp, Text &varDecls, Text &inputAssig
  "Helper to extFunCall."
 ::=
   match extArg
-  case SIMEXTARG(cref=c, outputIndex=oi, isArray=true, type_=t) then
-    //let name = if oi then 'out.targTest5<%oi%>' else contextCref2(c,contextFunction)
-  let arrayArg = extCArrayArg(extArg, &preExp, &varDecls, &inputAssign /*BUFD*/, &outputAssign /*BUFD*/)
-  <<
-  <%arrayArg%>
-  >>
+  case SIMEXTARG(isArray=true) then
+    extCArrayArg(extArg, &preExp, &varDecls, &inputAssign, &outputAssign)
 
   case SIMEXTARG(cref=c, isInput=ii, outputIndex=0, type_=t) then
     let cr = '<%contextCref2(c,contextFunction)%>'
@@ -5214,10 +5199,9 @@ template extArg(SimExtArg extArg, Text &preExp, Text &varDecls, Text &inputAssig
     daeExternalCExp(exp, contextFunction, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
   case SIMEXTARGSIZE(cref=c) then
     let typeStr = expTypeShort(type_)
-    let name = if outputIndex then 'out.targTest4<%outputIndex%>' else contextCref2(c,contextFunction)
+    let name = contextCref2(c, contextFunction)
     let dim = daeExp(exp, contextFunction, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     '<%name%>.getDim(<%dim%>)'
-
 end extArg;
 
 
@@ -5233,22 +5217,23 @@ case SIMEXTARG(cref=c, isInput =iI, outputIndex=oi, isArray=true, type_=t)then
     let dimsStr = checkDimension(dims)
     let elType = expTypeShort(ty)
     let extType = if stringEq(elType, "string") then elType else extType2(ty, true, false)
-    let extCStr = if stringEq(elType, "string") then 'CStrArray'
-    if boolOr(intGt(listLength(dims), 1), stringEq(elType, "bool")) then
+    if stringEq(elType, "string") then
+      let extName = extVarName2(c)
+      let &inputAssign += 'CStrArray <%extName%>(<%name%>);<%\n%>'
+      let &outputAssign += if intGt(oi, 0) then '<%extName%>.writeBack(<%name%>);<%\n%>'
+      '<%extName%>'
+    else if boolOr(intGt(listLength(dims), 1), stringEq(elType, "bool")) then
       let tmp = match dimsStr
         case "" then
-          tempDecl('DynArrayDim<%listLength(dims)%><<%extType%>>', &varDecls /*BUFD*/)
+          tempDecl('DynArrayDim<%listLength(dims)%><<%extType%>>', &varDecls)
         else
-          tempDecl('StatArrayDim<%dimStr%><<%extType%>, <%dimsStr%>>', &varDecls /*BUFD*/)
+          tempDecl('StatArrayDim<%dimStr%><<%extType%>, <%dimsStr%>>', &varDecls)
       let &inputAssign += 'convertArrayLayout(<%name%>, <%tmp%>);'
       let &outputAssign += if intGt(oi, 0) then 'convertArrayLayout(<%tmp%>, <%name%>);'
-      let arg = if extCStr then 'CStrArray(<%tmp%>)' else '<%tmp%>.getData()'
-      '<%arg%>'
+      '<%tmp%>.getData()'
     else
-      let arg = if extCStr then 'CStrArray(<%name%>)'
-                else if iI then 'ConstArray(<%name%>).getData()'
-                else '<%name%>.getData()'
-      '<%arg%>'
+      <<<%if iI then 'ConstArray(<%name%>).getData()'
+                else '<%name%>.getData()'%>>>
 end extCArrayArg;
 
 
@@ -11817,45 +11802,6 @@ template testDaeDimensionExp(Exp exp)
   else '-1'
 end testDaeDimensionExp;
 
-
-
-
-
-
-template daeExpRange(Exp exp, Context context, Text &preExp, Text &varDecls, SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl,
-                     Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
- "Generates code for a range expression."
-::=
-  match exp
-  case RANGE(__) then
-    let ty_str = expTypeShort(ty)
-    let start_exp = daeExp(start, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-    let stop_exp = daeExp(stop, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-    //previous multi_array     let tmp = tempDecl('multi_array<<%ty_str%>,1>', &varDecls /*BUFD*/)
-    let tmp = tempDecl('DynArrayDim1<<%ty_str%>>', &varDecls /*BUFD*/)
-    let step_exp = match step case SOME(stepExp) then daeExp(stepExp, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation) else "1"
-    /* previous multi_array
-  let &preExp += 'int num_elems =(<%stop_exp%>-<%start_exp%>)/<%step_exp%>+1;
-    <%tmp%>.resize((boost::extents[num_elems]));
-    <%tmp%>.reindex(1);
-    for(int i= 1;i<=num_elems;i++)
-        <%tmp%>[i] =<%start_exp%>+(i-1)*<%step_exp%>;
-    '
-    '<%tmp%>'
-  */
-  let &preExp += 'int <%tmp%>_num_elems =(<%stop_exp%>-<%start_exp%>)/<%step_exp%>+1;
-    <%tmp%>.setDims(<%tmp%>_num_elems)/*setDims 2*/;
-    for (int <%tmp%>_i = 1; <%tmp%>_i <= <%tmp%>_num_elems; <%tmp%>_i++)
-      <%tmp%>(<%tmp%>_i) = <%start_exp%>+(<%tmp%>_i-1)*<%step_exp%>;
-    '
-    '<%tmp%>'
-end daeExpRange;
-
-
-
-
-
-
 template assertCommon(Exp condition, Exp message,Exp level, Context context, Text &varDecls, builtin.SourceInfo info, SimCode simCode,
                       Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
 ::=
@@ -12188,61 +12134,6 @@ echo exit >> script.tmp
 del script.tmp
 '
 end ftp_script;
-
-
-
-
-
-
-
-
-
-
-template daeExpCrefRhsIndexSpec(list<Subscript> subs, Context context, Text &preExp, Text &varDecls, SimCode simCode, Text& extraFuncs,
-                                Text& extraFuncsDecl, Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
- "Helper to daeExpCrefRhs. Bogus and not used (#3263)."
-::=
-
-  let nridx_str = listLength(subs)
-  //let tmp = tempDecl("index_type", &varDecls /*BUFD*/)
-  let tmp_shape = tempDecl("vector<size_t>", &varDecls /*BUFD*/)
-  let tmp_indeces = tempDecl("idx_type", &varDecls /*BUFD*/)
-  let idx_str = (subs |> sub  hasindex i1 =>
-      match sub
-      case INDEX(__) then
-         let expPart = daeExp(exp, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-        let tmp_idx = tempDecl("vector<size_t>", &varDecls /*BUFD*/)
-        let &preExp += '<%tmp_shape%>.push_back(0);<%\n%>
-                        <%tmp_idx%>.push_back(<%expPart%>);<%\n%>
-                        <%tmp_indeces%>.push_back(<%tmp_idx%>);<%\n%>'
-      ''
-      case WHOLEDIM(__) then
-       let tmp_idx = tempDecl("vector<size_t>", &varDecls /*BUFD*/)
-       let &preExp += '<%tmp_shape%>.push_back(1);<%\n%>
-                       <%tmp_indeces%>.push_back(<%tmp_idx%>);<%\n%>'
-       ''
-      case SLICE(__) then
-        let tmp_idx = tempDecl("vector<size_t>", &varDecls /*BUFD*/)
-        let expPart = daeExp(exp, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-        let &preExp +=  '<%tmp_idx%>.assign(<%expPart%>.getData(),<%expPart%>.getData()+<%expPart%>.getNumElems());<%\n%>
-                         <%tmp_shape%>.push_back(<%expPart%>.getDim(1));<%\n%>
-                         <%tmp_indeces%>.push_back(<%tmp_idx%>);<%\n%>'
-       ''
-    ;separator="\n ")
-   << make_pair(<%tmp_shape%>,<%tmp_indeces%>) >>
-end daeExpCrefRhsIndexSpec;
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 template helpvarlength(SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
@@ -13584,17 +13475,18 @@ template algStmtAssign(DAE.Statement stmt, Context context, Text &varDecls, SimC
     /* Records need to be traversed, assigning each component by itself */
   case STMT_ASSIGN(exp1=CREF(componentRef=cr,ty = T_COMPLEX(varLst = varLst, complexClassType=RECORD(__)))) then
     let &preExp = buffer ""
-    let rec = daeExp(exp, context, &preExp, &varDecls,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
+    let rec = daeExp(exp, context, &preExp, &varDecls, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     <<
 
     <%preExp%>
     <% varLst |> var as TYPES_VAR(__) =>
+      let varNameStr = crefStr(makeUntypedCrefIdent(var.name))
       match var.ty
       case T_ARRAY(__) then
-        copyArrayData(var.ty, '<%rec%>.<%var.name%>', appendStringCref(var.name,cr), context)
+        copyArrayData(var.ty, '<%rec%>.<%varNameStr%>', appendStringCref(var.name, cr), context)
       else
-        let varPart = contextCref(appendStringCref(var.name,cr),context,simCode , &extraFuncs , &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-        '<%varPart%> = <%rec%>.<%var.name%>;'
+        let varPart = contextCref(appendStringCref(var.name, cr), context, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
+        '<%varPart%> = <%rec%>.<%varNameStr%>;'
     ; separator="\n"
     %>
     >>
@@ -13927,16 +13819,6 @@ match exp
     else
       '<%contextArrayCref(cr, context)%>'
 end algStmtAssignArrCref;
-
-
-template indexSpecFromCref(ComponentRef cr, Context context, Text &preExp /*BUFP*/,
-                  Text &varDecls /*BUFP*/,SimCode simCode, Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
- "Helper to algStmtAssignArr. Not used.
-  Currently works only for CREF_IDENT." ::=
-match cr
-case CREF_IDENT(subscriptLst=subs as (_ :: _)) then
-  daeExpCrefRhsIndexSpec(subs, context, &preExp /*BUFC*/, &varDecls /*BUFD*/,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
-end indexSpecFromCref;
 
 
 template functionInitDelay(DelayedExpression delayed,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
