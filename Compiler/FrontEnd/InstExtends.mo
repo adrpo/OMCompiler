@@ -168,7 +168,7 @@ algorithm
           // Fully qualify modifiers in extends in the extends environment.
           (outCache, emod) := fixModifications(outCache, inEnv, emod, {ht});
 
-          cenv := FGraph.openScope(cenv, encf, SOME(cn), FGraph.classInfToScopeType(inState));
+          cenv := FGraph.openScope(cenv, encf, cn, FGraph.classInfToScopeType(inState));
 
           // Add classdefs and imports to env, so e.g. imports from baseclasses can be found.
           (import_els, cdef_els, clsext_els, rest_els) :=
@@ -957,7 +957,7 @@ algorithm
         // lookup as it might have been redeclared!!!
         (SCode.CLASS(prefixes = prefixes, partialPrefix = partialPrefix, restriction = restriction,
                      cmt = comment, info = info,classDef=classDef),_) = Lookup.lookupClassLocal(env, name);
-        env = FGraph.openScope(env, SCode.ENCAPSULATED(), SOME(name), FGraph.restrictionToScopeType(restriction));
+        env = FGraph.openScope(env, SCode.ENCAPSULATED(), name, FGraph.restrictionToScopeType(restriction));
         (cache,classDef) = fixClassdef(cache,env,classDef,ht);
       then
         (cache,SCode.CLASS(name, prefixes, SCode.ENCAPSULATED(), partialPrefix, restriction, classDef, comment, info));
@@ -966,7 +966,7 @@ algorithm
     case (cache,env,SCode.CLASS(name, prefixes, SCode.ENCAPSULATED(), partialPrefix, restriction, classDef, comment, info),ht)
       equation
         //fprintln(Flags.DEBUG,"fixClassdef " + name);
-        env = FGraph.openScope(env, SCode.ENCAPSULATED(), SOME(name), FGraph.restrictionToScopeType(restriction));
+        env = FGraph.openScope(env, SCode.ENCAPSULATED(), name, FGraph.restrictionToScopeType(restriction));
         (cache,classDef) = fixClassdef(cache,env,classDef,ht);
       then
         (cache,SCode.CLASS(name, prefixes, SCode.ENCAPSULATED(), partialPrefix, restriction, classDef, comment, info));
@@ -979,7 +979,7 @@ algorithm
         (SCode.CLASS(prefixes = prefixes, partialPrefix = partialPrefix, restriction = restriction,
                      cmt = comment, info = info,classDef=classDef),_) = Lookup.lookupClassLocal(env, name);
 
-        env = FGraph.openScope(env, SCode.NOT_ENCAPSULATED(), SOME(name), FGraph.restrictionToScopeType(restriction));
+        env = FGraph.openScope(env, SCode.NOT_ENCAPSULATED(), name, FGraph.restrictionToScopeType(restriction));
         (cache,classDef) = fixClassdef(cache,env,classDef,ht);
       then
         (cache,SCode.CLASS(name, prefixes, SCode.NOT_ENCAPSULATED(), partialPrefix, restriction, classDef, comment, info));
@@ -988,7 +988,7 @@ algorithm
     case (cache,env,SCode.CLASS(name, prefixes, SCode.NOT_ENCAPSULATED(), partialPrefix, restriction, classDef, comment, info),ht)
       equation
         //fprintln(Flags.DEBUG,"fixClassdef " + name + str);
-        env = FGraph.openScope(env, SCode.NOT_ENCAPSULATED(), SOME(name), FGraph.restrictionToScopeType(restriction));
+        env = FGraph.openScope(env, SCode.NOT_ENCAPSULATED(), name, FGraph.restrictionToScopeType(restriction));
         (cache,classDef) = fixClassdef(cache,env,classDef,ht);
       then
         (cache,SCode.CLASS(name, prefixes, SCode.NOT_ENCAPSULATED(), partialPrefix, restriction, classDef, comment, info));
@@ -1587,6 +1587,7 @@ algorithm
         cref = Absyn.crefReplaceFirstIdent(cref,path);
         cref = FGraph.crefStripGraphScopePrefix(cref, env, false);
         //fprintln(Flags.DEBUG, "Cref HT fixed: " + Absyn.printComponentRefStr(cref));
+        cref = if Absyn.crefEqual(cref, inCref) then inCref else cref;
       then (cache,cref);
 
     // try lookup var (constant in a package?)
@@ -1598,11 +1599,12 @@ algorithm
         (denv,id) = lookupVarNoErrorMessage(cache,env,cref_);
         //fprintln(Flags.DEBUG,"Got env " + intString(listLength(env)));
         // isOutside = FGraph.graphPrefixOf(denv, env);
-        denv = FGraph.openScope(denv,SCode.ENCAPSULATED(),SOME(id),NONE());
+        denv = FGraph.openScope(denv,SCode.ENCAPSULATED(),id,NONE());
         cref = Absyn.crefReplaceFirstIdent(cref,FGraph.getGraphName(denv));
         // cref = if_(isOutside, cref, FGraph.crefStripGraphScopePrefix(cref, env, false));
         cref = FGraph.crefStripGraphScopePrefix(cref, env, false);
         //fprintln(Flags.DEBUG, "Cref VAR fixed: " + Absyn.printComponentRefStr(cref));
+        cref = if Absyn.crefEqual(cref, inCref) then inCref else cref;
       then (cache,cref);
 
     case (cache,env,cref,_)
@@ -1614,18 +1616,15 @@ algorithm
         // id might come from named import, make sure you use the actual class name!
         id = SCode.getElementName(c);
         //fprintln(Flags.DEBUG,"Got env " + intString(listLength(env)));
-        denv = FGraph.openScope(denv,SCode.ENCAPSULATED(),SOME(id),NONE());
+        denv = FGraph.openScope(denv,SCode.ENCAPSULATED(),id,NONE());
         cref = Absyn.crefReplaceFirstIdent(cref,FGraph.getGraphName(denv));
         // cref = if_(isOutside, cref, FGraph.crefStripGraphScopePrefix(cref, env, false));
         cref = FGraph.crefStripGraphScopePrefix(cref, env, false);
         //print("Cref CLASS fixed: " + Absyn.printComponentRefStr(cref) + "\n");
+        cref = if Absyn.crefEqual(cref, inCref) then inCref else cref;
       then (cache,cref);
 
-    case (cache,_,cref,_)
-      equation
-        //fprintln(Flags.DEBUG, "Cref not fixed: " + Absyn.printComponentRefStr(cref));
-      then
-        (cache,cref);
+    else (inCache, inCref);
 
   end matchcontinue;
 end fixCref;
@@ -1740,7 +1739,7 @@ algorithm
   (outExp,outTpl) := match (inExp,inTpl)
     local
       Absyn.FunctionArgs fargs;
-      Absyn.ComponentRef cref;
+      Absyn.ComponentRef cref, cref1;
       Absyn.Path path;
       FCore.Cache cache;
       FCore.Graph env;
@@ -1748,20 +1747,20 @@ algorithm
 
     case (Absyn.CREF(cref),(cache,env,ht))
       equation
-        (cache,cref) = fixCref(cache,env,cref,ht);
-      then (Absyn.CREF(cref),(cache,env,ht));
+        (cache,cref1) = fixCref(cache,env,cref,ht);
+      then (if referenceEq(cref, cref1) then inExp else Absyn.CREF(cref1),(cache,env,ht));
 
     case (Absyn.CALL(cref,fargs),(cache,env,ht))
       equation
         // print("cref actual: " + Absyn.crefString(cref) + " scope: " + FGraph.printGraphPathStr(env) + "\n");
-        (cache,cref) = fixCref(cache,env,cref,ht);
+        (cache,cref1) = fixCref(cache,env,cref,ht);
         // print("cref fixed : " + Absyn.crefString(cref) + "\n");
-      then (Absyn.CALL(cref,fargs),(cache,env,ht));
+      then (if referenceEq(cref, cref1) then inExp else Absyn.CALL(cref1,fargs),(cache,env,ht));
 
     case (Absyn.PARTEVALFUNCTION(cref,fargs),(cache,env,ht))
       equation
-        (cache,cref) = fixCref(cache,env,cref,ht);
-      then (Absyn.PARTEVALFUNCTION(cref,fargs),(cache,env,ht));
+        (cache,cref1) = fixCref(cache,env,cref,ht);
+      then (if referenceEq(cref, cref1) then inExp else Absyn.PARTEVALFUNCTION(cref1,fargs),(cache,env,ht));
 
     else (inExp,inTpl);
   end match;
