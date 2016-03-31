@@ -215,7 +215,7 @@ algorithm
         //Debug.fcall2(Flags.CHECK_MODEL_BALANCE, checkModelBalancing, SOME(path), dae2);
 
         // let the GC collect these as they are used only by Inst!
-        setGlobalRoot(Global.instHashIndex, emptyInstHashTable());
+        releaseInstHashTable();
       then
         (cache,env_2,ih,dae2);
 
@@ -282,7 +282,7 @@ algorithm
         //print("\nSetSource+DAE: " + realString(System.getTimerIntervalTime()));
 
         // let the GC collect these as they are used only by Inst!
-        setGlobalRoot(Global.instHashIndex, emptyInstHashTable());
+        releaseInstHashTable();
       then
         (cache, env_2, ih, dae);
 
@@ -340,7 +340,7 @@ algorithm
         Error.addMessage(Error.ERROR_FLATTENING, {cname_str});
 
         // let the GC collect these as they are used only by Inst!
-        setGlobalRoot(Global.instHashIndex, emptyInstHashTable());
+        releaseInstHashTable();
       then
         fail();
   end matchcontinue;
@@ -2642,9 +2642,7 @@ protected function joinExtEquations
 algorithm
   outEq := match(inEq, inExtEq, inCallingScope)
     case (_, _, InstTypes.TYPE_CALL()) then {};
-    // Take the union of the equations in the current scope and equations
-    // from extends, to filter out identical equations.
-    else List.unionOnTrue(inEq, inExtEq, SCode.equationEqual);
+    else listAppend(inEq, inExtEq);
   end match;
 end joinExtEquations;
 
@@ -2654,8 +2652,8 @@ protected function joinExtAlgorithms
   input InstTypes.CallingScope inCallingScope;
   output list<SCode.AlgorithmSection> outAlg;
 algorithm
-  outAlg := match(inAlg, inExtAlg, inCallingScope)
-    case (_, _, InstTypes.TYPE_CALL()) then {};
+  outAlg := match inCallingScope
+    case InstTypes.TYPE_CALL() then {};
     else listAppend(inAlg, inExtAlg);
   end match;
 end joinExtAlgorithms;
@@ -5427,19 +5425,20 @@ algorithm
   setGlobalRoot(Global.instHashIndex, emptyInstHashTable());
 end initInstHashTable;
 
+public function releaseInstHashTable
+algorithm
+  setGlobalRoot(Global.instHashIndex, emptyInstHashTableSized(1));
+end releaseInstHashTable;
+
 protected function emptyInstHashTable
-"
-  Returns an empty HashTable.
-  Using the default bucketsize..
-"
+  "Returns an empty HashTable."
   output InstHashTable hashTable;
 algorithm
-  hashTable := emptyInstHashTableSized(BaseHashTable.defaultBucketSize);
+  hashTable := emptyInstHashTableSized(Flags.getConfigInt(Flags.INST_CACHE_SIZE));
 end emptyInstHashTable;
 
 protected function emptyInstHashTableSized
-"Returns an empty HashTable.
-  Using the bucketsize size"
+  "Returns an empty HashTable, using the given bucket size."
   input Integer size;
   output InstHashTable hashTable;
 algorithm

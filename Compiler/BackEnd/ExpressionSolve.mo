@@ -122,19 +122,17 @@ protected
   DAE.ElementSource source;
 algorithm
   BackendDAE.EQUATION(exp=e1, scalar=e2, source=source,attr=attr) := eqn;
-  if not (Types.isIntegerOrRealOrSubTypeOfEither(Expression.typeof(e1)) and Types.isIntegerOrRealOrSubTypeOfEither(Expression.typeof(e2))) then
-	  return ;
-	end if;
-  BackendDAE.VAR(varName = cr) := var;
-  varexp := Expression.crefExp(cr);
-  if BackendVariable.isStateVar(var) then
-    varexp := Expression.expDer(varexp);
-    cr := ComponentReference.crefPrefixDer(cr);
-	end if;
+    BackendDAE.VAR(varName = cr) := var;
+    varexp := Expression.crefExp(cr);
+    if BackendVariable.isStateVar(var) then
+      varexp := Expression.expDer(varexp);
+      cr := ComponentReference.crefPrefixDer(cr);
+    end if;
 
-  (e1, e2) := preprocessingSolve(e1, e2, varexp, SOME(shared.functionTree), NONE(), 0, false);
-
-	try
+  if (Types.isIntegerOrRealOrSubTypeOfEither(Expression.typeof(e1)) and Types.isIntegerOrRealOrSubTypeOfEither(Expression.typeof(e2))) then
+    (e1, e2) := preprocessingSolve(e1, e2, varexp, SOME(shared.functionTree), NONE(), 0, false);
+  end if;
+  try
     e := solve2(e1, e2, varexp, SOME(shared.functionTree), NONE());
     source := DAEUtil.addSymbolicTransformationSolve(true, source, cr, e1, e2, e, {});
     eqn := BackendEquation.generateEquation(varexp, e, source, attr);
@@ -548,11 +546,11 @@ preprocessing for solve1,
      elseif doInline and inlineFun then
        iter := iter + 50;
        if inlineFun then
-	       (x,con) := solveFunCalls(x, inExp3, functions);
-	       inlineFun := false;
-	       if con then
-	         numSimplifed := 0;
-	       end if;
+         (x,con) := solveFunCalls(x, inExp3, functions);
+         inlineFun := false;
+         if con then
+           numSimplifed := 0;
+         end if;
        end if;
      end if;
 
