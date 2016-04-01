@@ -3052,7 +3052,7 @@ template functionXXX_system_HPCOM(list<SimEqSystem> derivativEquations, String n
       {
       }
 
-      //using type: <%type%>
+      /* using type: <%type%> */
       void function<%name%>_system<%n%>(DATA *data, threadData_t *threadData)
       {
         <%taskEqs%>
@@ -3065,7 +3065,7 @@ template functionXXX_system_HPCOM(list<SimEqSystem> derivativEquations, String n
       {
       }
 
-      //using type: <%type%>
+      /* using type: <%type%> */
       void function<%name%>_system<%n%>(DATA *data, threadData_t *threadData)
       {
         int fail=0;
@@ -3093,7 +3093,7 @@ template functionXXX_system_HPCOM(list<SimEqSystem> derivativEquations, String n
           {
           }
 
-          //using type: <%type%>
+          /* using type: <%type%> */
           static int initialized = 0;
           void function<%name%>_system<%n%>(DATA *data, threadData_t *threadData)
           {
@@ -3148,7 +3148,7 @@ template functionXXX_system_HPCOM(list<SimEqSystem> derivativEquations, String n
 
           <%threadFuncs%>
 
-          //using type: <%type%>
+          /* using type: <%type%> */
           static int initialized = 0;
           void function<%name%>_system<%n%>(DATA *data, threadData_t *threadData)
           {
@@ -3209,7 +3209,7 @@ template functionXXX_system_HPCOM(list<SimEqSystem> derivativEquations, String n
 
           <%threadFuncs%>
 
-          //using type: <%type%>
+          /* using type: <%type%> */
           static int initialized = 0;
           void function<%name%>_system<%n%>(DATA *data, threadData_t *threadData)
           {
