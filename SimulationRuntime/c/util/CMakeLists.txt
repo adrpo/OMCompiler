@@ -10,7 +10,7 @@ SET(util_headers  base_array.h boolean_array.h division.h omc_error.h index_spec
                   java_interface.h jni.h jni_md.h jni_md_solaris.h jni_md_windows.h list.h memory_pool.h
           modelica.h modelica_string.h read_write.h read_matlab4.h real_array.h rational.h
           ringbuffer.h rtclock.h simulation_options.h string_array.h utility.h varinfo.h omc_mmap.h cJSON.h
-          ../ModelicaUtilities.h modelica_string_lit.h omc_init.h, write_csv.h)
+          ../ModelicaUtilities.h modelica_string_lit.h omc_init.h write_csv.h)
 
 if(MSVC)
     INCLUDE_DIRECTORIES(${OMCTRUNCHOME}/OMCompiler/3rdParty/regex-0.12)
