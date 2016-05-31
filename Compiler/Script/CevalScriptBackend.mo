@@ -1711,19 +1711,41 @@ algorithm
         (cache,Values.TUPLE({Values.REAL(startTime),Values.REAL(stopTime),Values.REAL(tolerance),Values.INTEGER(numberOfIntervals),Values.REAL(interval)}),st);
 
     case (cache,_,"getAnnotationNamedModifiers",{Values.CODE(Absyn.C_TYPENAME(classpath)),Values.STRING(annotationname)},st as GlobalScript.SYMBOLTABLE(ast=p),_)
-      equation
-          Absyn.CLASS(cname,_,_,_,_,cdef,_) =Interactive.getPathedClassInProgram(classpath,p);
-          annlst= getAnnotationList(cdef);
-          modifiernamelst=getElementArgsModifiers(annlst,annotationname);
-          v1 = ValuesUtil.makeArray(List.map(modifiernamelst, ValuesUtil.makeString));
+      algorithm
+          v1 := Values.ARRAY({}, {0});
+          try
+            Absyn.CLASS(cname,_,_,_,_,cdef,_) := Interactive.getPathedClassInProgram(classpath,p);
+            try
+              annlst := getAnnotationList(cdef);
+              modifiernamelst := getElementArgsModifiers(annlst,annotationname);
+              v1 := ValuesUtil.makeArray(List.map(modifiernamelst, ValuesUtil.makeString));
+            else
+              Error.addMessage(Error.CLASS_ANNOTATION_DOES_NOT_EXIST, {annotationname, Absyn.pathString(classpath)});
+            end try;
+          else
+            Error.addMessage(Error.LOOKUP_ERROR, {Absyn.pathString(classpath),"<TOP>"});
+          end try;
       then
           (cache,v1,st);
 
      case (cache,_,"getAnnotationModifierValue",{Values.CODE(Absyn.C_TYPENAME(classpath)),Values.STRING(annotationname),Values.STRING(modifiername)},st as GlobalScript.SYMBOLTABLE(ast=p),_)
-      equation
-          Absyn.CLASS(cname,_,_,_,_,cdef,_) =Interactive.getPathedClassInProgram(classpath,p);
-          annlst= getAnnotationList(cdef);
-          modifiervalue=getElementArgsModifiersValue(annlst,annotationname,modifiername);
+      algorithm
+          modifiervalue := "";
+          try
+            Absyn.CLASS(cname,_,_,_,_,cdef,_) := Interactive.getPathedClassInProgram(classpath,p);
+            try
+              annlst := getAnnotationList(cdef);
+              try
+                modifiervalue := getElementArgsModifiersValue(annlst,annotationname,modifiername);
+              else
+                 Error.addMessage(Error.ANNOTATION_FETCH_ERROR, {annotationname, modifiername, Absyn.pathString(classpath)});
+              end try;
+            else
+              Error.addMessage(Error.CLASS_ANNOTATION_DOES_NOT_EXIST, {annotationname, Absyn.pathString(classpath)});
+            end try;
+          else
+            Error.addMessage(Error.LOOKUP_ERROR, {Absyn.pathString(classpath),"<TOP>"});
+          end try;
       then
           (cache,Values.STRING(modifiervalue),st);
 
@@ -6844,7 +6866,6 @@ algorithm
     then
         getElementArgsModifiers(eltarglst,name1);
 
-  case({},name1) then {"The searched annotation name not found"};
  end match;
 end getElementArgsModifiers;
 
@@ -6868,7 +6889,7 @@ algorithm
       guard stringEq(name1, name)
       equation
         elt=getElementArgsList(modification);
-        modfiername_value =getModifierNamedValue(elt,name2);
+        modfiername_value = getModifierNamedValue(elt,name2);
       then
         modfiername_value;
 
@@ -6878,7 +6899,6 @@ algorithm
       then
         modfiername_value;
 
-    case({},name1,name2) then "The Searched value not Found";
   end match;
 
  end getElementArgsModifiersValue;
@@ -6929,9 +6949,13 @@ function getModifierNamedValue
   Absyn.Exp e;
   Boolean b;
 algorithm
-   strs:= match List.find1(eltArgs,checkModifierName, instring)
+   strs:= match List.find1(eltArgs, checkModifierName, instring)
     case (Absyn.MODIFICATION(modification=SOME(Absyn.CLASSMOD(eqMod=Absyn.EQMOD(e)))))
       then getExpValue(e);
+    case (Absyn.MODIFICATION(modification=SOME(Absyn.CLASSMOD(eqMod=Absyn.NOMOD()))))
+      then "()";
+    case (Absyn.MODIFICATION(modification=NONE()))
+      then "()";
   end match;
 end getModifierNamedValue;
 
