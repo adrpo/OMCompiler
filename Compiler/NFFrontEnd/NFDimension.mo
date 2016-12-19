@@ -39,6 +39,7 @@ encapsulated package NFDimension
 public
 import Absyn;
 import DAE;
+import NFExpression.Expression;
 
 protected
 import List;
@@ -51,16 +52,34 @@ uniontype Dimension
   end UNTYPED_DIM;
 
   record TYPED_DIM
-    DAE.Dimension dimension;
+    Expression dimension;
   end TYPED_DIM;
 
+  record WHOLE_DIM
+  end WHOLE_DIM;
 public
-  function dimension
-    input Dimension inDim;
-    output DAE.Dimension outDim;
+  function makeIntDim
+    input Integer idim;
+    output Dimension dim;
   algorithm
-    TYPED_DIM(dimension = outDim) := inDim;
-  end dimension;
+    dim := TYPED_DIM(Expression.INTEGER(idim));
+  end makeIntDim;
+
+  function toDAEDim
+    input Dimension dim;
+    output DAE.Dimension daeDim;
+  algorithm
+    daeDim := match dim
+      local
+        Expression e;
+
+      case TYPED_DIM(dimension = e as Expression.INTEGER())
+        then DAE.DIM_INTEGER(e.value);
+
+      case TYPED_DIM(dimension = e) then DAE.DIM_EXP(Expression.toDAEExp(e));
+      case WHOLE_DIM() then DAE.DIM_UNKNOWN();
+    end match;
+  end toDAEDim;
 end Dimension;
 
 annotation(__OpenModelica_Interface="frontend");

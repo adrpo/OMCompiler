@@ -38,6 +38,7 @@ import NFInstNode.InstNode;
 import NFMod.Modifier;
 import SCode.Element;
 import SCode;
+import NFType.Type;
 
 protected
 import NFInstUtil;
@@ -96,7 +97,7 @@ uniontype Component
 
   record TYPED_COMPONENT
     InstNode classInst;
-    DAE.Type ty;
+    Type ty;
     Binding binding;
     Component.Attributes attributes;
   end TYPED_COMPONENT;
@@ -159,7 +160,7 @@ uniontype Component
 
   function getType
     input Component component;
-    output DAE.Type ty;
+    output Type ty;
   algorithm
     ty := match component
       case TYPED_COMPONENT() then component.ty;
@@ -167,7 +168,7 @@ uniontype Component
   end getType;
 
   function setType
-    input DAE.Type ty;
+    input Type ty;
     input output Component component;
   algorithm
     component := match component
@@ -187,9 +188,9 @@ uniontype Component
   algorithm
     () := match component
       local
-        DAE.Type ty;
+        Type ty;
 
-      case TYPED_COMPONENT(ty = DAE.Type.T_ARRAY(ty = ty))
+      case TYPED_COMPONENT(ty = Type.ARRAY(elementType = ty))
         algorithm
           component.ty := ty;
         then
@@ -234,7 +235,6 @@ uniontype Component
                NFInstUtil.daeToSCodeVisibility(attr.visibility));
     end match;
   end attr2DaeAttr;
-
 end Component;
 
 annotation(__OpenModelica_Interface="frontend");
