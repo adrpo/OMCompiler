@@ -43,14 +43,15 @@ import NFBinding.Binding;
 import NFClass.Class;
 import NFComponent.Component;
 import NFEquation.Equation;
+import NFExpression.Expression;
 import NFInstNode.InstNode;
+import NFMod.Modifier;
 import NFPrefix.Prefix;
 import NFStatement.Statement;
 
 import ComponentReference;
 import DAE;
 import Error;
-import Expression;
 import ExpressionDump;
 import ExpressionSimplify;
 import List;
@@ -248,6 +249,7 @@ algorithm
       list<DAE.Dimension> dims;
       Option<DAE.Exp> binding_exp;
       SourceInfo info;
+      Option<DAE.VariableAttributes> var_attr;
 
     case Component.TYPED_COMPONENT()
       algorithm
@@ -260,6 +262,7 @@ algorithm
               cref := Prefix.toCref(prefix);
               binding_exp := flattenBinding(component.binding, prefix);
               attr := component.attributes;
+              var_attr := makeVarAttributes(i.attributes, component.ty);
 
               var := DAE.VAR(
                 cref,
@@ -272,7 +275,7 @@ algorithm
                 {},
                 attr.connectorType,
                 ElementSource.createElementSource(info),
-                NONE(),
+                var_attr,
                 NONE(),
                 Absyn.NOT_INNER_OUTER());
             then
@@ -304,19 +307,17 @@ algorithm
 
     case Binding.UNBOUND() then NONE();
 
-    case Binding.TYPED_BINDING(propagatedDims = -1)
-      then SOME(binding.bindingExp);
-
     case Binding.TYPED_BINDING()
       algorithm
-        // TODO: Implement this in a saner way.
-        subs := List.lastN(List.flatten(Prefix.allSubscripts(prefix)),
-          binding.propagatedDims);
-        // try Expression.applyExpSubscripts directly as Expression.subscriptExp
-        // does not work for indexing expressions containing functions
-        e := Expression.applyExpSubscripts(binding.bindingExp, subs);
+        if binding.propagatedDims <= 0 then
+          bindingExp := SOME(Expression.toDAEExp(binding.bindingExp));
+        else
+          //subs := List.lastN(List.flatten(Prefix.allSubscripts(prefix)), binding.propagatedDims);
+          subs := {};
+          bindingExp := SOME(Expression.toDAEExp(Expression.applyExpSubscripts(binding.bindingExp, subs)));
+        end if;
       then
-        SOME(e);
+        bindingExp;
 
     else
       algorithm
@@ -343,8 +344,8 @@ algorithm
 
     case Equation.EQUALITY()
       algorithm
-        lhs := ExpressionSimplify.simplify(eq.lhs);
-        rhs := ExpressionSimplify.simplify(eq.rhs);
+        lhs := Expression.toDAEExp(eq.lhs);
+        rhs := Expression.toDAEExp(eq.rhs);
       then
         DAE.EQUATION(lhs, rhs, ElementSource.createElementSource(eq.info)) :: elements;
 
@@ -423,7 +424,11 @@ algorithm
       DAE.Exp lhs, rhs;
 
     case Equation.EQUALITY()
-      then DAE.INITIALEQUATION(eq.lhs, eq.rhs, ElementSource.createElementSource(eq.info)) :: elements;
+      algorithm
+        lhs := Expression.toDAEExp(eq.lhs);
+        rhs := Expression.toDAEExp(eq.rhs);
+      then
+        DAE.INITIALEQUATION(lhs, rhs, ElementSource.createElementSource(eq.info)) :: elements;
 
     case Equation.IF()
       then flattenIfEquation(eq.branches, eq.info, true) :: elements;
@@ -440,14 +445,15 @@ algorithm
 end flattenInitialEquations;
 
 function flattenIfEquation
-  input list<tuple<DAE.Exp, list<Equation>>> ifBranches;
+  input list<tuple<Expression, list<Equation>>> ifBranches;
   input SourceInfo info;
   input Boolean isInitial;
   output DAE.Element ifEquation;
 protected
-  list<DAE.Exp> conditions = {};
+  list<Expression> conditions = {};
   list<DAE.Element> branch, else_branch;
   list<list<DAE.Element>> branches = {};
+  list<DAE.Exp> dconds;
 algorithm
   for b in ifBranches loop
     conditions := Util.tuple21(b) :: conditions;
@@ -455,7 +461,7 @@ algorithm
   end for;
 
   // Transform the last branch to an else-branch if its condition is true.
-  if Expression.isConstTrue(listHead(conditions)) then
+  if Expression.isTrue(listHead(conditions)) then
     conditions := listRest(conditions);
     else_branch := listHead(branches);
     branches := listRest(branches);
@@ -465,11 +471,14 @@ algorithm
 
   conditions := listReverse(conditions);
   branches := listReverse(branches);
+  dconds := list(Expression.toDAEExp(c) for c in conditions);
 
   if isInitial then
-    ifEquation := DAE.INITIAL_IF_EQUATION(conditions, branches, else_branch, ElementSource.createElementSource(info));
+    ifEquation := DAE.INITIAL_IF_EQUATION(dconds, branches, else_branch,
+      ElementSource.createElementSource(info));
   else
-    ifEquation := DAE.IF_EQUATION(conditions, branches, else_branch, ElementSource.createElementSource(info));
+    ifEquation := DAE.IF_EQUATION(dconds, branches, else_branch,
+      ElementSource.createElementSource(info));
   end if;
 end flattenIfEquation;
 
@@ -689,6 +698,163 @@ algorithm
   whenStatement := DAE.STMT_WHEN(cond1, {}, false, stmts1, owhenStatement, ElementSource.createElementSource(info));
 
 end flattenWhenStatement;
+
+function makeVarAttributes
+  input list<Modifier> mods;
+  input DAE.Type ty;
+  output Option<DAE.VariableAttributes> attributes;
+algorithm
+  if listEmpty(mods) then
+    attributes := NONE();
+    return;
+  end if;
+
+  attributes := match ty
+    case DAE.T_REAL() then makeRealVarAttributes(mods);
+    case DAE.T_INTEGER() then makeIntVarAttributes(mods);
+    case DAE.T_BOOL() then makeBoolVarAttributes(mods);
+    case DAE.T_STRING() then makeStringVarAttributes(mods);
+    else NONE();
+  end match;
+end makeVarAttributes;
+
+function makeRealVarAttributes
+  input list<Modifier> mods;
+  output Option<DAE.VariableAttributes> attributes;
+protected
+  Option<DAE.Exp> quantity = NONE(), unit = NONE(), displayUnit = NONE();
+  Option<DAE.Exp> min = NONE(), max = NONE(), start = NONE(), fixed = NONE(), nominal = NONE();
+algorithm
+  for m in mods loop
+    () := match Modifier.name(m)
+      case "quantity"    algorithm quantity := makeVarAttribute(m); then ();
+      case "unit"        algorithm unit := makeVarAttribute(m); then ();
+      case "displayUnit" algorithm displayUnit := makeVarAttribute(m); then ();
+      case "min"         algorithm min := makeVarAttribute(m); then ();
+      case "max"         algorithm max := makeVarAttribute(m); then ();
+      case "start"       algorithm start := makeVarAttribute(m); then ();
+      case "fixed"       algorithm fixed := makeVarAttribute(m); then ();
+      case "nominal"     algorithm nominal := makeVarAttribute(m); then ();
+
+      // The attributes should already be type checked, so we shouldn't get any
+      // unknown attributes here.
+      else
+        algorithm
+          assert(false, getInstanceName() + " got unknown type attribute " +
+            Modifier.name(m));
+        then
+          fail();
+    end match;
+  end for;
+
+  attributes := SOME(DAE.VariableAttributes.VAR_ATTR_REAL(
+    quantity, unit, displayUnit, min, max, start, fixed, nominal,
+    NONE(), NONE(), NONE(), NONE(), NONE(), NONE(), NONE()));
+end makeRealVarAttributes;
+
+function makeIntVarAttributes
+  input list<Modifier> mods;
+  output Option<DAE.VariableAttributes> attributes;
+protected
+  Option<DAE.Exp> quantity = NONE(), min = NONE(), max = NONE();
+  Option<DAE.Exp> start = NONE(), fixed = NONE();
+algorithm
+  for m in mods loop
+    () := match Modifier.name(m)
+      case "quantity" algorithm quantity := makeVarAttribute(m); then ();
+      case "min"      algorithm min := makeVarAttribute(m); then ();
+      case "max"      algorithm max := makeVarAttribute(m); then ();
+      case "start"    algorithm start := makeVarAttribute(m); then ();
+      case "fixed"    algorithm fixed := makeVarAttribute(m); then ();
+
+      // The attributes should already be type checked, so we shouldn't get any
+      // unknown attributes here.
+      else
+        algorithm
+          assert(false, getInstanceName() + " got unknown type attribute " +
+            Modifier.name(m));
+        then
+          fail();
+    end match;
+  end for;
+
+  attributes := SOME(DAE.VariableAttributes.VAR_ATTR_INT(
+    quantity, min, max, start, fixed,
+    NONE(), NONE(), NONE(), NONE(), NONE(), NONE()));
+end makeIntVarAttributes;
+
+function makeBoolVarAttributes
+  input list<Modifier> mods;
+  output Option<DAE.VariableAttributes> attributes;
+protected
+  Option<DAE.Exp> quantity = NONE(), start = NONE(), fixed = NONE();
+algorithm
+  for m in mods loop
+    () := match Modifier.name(m)
+      case "quantity" algorithm quantity := makeVarAttribute(m); then ();
+      case "start"    algorithm start := makeVarAttribute(m); then ();
+      case "fixed"    algorithm fixed := makeVarAttribute(m); then ();
+
+      // The attributes should already be type checked, so we shouldn't get any
+      // unknown attributes here.
+      else
+        algorithm
+          assert(false, getInstanceName() + " got unknown type attribute " +
+            Modifier.name(m));
+        then
+          fail();
+    end match;
+  end for;
+
+  attributes := SOME(DAE.VariableAttributes.VAR_ATTR_BOOL(
+    quantity, start, fixed, NONE(), NONE(), NONE(), NONE()));
+end makeBoolVarAttributes;
+
+function makeStringVarAttributes
+  input list<Modifier> mods;
+  output Option<DAE.VariableAttributes> attributes;
+protected
+  Option<DAE.Exp> quantity = NONE(), start = NONE();
+algorithm
+  for m in mods loop
+    () := match Modifier.name(m)
+      case "quantity" algorithm quantity := makeVarAttribute(m); then ();
+      case "start"    algorithm start := makeVarAttribute(m); then ();
+
+      // The attributes should already be type checked, so we shouldn't get any
+      // unknown attributes here.
+      else
+        algorithm
+          assert(false, getInstanceName() + " got unknown type attribute " +
+            Modifier.name(m));
+        then
+          fail();
+    end match;
+  end for;
+
+  attributes := SOME(DAE.VariableAttributes.VAR_ATTR_STRING(
+    quantity, start, NONE(), NONE(), NONE(), NONE()));
+end makeStringVarAttributes;
+
+function makeVarAttribute
+  input Modifier mod;
+  output Option<DAE.Exp> attribute;
+algorithm
+  attribute := match mod
+    local
+      Expression exp;
+
+    case Modifier.MODIFIER(binding = Binding.TYPED_BINDING(bindingExp = exp))
+      then SOME(Expression.toDAEExp(exp));
+
+    else
+      algorithm
+        assert(false, getInstanceName() + " got untyped binding");
+      then
+        fail();
+
+  end match;
+end makeVarAttribute;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFFlatten;

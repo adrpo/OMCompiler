@@ -869,7 +869,7 @@ algorithm
       DAE.Exp dim_exp;
       DAE.Dimension dim;
 
-    case Absyn.NOSUB() then Dimension.TYPED_DIM(DAE.Dimension.DIM_UNKNOWN());
+    case Absyn.NOSUB() then Dimension.WHOLE_DIM();
     case Absyn.SUBSCRIPT(subscript = exp)
       algorithm
         exp := instExp(exp, scope);
