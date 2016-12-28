@@ -32,7 +32,13 @@
 encapsulated package NFType
 
 import NFDimension.Dimension;
+import NFDimension.Dimensions;
 
+protected
+import Types;
+import ClassInf;
+
+public
 uniontype Type
   record INTEGER
   end INTEGER;
@@ -54,7 +60,7 @@ uniontype Type
 
   record ARRAY
     Type elementType;
-    list<Dimension> dimensions;
+    Dimensions dimensions;
   end ARRAY;
 
   record NORETCALL
@@ -69,6 +75,16 @@ uniontype Type
   record FUNCTION
     Type resultType;
   end FUNCTION;
+
+  record TUPLE
+    list<Type> types "for functions returning multiple values.";
+    list<String> names "for tuples elements that have names (function outputs)";
+  end TUPLE;
+
+  // MetaModelica
+  record METABOXED
+    Type ty;
+  end METABOXED;
 
   function liftArrayLeft
     "Adds an array dimension to a type on the left side, e.g.
@@ -86,7 +102,7 @@ uniontype Type
     "Adds array dimensions to a type on the left side, e.g.
        listArrayLeft(Real[2, 3], [4, 5]) => Real[4, 5, 2, 3]."
     input output Type ty;
-    input list<Dimension> dims;
+    input Dimensions dims;
   algorithm
     if listEmpty(dims) then
       return;
@@ -97,6 +113,16 @@ uniontype Type
       else ARRAY(ty, dims);
     end match;
   end liftArrayLeftList;
+
+  function liftArrayListDims
+    "This function turns a type into an array of that type."
+    input output Type ty;
+    input Dimensions dims;
+  algorithm
+    for dim in listReverse(dims) loop
+      ty := ARRAY(ty, {dim});
+    end for;
+  end liftArrayListDims;
 
   function isInteger
     input Type ty;
@@ -185,9 +211,26 @@ uniontype Type
   algorithm
     isNumeric := match ty
       case ARRAY() then isBasicNumeric(ty.elementType);
+      case FUNCTION() then isBasicNumeric(ty.resultType);
       else isBasicNumeric(ty);
     end match;
   end isNumeric;
+
+  function isSimple
+    input Type ty;
+    output Boolean b;
+  algorithm
+    b := match ty
+      case INTEGER() then true;
+      case REAL() then true;
+      case BOOLEAN() then true;
+      case STRING() then true;
+      case ENUMERATION() then true;
+      case CLOCK() then true;
+      case FUNCTION() then isSimple(ty.resultType);
+      else false;
+    end match;
+  end isSimple;
 
   function arrayElementType
     input Type ty;
@@ -221,9 +264,51 @@ uniontype Type
     end match;
   end elementType;
 
+  function getDimensions
+    input Type ty;
+    output Dimensions dims;
+  algorithm
+    dims := match ty
+      case ARRAY() then ty.dimensions;
+      case FUNCTION() then getDimensions(ty.resultType);
+      else {};
+    end match;
+  end getDimensions;
+
+  function getDimensionNth
+    input Type ty;
+    input Integer idim;
+    output Dimension dim;
+  algorithm
+    dim := matchcontinue (ty, idim)
+      local
+        Type t;
+        Integer d, dc;
+        Dimensions dims;
+
+      case (ARRAY(dimensions = dims), d)
+        equation
+          dim = listGet(dims, d);
+        then
+          dim;
+
+      case (ARRAY(elementType = t, dimensions = dims), d)
+        equation
+          dc = listLength(dims);
+          true = d > dc;
+        then
+          getDimensionNth(t, d - dc);
+
+      case (FUNCTION(), d)
+        then getDimensionNth(ty.resultType, d);
+
+      // case (DAE.T_SUBTYPE_BASIC(complexType = t), d) then getDimensionNth(t, d);
+    end matchcontinue;
+  end getDimensionNth;
+
   function arrayDims
     input Type ty;
-    output list<Dimension> dims;
+    output Dimensions dims;
   algorithm
     dims := match ty
       case ARRAY() then ty.dimensions;
@@ -257,11 +342,49 @@ uniontype Type
     end match;
   end scalarSuperType;
 
+  function extendsBasicType
+    input Type ty;
+    output Boolean b = false;
+  end extendsBasicType;
+
+  function derivedBasicType
+    input Type ity;
+    output Type oty = ity;
+  end derivedBasicType;
+
+  public function isBoxedType
+    input Type ty;
+    output Boolean b;
+  algorithm
+    b := match ty
+      case STRING() then true;
+      case FUNCTION() then true;
+      case UNKNOWN() then true;
+      case NORETCALL() then true;
+      // case COMPLEX(complexClassType = ClassInf.EXTERNAL_OBJ()) then true;
+      case COMPLEX() then true; // TODO! FIXME! check this!
+      case METABOXED() then true;
+      /*
+      case METAOPTION() then true;
+      case METALIST() then true;
+      case METATUPLE() then true;
+      case METAUNIONTYPE() then true;
+      case METARECORD() then true;
+      case METAPOLYMORPHIC() then true;
+      case METAARRAY() then true;
+      case ANYTYPE() then true;
+      case METATYPE() then true;
+      case CODE() then true;
+      */
+      else false;
+    end match;
+  end isBoxedType;
+
   function toString
     input Type ty;
     output String str;
   algorithm
-    str := "IMPLEMENT ME";
+    str := Types.unparseType(toDAEType(ty));
   end toString;
 
   function toDAEType
@@ -269,16 +392,18 @@ uniontype Type
     output DAE.Type daeTy;
   algorithm
     daeTy := match ty
-      case Type.INTEGER() then DAE.T_INTEGER_DEFAULT;
-      case Type.REAL() then DAE.T_REAL_DEFAULT;
-      case Type.STRING() then DAE.T_STRING_DEFAULT;
-      case Type.BOOLEAN() then DAE.T_BOOL_DEFAULT;
-      case Type.CLOCK() then DAE.T_CLOCK_DEFAULT;
-      case Type.ARRAY()
+      case INTEGER() then DAE.T_INTEGER_DEFAULT;
+      case REAL() then DAE.T_REAL_DEFAULT;
+      case STRING() then DAE.T_STRING_DEFAULT;
+      case BOOLEAN() then DAE.T_BOOL_DEFAULT;
+      case CLOCK() then DAE.T_CLOCK_DEFAULT;
+      case ARRAY()
         then DAE.T_ARRAY(toDAEType(ty.elementType),
           list(Dimension.toDAEDim(d) for d in ty.dimensions), DAE.emptyTypeSource);
-      case Type.NORETCALL() then DAE.T_NORETCALL_DEFAULT;
-      case Type.UNKNOWN() then DAE.T_UNKNOWN_DEFAULT;
+      case NORETCALL() then DAE.T_NORETCALL_DEFAULT;
+      case COMPLEX() then DAE.T_COMPLEX(ClassInf.UNKNOWN(Absyn.IDENT("UNKNOWN")), {}, NONE(), DAE.emptyTypeSource);
+      case ENUMERATION() then DAE.T_ENUMERATION(NONE(), Absyn.IDENT("UNKNOWN"), {}, {}, {}, DAE.emptyTypeSource);
+      case UNKNOWN() then DAE.T_UNKNOWN_DEFAULT;
       else
         algorithm
           assert(false, getInstanceName() + " got unknown type.");

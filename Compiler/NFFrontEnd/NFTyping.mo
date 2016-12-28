@@ -179,11 +179,11 @@ algorithm
       Expression typed_exp;
       DAE.Dimension dim;
 
-    case Dimension.UNTYPED_DIM(dimension = dim_exp)
+    case Dimension.UNTYPED(dimension = dim_exp)
       algorithm
         typed_exp := typeExp(dim_exp, scope, info);
       then
-        Dimension.TYPED_DIM(typed_exp);
+        Dimension.TYPED(typed_exp);
 
     else dimension;
   end match;
@@ -844,7 +844,7 @@ algorithm
   end for;
 
   exp := Expression.INTEGER(listLength(expl));
-  arrayType := Type.liftArrayLeft(elem_ty, Dimension.TYPED_DIM(exp));
+  arrayType := Type.liftArrayLeft(elem_ty, Dimension.TYPED(exp));
   arrayExp := Expression.ARRAY(arrayType, listReverse(expl));
 end typeArray;
 

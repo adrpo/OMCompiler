@@ -43,27 +43,53 @@ import NFExpression.Expression;
 
 protected
 import List;
+import ExpressionDump;
 
 public
+type Dimensions = list<Dimension>;
+
 uniontype Dimension
-  record UNTYPED_DIM
+  record UNTYPED
     Absyn.Exp dimension;
     Boolean isProcessing;
-  end UNTYPED_DIM;
+  end UNTYPED;
 
-  record TYPED_DIM
+  record TYPED
     Expression dimension;
-  end TYPED_DIM;
+  end TYPED;
 
-  record WHOLE_DIM
-  end WHOLE_DIM;
+  record WHOLE
+  end WHOLE;
+
 public
   function makeIntDim
     input Integer idim;
     output Dimension dim;
   algorithm
-    dim := TYPED_DIM(Expression.INTEGER(idim));
+    dim := TYPED(Expression.INTEGER(idim));
   end makeIntDim;
+
+  function dimensionsKnownAndEqual
+    "Checks that two dimensions are specified and equal."
+    input Dimension dim1;
+    input Dimension dim2;
+    output Boolean res;
+  algorithm
+    res := match (dim1,dim2)
+      case (WHOLE(), _) then false; // TODO! FIXME! is this correct??
+      case (_, WHOLE()) then false; // TODO! FIXME! is this correct??
+      else valueEq(dim1, dim2);
+    end match;
+  end dimensionsKnownAndEqual;
+
+  function dimensionsEqual
+    "Checks that two dimensions are specified and equal."
+    input Dimension dim1;
+    input Dimension dim2;
+    output Boolean res;
+  algorithm
+    res := valueEq(dim1, dim2);
+  end dimensionsEqual;
 
   function toDAEDim
     input Dimension dim;
@@ -73,13 +99,22 @@ public
       local
         Expression e;
 
-      case TYPED_DIM(dimension = e as Expression.INTEGER())
+      case TYPED(dimension = e as Expression.INTEGER())
         then DAE.DIM_INTEGER(e.value);
 
-      case TYPED_DIM(dimension = e) then DAE.DIM_EXP(Expression.toDAEExp(e));
-      case WHOLE_DIM() then DAE.DIM_UNKNOWN();
+      case TYPED(dimension = e)
+        then DAE.DIM_EXP(Expression.toDAEExp(e));
+
+      case WHOLE() then DAE.DIM_UNKNOWN();
     end match;
   end toDAEDim;
+
+  function toString
+    input Dimension d;
+    output String s;
+  algorithm
+    s := ExpressionDump.dimensionString(toDAEDim(d));
+  end toString;
 end Dimension;
 
 annotation(__OpenModelica_Interface="frontend");

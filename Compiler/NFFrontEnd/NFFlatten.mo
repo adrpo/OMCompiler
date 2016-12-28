@@ -48,6 +48,7 @@ import NFInstNode.InstNode;
 import NFMod.Modifier;
 import NFPrefix.Prefix;
 import NFStatement.Statement;
+import NFType.Type;
 
 import ComponentReference;
 import DAE;
@@ -59,6 +60,7 @@ import SCode;
 import System;
 import Util;
 import ElementSource;
+import DAEExpression = Expression;
 
 protected
 import DAEUtil;
@@ -133,7 +135,7 @@ algorithm
   _ := match c
     case Component.TYPED_COMPONENT()
       algorithm
-        ty := Component.getType(c);
+        ty := Type.toDAEType(Component.getType(c));
         new_pre := Prefix.add(InstNode.name(component), {}, ty, prefix);
 
         elements := match ty
@@ -164,7 +166,6 @@ protected
   DAE.Dimension dim;
   list<DAE.Dimension> rest_dims;
   Prefix sub_pre;
-  Option<DAE.Exp> oe;
   DAE.Exp e;
   Integer i;
 algorithm
@@ -262,7 +263,7 @@ algorithm
               cref := Prefix.toCref(prefix);
               binding_exp := flattenBinding(component.binding, prefix);
               attr := component.attributes;
-              var_attr := makeVarAttributes(i.attributes, component.ty);
+              var_attr := makeVarAttributes(i.attributes, Type.toDAEType(component.ty));
 
               var := DAE.VAR(
                 cref,
@@ -270,7 +271,7 @@ algorithm
                 attr.direction,
                 DAE.NON_PARALLEL(),
                 attr.visibility,
-                component.ty,
+                Type.toDAEType(component.ty),
                 binding_exp,
                 {},
                 attr.connectorType,
@@ -314,7 +315,7 @@ algorithm
         else
           //subs := List.lastN(List.flatten(Prefix.allSubscripts(prefix)), binding.propagatedDims);
           subs := {};
-          bindingExp := SOME(Expression.toDAEExp(Expression.applyExpSubscripts(binding.bindingExp, subs)));
+          bindingExp := SOME(DAEExpression.applyExpSubscripts(Expression.toDAEExp(binding.bindingExp), subs));
         end if;
       then
         bindingExp;
@@ -333,6 +334,7 @@ function flattenEquation
   input output list<DAE.Element> elements = {};
 protected
   list<DAE.Element> els = {}, els1, els2;
+  Expression ee;
   DAE.Exp e;
   Option<DAE.Exp> oe;
   list<DAE.Exp> range;
@@ -358,20 +360,20 @@ algorithm
         els1 := List.flatten(List.map1(eq.body, flattenEquation, {}));
         // deal with the range
         if isSome(eq.range) then
-          SOME(e) := eq.range;
-          SOME(e) := DAEUtil.evaluateExp(e, elements);
+          SOME(ee) := eq.range;
+          SOME(e) := DAEUtil.evaluateExp(Expression.toDAEExp(ee), elements);
           range := match (e)
                     case DAE.ARRAY(array = range) then range;
                     case DAE.RANGE(_, DAE.ICONST(is), SOME(DAE.ICONST(step)), DAE.ICONST(ie))
-                      then List.map(ExpressionSimplify.simplifyRange(is, step, ie), Expression.makeIntegerExp);
+                      then List.map(ExpressionSimplify.simplifyRange(is, step, ie), DAEExpression.makeIntegerExp);
                     case DAE.RANGE(_, DAE.ICONST(is), _, DAE.ICONST(ie))
                       then if is <= ie
-                           then List.map(ExpressionSimplify.simplifyRange(is, 1, ie), Expression.makeIntegerExp)
-                           else List.map(ExpressionSimplify.simplifyRange(is, -1, ie), Expression.makeIntegerExp);
+                           then List.map(ExpressionSimplify.simplifyRange(is, 1, ie), DAEExpression.makeIntegerExp)
+                           else List.map(ExpressionSimplify.simplifyRange(is, -1, ie), DAEExpression.makeIntegerExp);
                   end match;
           // replace index in elements
           for i in range loop
-            els := DAEUtil.replaceCrefInDAEElements(els1, DAE.CREF_IDENT(eq.name, eq.indexType, {}), i);
+            els := DAEUtil.replaceCrefInDAEElements(els1, DAE.CREF_IDENT(eq.name, Type.toDAEType(eq.indexType), {}), i);
             elements := listAppend(els, elements);
           end for;
         end if;
@@ -384,19 +386,30 @@ algorithm
 
     case Equation.ASSERT()
       then
-        DAE.ASSERT(eq.condition, eq.message, eq.level, ElementSource.createElementSource(eq.info)) :: elements;
+        DAE.ASSERT(
+          Expression.toDAEExp(eq.condition),
+          Expression.toDAEExp(eq.message),
+          Expression.toDAEExp(eq.level),
+          ElementSource.createElementSource(eq.info)) :: elements;
 
     case Equation.TERMINATE()
       then
-        DAE.TERMINATE(eq.message, ElementSource.createElementSource(eq.info)) :: elements;
+        DAE.TERMINATE(
+          Expression.toDAEExp(eq.message),
+          ElementSource.createElementSource(eq.info)) :: elements;
 
     case Equation.REINIT()
       then
-        DAE.REINIT(eq.cref, eq.reinitExp, ElementSource.createElementSource(eq.info)) :: elements;
+        DAE.REINIT(
+          DAEExpression.expCref(Expression.toDAEExp(eq.cref)),
+          Expression.toDAEExp(eq.reinitExp),
+          ElementSource.createElementSource(eq.info)) :: elements;
 
     case Equation.NORETCALL()
       then
-        DAE.NORETCALL(eq.exp, ElementSource.createElementSource(eq.info)) :: elements;
+        DAE.NORETCALL(
+          Expression.toDAEExp(eq.exp),
+          ElementSource.createElementSource(eq.info)) :: elements;
 
     case Equation.CONNECT()
       algorithm
@@ -483,14 +496,14 @@ algorithm
 end flattenIfEquation;
 
 function flattenWhenEquation
-  input list<tuple<DAE.Exp, list<Equation>>> whenBranches;
+  input list<tuple<Expression, list<Equation>>> whenBranches;
   input SourceInfo info;
   output DAE.Element whenEquation;
 protected
-  DAE.Exp cond1,cond2;
+  Expression cond1, cond2;
   list<DAE.Element> els1, els2;
-  tuple<DAE.Exp, list<Equation>> head;
-  list<tuple<DAE.Exp, list<Equation>>> rest;
+  tuple<Expression, list<Equation>> head;
+  list<tuple<Expression, list<Equation>>> rest;
   Option<DAE.Element> owhenEquation = NONE();
 algorithm
 
@@ -502,11 +515,11 @@ algorithm
   for b in rest loop
     cond2 := Util.tuple21(b);
     els2 := flattenEquations(Util.tuple22(b));
-    whenEquation := DAE.WHEN_EQUATION(cond2, els2, owhenEquation, ElementSource.createElementSource(info));
+    whenEquation := DAE.WHEN_EQUATION(Expression.toDAEExp(cond2), els2, owhenEquation, ElementSource.createElementSource(info));
     owhenEquation := SOME(whenEquation);
   end for;
 
-  whenEquation := DAE.WHEN_EQUATION(cond1, els1, owhenEquation, ElementSource.createElementSource(info));
+  whenEquation := DAE.WHEN_EQUATION(Expression.toDAEExp(cond1), els1, owhenEquation, ElementSource.createElementSource(info));
 
 end flattenWhenEquation;
 
@@ -517,6 +530,7 @@ function flattenStatement
   input output list<DAE.Statement> stmts = {};
 protected
   list<DAE.Statement> sts;
+  Expression ee;
   DAE.Exp e;
   Option<DAE.Exp> oe;
   list<DAE.Exp> range;
@@ -529,27 +543,28 @@ algorithm
 
     case Statement.ASSIGNMENT()
       algorithm
-        lhs := ExpressionSimplify.simplify(alg.lhs);
-        rhs := ExpressionSimplify.simplify(alg.rhs);
-        ty := Expression.typeof(lhs);
+        lhs := ExpressionSimplify.simplify(Expression.toDAEExp(alg.lhs));
+        rhs := ExpressionSimplify.simplify(Expression.toDAEExp(alg.rhs));
+        ty := DAEExpression.typeof(lhs);
       then
         DAE.STMT_ASSIGN(ty, lhs, rhs, ElementSource.createElementSource(alg.info)) :: stmts;
 
     case Statement.FUNCTION_ARRAY_INIT()
       then
-        DAE.STMT_ARRAY_INIT(alg.name, alg.ty, ElementSource.createElementSource(alg.info)) :: stmts;
+        DAE.STMT_ARRAY_INIT(alg.name, Type.toDAEType(alg.ty), ElementSource.createElementSource(alg.info)) :: stmts;
 
     case Statement.FOR()
       algorithm
         // flatten the list of statements
         sts := flattenStatements(alg.body);
         if isSome(alg.range) then
-          SOME(e) := alg.range;
+          SOME(ee) := alg.range;
+          e := Expression.toDAEExp(ee);
         else
           e := DAE.SCONST("NO RANGE GIVEN TODO FIXME");
         end if;
       then
-        DAE.STMT_FOR(alg.indexType, false, alg.name, alg.index, e, sts, ElementSource.createElementSource(alg.info)) :: stmts;
+        DAE.STMT_FOR(Type.toDAEType(alg.indexType), false, alg.name, alg.index, e, sts, ElementSource.createElementSource(alg.info)) :: stmts;
 
     case Statement.IF()
       then flattenIfStatement(alg.branches, alg.info) :: stmts;
@@ -560,29 +575,40 @@ algorithm
 
     case Statement.ASSERT()
       then
-        DAE.STMT_ASSERT(alg.condition, alg.message, alg.level, ElementSource.createElementSource(alg.info)) :: stmts;
+        DAE.STMT_ASSERT(
+          Expression.toDAEExp(alg.condition),
+          Expression.toDAEExp(alg.message),
+          Expression.toDAEExp(alg.level),
+          ElementSource.createElementSource(alg.info)) :: stmts;
 
     case Statement.TERMINATE()
       then
-        DAE.STMT_TERMINATE(alg.message, ElementSource.createElementSource(alg.info)) :: stmts;
+        DAE.STMT_TERMINATE(
+          Expression.toDAEExp(alg.message),
+          ElementSource.createElementSource(alg.info)) :: stmts;
 
     case Statement.REINIT()
       then
         DAE.STMT_REINIT(
-          Expression.makeCrefExp(alg.cref, ComponentReference.crefType(alg.cref)),
-          alg.reinitExp,
+          Expression.toDAEExp(alg.cref),
+          Expression.toDAEExp(alg.reinitExp),
           ElementSource.createElementSource(alg.info)) :: stmts;
 
     case Statement.NORETCALL()
       then
-        DAE.STMT_NORETCALL(alg.exp, ElementSource.createElementSource(alg.info)) :: stmts;
+        DAE.STMT_NORETCALL(
+          Expression.toDAEExp(alg.exp),
+          ElementSource.createElementSource(alg.info)) :: stmts;
 
     case Statement.WHILE()
       algorithm
         // flatten the list of statements
         sts := flattenStatements(alg.body);
       then
-        DAE.STMT_WHILE(alg.condition, sts, ElementSource.createElementSource(alg.info)) :: stmts;
+        DAE.STMT_WHILE(
+          Expression.toDAEExp(alg.condition),
+          sts,
+          ElementSource.createElementSource(alg.info)) :: stmts;
 
     case Statement.RETURN()
       then
@@ -645,14 +671,14 @@ algorithm
 end flattenInitialAlgorithms;
 
 function flattenIfStatement
-  input list<tuple<DAE.Exp, list<Statement>>> ifBranches;
+  input list<tuple<Expression, list<Statement>>> ifBranches;
   input SourceInfo info;
   output DAE.Statement ifStatement;
 protected
-  DAE.Exp cond1,cond2;
+  Expression cond1,cond2;
   list<DAE.Statement> stmts1, stmts2;
-  tuple<DAE.Exp, list<Statement>> head;
-  list<tuple<DAE.Exp, list<Statement>>> rest;
+  tuple<Expression, list<Statement>> head;
+  list<tuple<Expression, list<Statement>>> rest;
   DAE.Else elseStatement = DAE.NOELSE();
 algorithm
 
@@ -664,22 +690,22 @@ algorithm
   for b in rest loop
     cond2 := Util.tuple21(b);
     stmts2 := flattenStatements(Util.tuple22(b));
-    elseStatement := DAE.ELSEIF(cond2, stmts2, elseStatement);
+    elseStatement := DAE.ELSEIF(Expression.toDAEExp(cond2), stmts2, elseStatement);
   end for;
 
-  ifStatement := DAE.STMT_IF(cond1, stmts1,  elseStatement, ElementSource.createElementSource(info));
+  ifStatement := DAE.STMT_IF(Expression.toDAEExp(cond1), stmts1,  elseStatement, ElementSource.createElementSource(info));
 
 end flattenIfStatement;
 
 function flattenWhenStatement
-  input list<tuple<DAE.Exp, list<Statement>>> whenBranches;
+  input list<tuple<Expression, list<Statement>>> whenBranches;
   input SourceInfo info;
   output DAE.Statement whenStatement;
 protected
-  DAE.Exp cond1,cond2;
+  Expression cond1, cond2;
   list<DAE.Statement> stmts1, stmts2;
-  tuple<DAE.Exp, list<Statement>> head;
-  list<tuple<DAE.Exp, list<Statement>>> rest;
+  tuple<Expression, list<Statement>> head;
+  list<tuple<Expression, list<Statement>>> rest;
   Option<DAE.Statement> owhenStatement = NONE();
 algorithm
 
@@ -691,11 +717,11 @@ algorithm
   for b in rest loop
     cond2 := Util.tuple21(b);
     stmts2 := flattenStatements(Util.tuple22(b));
-    whenStatement := DAE.STMT_WHEN(cond2, {}, false, stmts2, owhenStatement, ElementSource.createElementSource(info));
+    whenStatement := DAE.STMT_WHEN(Expression.toDAEExp(cond2), {}, false, stmts2, owhenStatement, ElementSource.createElementSource(info));
     owhenStatement := SOME(whenStatement);
   end for;
 
-  whenStatement := DAE.STMT_WHEN(cond1, {}, false, stmts1, owhenStatement, ElementSource.createElementSource(info));
+  whenStatement := DAE.STMT_WHEN(Expression.toDAEExp(cond1), {}, false, stmts1, owhenStatement, ElementSource.createElementSource(info));
 
 end flattenWhenStatement;
 

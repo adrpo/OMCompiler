@@ -40,6 +40,7 @@ encapsulated package NFTypeCheck
 
 import DAE;
 import NFDimension.Dimension;
+import NFDimension.Dimensions;
 import NFExpression.Expression;
 import NFType.Type;
 
@@ -422,7 +423,6 @@ function checkLogicalBinaryOperation
 protected
   Expression e1, e2;
   DAE.Operator op;
-  TypeSource ty_src;
   String e1_str, e2_str, ty1_str, ty2_str, msg_str, op_str, s1, s2;
 algorithm
   try
@@ -433,14 +433,14 @@ algorithm
     // allowed or not on scalars of type Integers/Reals.
     // It says no for arrays of Integer/Real type.
     (e1, e2, ty, true) := checkTypeCompat(exp1, type1, exp2, type2);
-    op := DAEExpression.setOpType(operator, ty);
+    op := DAEExpression.setOpType(operator, Type.toDAEType(ty));
 
     exp := Expression.LBINARY(e1, op, e2);
   else
     e1_str := Expression.toString(exp1);
     e2_str := Expression.toString(exp2);
-    ty1_str := Types.unparseTypeNoAttr(type1);
-    ty2_str := Types.unparseTypeNoAttr(type2);
+    ty1_str := Type.toString(type1);
+    ty2_str := Type.toString(type2);
     op_str := DAEDump.dumpOperatorString(operator);
 
     // Check if we have relational operations involving array types.
@@ -466,19 +466,18 @@ public function checkLogicalUnaryOperation
 protected
   Expression e1;
   DAE.Operator op;
-  TypeSource ty_src;
   String e1_str, ty1_str, msg_str, op_str, s1;
 algorithm
   try
     true := Type.isBoolean(type1);
     // Logical unary operations here are allowed only on Booleans.
     ty := type1;
-    op := DAEExpression.setOpType(operator, ty);
+    op := DAEExpression.setOpType(operator, Type.toDAEType(ty));
     exp := Expression.LUNARY(op, exp1);
 
   else
     e1_str := Expression.toString(exp1);
-    ty1_str := Types.unparseTypeNoAttr(type1);
+    ty1_str := Type.toString(type1);
     op_str := DAEDump.dumpOperatorString(operator);
 
     // Just for proper error messages.
@@ -506,29 +505,27 @@ public function checkRelationOperation
 protected
   Expression e1, e2;
   DAE.Operator op;
-  TypeSource ty_src;
   String e1_str, e2_str, ty1_str, ty2_str, msg_str, op_str, s1, s2;
 algorithm
   try
-    true := Types.isSimpleType(type1) and Types.isSimpleType(type2);
+    true := Type.isSimple(type1) and Type.isSimple(type2);
 
     // Check types match/can be converted to match.
     (e1, e2, ty, true) := checkTypeCompat(exp1, type1, exp2, type2);
-    ty_src := Types.getTypeSource(ty);
-    ty := DAE.T_BOOL({}, ty_src);
-    op := DAEExpression.setOpType(operator, ty);
+    ty := Type.BOOLEAN();
+    op := DAEExpression.setOpType(operator, Type.toDAEType(ty));
 
     exp := Expression.RELATION(e1, op, e2);
   else
     e1_str := Expression.toString(exp1);
     e2_str := Expression.toString(exp2);
-    ty1_str := Types.unparseTypeNoAttr(type1);
-    ty2_str := Types.unparseTypeNoAttr(type2);
+    ty1_str := Type.toString(type1);
+    ty2_str := Type.toString(type2);
     op_str := DAEDump.dumpOperatorString(operator);
 
     // Check if we have relational operations involving array types.
     // Just for proper error messages.
-    msg_str := if Types.arrayType(type1) or Types.arrayType(type2) then
+    msg_str := if Type.isArray(type1) or Type.isArray(type2) then
       "\n: Relational operations involving array types are not valid in Modelica." else ty1_str;
 
     s1 := "' " + e1_str + op_str + e2_str + " '";
@@ -554,14 +551,13 @@ public function checkBinaryOperation
 protected
   Expression e1, e2;
   DAE.Operator op;
-  TypeSource ty_src;
   String e1_str, e2_str, ty1_str, ty2_str, s1, s2;
 algorithm
   // All operators expect Numeric types except Addition.
   true := checkValidNumericTypesForOp(type1, type2, operator, true);
 
   try
-    if Types.isSimpleType(type1) and Types.isSimpleType(type2) then
+    if Type.isSimple(type1) and Type.isSimple(type2) then
       // Binary expression with expression of simple type.
 
       (e1, e2, binaryType) := match operator
@@ -590,10 +586,8 @@ algorithm
         case DAE.DIV()
           algorithm
             (e1, e2, binaryType, true) := checkTypeCompat(exp1, type1, exp2, type2);
-
-            ty_src := Types.getTypeSource(type1);
           then
-            (e1, e2, DAE.T_REAL({}, ty_src));
+            (e1, e2, Type.REAL());
 
         // Check exponentiations.
         // They result in T_REAL regardless of the operand types.
@@ -605,14 +599,12 @@ algorithm
             //(e1, binaryType) := Types.matchType(exp1, type1, DAE.T_REAL_DEFAULT, true);
             //(e2, _) := Types.matchType(exp2, type2, DAE.T_REAL_DEFAULT, true);
             (e1, e2, binaryType, true) := checkTypeCompat(exp1, type1, exp2, type2);
-
-            ty_src := Types.getTypeSource(type1);
           then
-            (e1, e2, DAE.T_REAL({}, ty_src));
+            (e1, e2, Type.REAL());
 
       end match;
 
-      op := DAEExpression.setOpType(operator, binaryType);
+      op := DAEExpression.setOpType(operator, Type.toDAEType(binaryType));
       binaryExp := Expression.BINARY(e1, op, e2);
     else
       // Binary expression with expressions of array type.
@@ -621,8 +613,8 @@ algorithm
   else
     e1_str := Expression.toString(exp1);
     e2_str := Expression.toString(exp2);
-    ty1_str := Types.unparseTypeNoAttr(type1);
-    ty2_str := Types.unparseTypeNoAttr(type2);
+    ty1_str := Type.toString(type1);
+    ty2_str := Type.toString(type2);
     s1 := "' " + e1_str + DAEDump.dumpOperatorSymbol(operator) + e2_str + " '";
     s2 := "' " + ty1_str + DAEDump.dumpOperatorSymbol(operator) + ty2_str + " '";
     Error.addSourceMessage(Error.UNRESOLVABLE_TYPE, {s1, s2, ty1_str}, Absyn.dummyInfo);
@@ -641,22 +633,21 @@ public function checkUnaryOperation
   output Type unaryType;
 protected
   DAE.Operator op;
-  TypeSource ty_src;
   String e1_str, ty1_str, s1;
 algorithm
   try
     // Arithmetic type expected for Unary operators, i.e., UMINUS, UMINUS_ARR;  UPLUS removed
-    true := Types.isNumericType(type1);
+    true := Type.isNumeric(type1);
 
     unaryType := type1;
-    op := DAEExpression.setOpType(operator, unaryType);
+    op := DAEExpression.setOpType(operator, Type.toDAEType(unaryType));
     unaryExp := match op
               case DAE.ADD() then exp1; // If UNARY +, +exp1, remove it since no unary DAE.ADD
               else Expression.UNARY(op, exp1);
             end match;
   else
     e1_str := Expression.toString(exp1);
-    ty1_str := Types.unparseTypeNoAttr(type1);
+    ty1_str := Type.toString(type1);
     s1 := "' " + e1_str + DAEDump.dumpOperatorSymbol(operator) + " '" +
        " Arithmetic type expected for this unary operator ";
     Error.addSourceMessage(Error.UNRESOLVABLE_TYPE, {s1, ty1_str}, Absyn.dummyInfo);
@@ -691,16 +682,15 @@ algorithm
     local
       Expression exp1,exp2;
       Type ty1,ty2, arrtp, ty;
-      DAE.Dimensions dims;
-      DAE.Dimension M,N1,N2,K;
+      Dimensions dims;
+      Dimension M,N1,N2,K;
       DAE.Operator newop;
-      TypeSource typsrc;
 
     case DAE.ADD()
       algorithm
         if (bothArrays) then
-          (exp1,exp2,outType, true) := checkTypeCompat(inExp1,inType1,inExp2,inType2);
-          outExp := Expression.BINARY(exp1, DAE.ADD(outType), exp2);
+          (exp1, exp2, outType, true) := checkTypeCompat(inExp1,inType1,inExp2,inType2);
+          outExp := Expression.BINARY(exp1, DAE.ADD(Type.toDAEType(outType)), exp2);
         else
           binaryArrayOpError(inExp1,inType1,inExp2,inType2,inOp,
             "\n: Addition operations involving an array and a scalar are " +
@@ -713,8 +703,8 @@ algorithm
     case DAE.SUB()
       algorithm
         if (bothArrays) then
-          (exp1,exp2,outType, true) := checkTypeCompat(inExp1,inType1,inExp2,inType2);
-          outExp := Expression.BINARY(exp1, DAE.SUB(outType), exp2);
+          (exp1, exp2, outType, true) := checkTypeCompat(inExp1,inType1,inExp2,inType2);
+          outExp := Expression.BINARY(exp1, DAE.SUB(Type.toDAEType(outType)), exp2);
         else
           binaryArrayOpError(inExp1,inType1,inExp2,inType2,inOp,
             "\n: Subtraction operations involving an array and a scalar are " +
@@ -730,16 +720,15 @@ algorithm
           dims := Type.arrayDims(inType1);
           arrtp := Type.liftArrayLeftList(inType2,dims);
 
-          (exp1,exp2,ty1, true) := checkTypeCompat(inExp1,inType1,inExp2,arrtp);
+          (exp1, exp2, ty1, true) := checkTypeCompat(inExp1,inType1,inExp2,arrtp);
 
           // Create a scalar Real Type and lift it to array.
           // Necessary because even if both operands are of Integer type the result
           // should be Real type with dimensions of the input array operand.
-          typsrc := Types.getTypeSource(ty1);
-          ty := DAE.T_REAL({},typsrc);
+          ty := Type.REAL();
 
-          outType := Type.liftArrayLeftList(ty,dims);
-          outExp := Expression.BINARY(exp1, DAE.DIV_ARRAY_SCALAR(outType), exp2);
+          outType := Type.liftArrayLeftList(ty, dims);
+          outExp := Expression.BINARY(exp1, DAE.DIV_ARRAY_SCALAR(Type.toDAEType(outType)), exp2);
         else
           binaryArrayOpError(inExp1,inType1,inExp2,inType2,inOp,
             "\n: Dividing a sclar by array or array by array is not a valid " +
@@ -752,8 +741,8 @@ algorithm
     case DAE.POW()
       algorithm
         if (nrDims1 == 2 and not isArray2) then
-          M := Types.getDimensionNth(inType1, 1);
-          K := Types.getDimensionNth(inType1, 2);
+          M := Type.getDimensionNth(inType1, 1);
+          K := Type.getDimensionNth(inType1, 2);
           // Check if dims are equal. i.e Square Matrix
           if not(isValidMatrixMultiplyDims(M, K)) then
             binaryArrayOpError(inExp1,inType1,inExp2,inType2,inOp,
@@ -763,7 +752,7 @@ algorithm
           end if;
 
           try
-            DAE.T_INTEGER(_,_) := inType2;
+            Type.INTEGER() := inType2;
           else
             binaryArrayOpError(inExp1,inType1,inExp2,inType2,inOp,
               "\n: Exponentiation involving arrays is only valid for square " +
@@ -772,7 +761,7 @@ algorithm
           end try;
 
           outType := inType1;
-          outExp := Expression.BINARY(inExp1, DAE.POW_ARRAY_SCALAR(inType1), inExp2);
+          outExp := Expression.BINARY(inExp1, DAE.POW_ARRAY_SCALAR(Type.toDAEType(inType1)), inExp2);
         else
           binaryArrayOpError(inExp1,inType1,inExp2,inType2,inOp,
             "\n: Exponentiation involving arrays is only valid for square " +
@@ -793,10 +782,10 @@ algorithm
           ty1 := Type.elementType(inType1);
           ty2 := Type.elementType(inType2);
           // TODO: one of the exps is array but its type is now simple.
-          (exp1,exp2,ty, true) := checkTypeCompat(inExp1,ty1,inExp2,ty2);
+          (exp1, exp2, ty, true) := checkTypeCompat(inExp1,ty1,inExp2,ty2);
 
           outType := Type.liftArrayLeftList(ty,dims);
-          outExp := Expression.BINARY(exp1, DAE.MUL_ARRAY_SCALAR(outType), exp2);
+          outExp := Expression.BINARY(exp1, DAE.MUL_ARRAY_SCALAR(Type.toDAEType(outType)), exp2);
 
         elseif (nrDims1 == 1 and nrDims2 == 1) then
           {N1} := Type.arrayDims(inType1);
@@ -806,9 +795,9 @@ algorithm
             "\n: Dimensions not equal for scalar product.");
             fail();
           else
-            (exp1,exp2,ty, true) := checkTypeCompat(inExp1,inType1,inExp2,inType2);
+            (exp1, exp2, ty, true) := checkTypeCompat(inExp1,inType1,inExp2,inType2);
             outType := Type.elementType(ty);
-            outExp := Expression.BINARY(exp1, DAE.MUL_SCALAR_PRODUCT(outType), exp2);
+            outExp := Expression.BINARY(exp1, DAE.MUL_SCALAR_PRODUCT(Type.toDAEType(outType)), exp2);
           end if;
 
         elseif (nrDims1 == 2 and nrDims2 == 1) then
@@ -822,9 +811,9 @@ algorithm
             ty1 := Type.elementType(inType1);
             ty2 := Type.elementType(inType2);
             // TODO: the exps are arrays but the types are now simple.
-            (exp1,exp2,ty, true) := checkTypeCompat(inExp1,ty1,inExp2,ty2);
+            (exp1, exp2, ty, true) := checkTypeCompat(inExp1,ty1,inExp2,ty2);
             outType := Type.liftArrayLeftList(ty, {M});
-            outExp := Expression.BINARY(exp1, DAE.MUL_MATRIX_PRODUCT(outType), exp2);
+            outExp := Expression.BINARY(exp1, DAE.MUL_MATRIX_PRODUCT(Type.toDAEType(outType)), exp2);
           end if;
 
         elseif (nrDims1 == 1 and nrDims2 == 2) then
@@ -839,9 +828,9 @@ algorithm
             ty1 := Type.elementType(inType1);
             ty2 := Type.elementType(inType2);
             // TODO: the exps are arrays but the types are now simple.
-            (exp1,exp2,ty, true) := checkTypeCompat(inExp1,ty1,inExp2,ty2);
+            (exp1, exp2, ty, true) := checkTypeCompat(inExp1,ty1,inExp2,ty2);
             outType := Type.liftArrayLeftList(ty, {M});
-            outExp := Expression.BINARY(exp1, DAE.MUL_MATRIX_PRODUCT(outType), exp2);
+            outExp := Expression.BINARY(exp1, DAE.MUL_MATRIX_PRODUCT(Type.toDAEType(outType)), exp2);
           end if;
 
         elseif (nrDims1 == 2 and nrDims2 == 2) then
@@ -856,9 +845,9 @@ algorithm
             ty1 := Type.elementType(inType1);
             ty2 := Type.elementType(inType2);
             // TODO: the exps are arrays but the types are now simple.
-            (exp1,exp2,ty, true) := checkTypeCompat(inExp1,ty1,inExp2,ty2);
+            (exp1, exp2, ty, true) := checkTypeCompat(inExp1,ty1,inExp2,ty2);
             outType := Type.liftArrayLeftList(ty, {M,K});
-            outExp := Expression.BINARY(exp1, DAE.MUL_MATRIX_PRODUCT(outType), exp2);
+            outExp := Expression.BINARY(exp1, DAE.MUL_MATRIX_PRODUCT(Type.toDAEType(outType)), exp2);
           end if;
 
         else
@@ -871,8 +860,8 @@ algorithm
 
     case _ guard isOpBinaryElemWise(inOp)
       algorithm
-        (exp1,exp2,outType, true) := checkTypeCompat(inExp1,inType1,inExp2,inType2);
-        newop := DAEExpression.setOpType(inOp, outType);
+        (exp1, exp2, outType, true) := checkTypeCompat(inExp1,inType1,inExp2,inType2);
+        newop := DAEExpression.setOpType(inOp, Type.toDAEType(outType));
         outExp := Expression.BINARY(exp1, newop, exp2);
       then
         (outExp, outType);
@@ -1417,10 +1406,10 @@ algorithm
 
   // Check if the types are different kinds of types.
   if valueConstructor(type1) <> valueConstructor(type2) then
-    if Types.extendsBasicType(type1) or Types.extendsBasicType(type2) then
+    if Type.extendsBasicType(type1) or Type.extendsBasicType(type2) then
       // If either type extends a basic type, check the basic type instead.
-      ty1 := Types.derivedBasicType(type1);
-      ty2 := Types.derivedBasicType(type2);
+      ty1 := Type.derivedBasicType(type1);
+      ty2 := Type.derivedBasicType(type2);
       (exp1, exp2, compatType, compatible) :=
         checkTypeCompat(exp1, ty1, exp2, ty2);
     else
@@ -1438,7 +1427,7 @@ algorithm
   // (which is a lot more efficient than matching both).
   compatType := match(type1)
     local
-      list<DAE.Dimension> dims1, dims2;
+      list<Dimension> dims1, dims2;
       Type ety1, ety2, ty;
       list<String> names;
       list<DAE.Var> vars;
@@ -1448,47 +1437,48 @@ algorithm
       Absyn.Path p1, p2;
 
     // Basic types, must be the same.
-    case DAE.T_INTEGER() then DAE.T_INTEGER_DEFAULT;
-    case DAE.T_REAL() then DAE.T_REAL_DEFAULT;
-    case DAE.T_STRING() then DAE.T_STRING_DEFAULT;
-    case DAE.T_BOOL() then DAE.T_BOOL_DEFAULT;
-    case DAE.T_CLOCK() then DAE.T_CLOCK_DEFAULT;
+    case Type.INTEGER() then Type.INTEGER();
+    case Type.REAL() then Type.REAL();
+    case Type.STRING() then Type.STRING();
+    case Type.BOOLEAN() then Type.BOOLEAN();
+    case Type.CLOCK() then Type.CLOCK();
 
+    /*
     case DAE.T_SUBTYPE_BASIC()
       algorithm
         DAE.T_SUBTYPE_BASIC(complexType = ty) := type2;
         (exp1, exp2, compatType, compatible) :=
           checkTypeCompat(exp1, type1.complexType, exp2, ty);
       then
-        compatType;
+        compatType;*/
 
     // Enumerations, check that they have same literals.
-    case DAE.T_ENUMERATION()
+    case Type.ENUMERATION()
       algorithm
-        DAE.T_ENUMERATION(names = names) := type2;
-        compatible := List.isEqualOnTrue(type1.names, names, stringEq);
+        Type.ENUMERATION() := type2;
+        // compatible := List.isEqualOnTrue(type1.names, names, stringEq);
       then
         type1;
 
     // Arrays, must have compatible element types and dimensions.
-    case DAE.T_ARRAY()
+    case Type.ARRAY()
       algorithm
         // Check that the element types are compatible.
-        ety1 := Types.arrayElementType(type1);
-        ety2 := Types.arrayElementType(type2);
+        ety1 := Type.arrayElementType(type1);
+        ety2 := Type.arrayElementType(type2);
         (exp1, exp2, compatType, compatible) :=
           checkTypeCompat(exp1, ety1, exp2, ety2);
 
         // If the element types are compatible, check the dimensions too.
         if compatible then
-          dims1 := Types.getDimensions(type1);
-          dims2 := Types.getDimensions(type2);
+          dims1 := Type.getDimensions(type1);
+          dims2 := Type.getDimensions(type2);
 
           // The arrays must have the same number of dimensions.
           if listLength(dims1) == listLength(dims2) then
-            dims1 := list(if DAEExpression.dimensionsKnownAndEqual(dim1, dim2) then
-              dim1 else DAE.DIM_UNKNOWN() threaded for dim1 in dims1, dim2 in dims2);
-            compatType := Types.liftArrayListDims(compatType, dims1);
+            dims1 := list(if Dimension.dimensionsKnownAndEqual(dim1, dim2) then
+              dim1 else Dimension.WHOLE() threaded for dim1 in dims1, dim2 in dims2);
+            compatType := Type.liftArrayListDims(compatType, dims1);
           else
             compatible := false;
           end if;
@@ -1497,38 +1487,41 @@ algorithm
         compatType;
 
     // Records, must have the same components.
-    case DAE.T_COMPLEX(complexClassType = ClassInf.RECORD())
+    case Type.COMPLEX()
       algorithm
-        DAE.T_COMPLEX(varLst = vars) := type2;
+        Type.COMPLEX() := type2;
         // TODO: Implement type casting for records with the same components but
         // in different order.
-        compatible := List.isEqualOnTrue(type1.varLst, vars, Types.varEqualName);
+        // compatible := List.isEqualOnTrue(type1.varLst, vars, Types.varEqualName);
       then
         type1;
 
-    case DAE.T_FUNCTION()
+    case Type.FUNCTION()
       algorithm
-        DAE.T_FUNCTION(funcResultType = ty, funcArg = args) := type2;
+        Type.FUNCTION(resultType = ty) := type2;
         (exp1, exp2, compatType, compatible) :=
-          checkTypeCompat(exp1, type1.funcResultType, exp2, ty);
+          checkTypeCompat(exp1, type1.resultType, exp2, ty);
 
+        /*
         if compatible then
           tys := list(Types.funcArgType(arg) for arg in type1.funcArg);
           tys2 := list(Types.funcArgType(arg) for arg in args);
           (_, compatible) := checkTypeCompatList(exp1, tys, exp2, tys2);
         end if;
+        */
       then
         type1;
 
-    case DAE.T_TUPLE()
+    case Type.TUPLE()
       algorithm
-        DAE.T_TUPLE(types = tys) := type2;
+        Type.TUPLE(types = tys) := type2;
         (tys, compatible) :=
           checkTypeCompatList(exp1, type1.types, exp2, tys);
       then
-        DAE.T_TUPLE(tys, type1.names, type1.source);
+        Type.TUPLE(tys, type1.names);
 
     // MetaModelica types.
+    /*
     case DAE.T_METALIST()
       algorithm
         DAE.T_METALIST(ty = ty) := type2;
@@ -1597,12 +1590,13 @@ algorithm
           checkTypeCompat(exp1, type1.functionType, exp2, ty);
       then
         DAE.T_FUNCTION_REFERENCE_VAR(compatType, type1.source);
+    */
 
     else
       algorithm
         compatible := false;
       then
-        DAE.T_UNKNOWN_DEFAULT;
+        Type.UNKNOWN();
 
   end match;
 end checkTypeCompat;
@@ -1657,37 +1651,37 @@ protected
   Type ty1, ty2;
   Absyn.Path path;
 algorithm
-  ty1 := Types.derivedBasicType(type1);
-  ty2 := Types.derivedBasicType(type2);
+  ty1 := Type.derivedBasicType(type1);
+  ty2 := Type.derivedBasicType(type2);
 
   compatType := match(ty1, ty2)
     // Real <-> Integer
-    case (DAE.T_REAL(), DAE.T_INTEGER())
+    case (Type.REAL(), Type.INTEGER())
       algorithm
-        exp2 := Expression.typeCastElements(exp2, DAE.T_REAL_DEFAULT);
+        exp2 := Expression.typeCastElements(exp2, Type.REAL());
       then
-        DAE.T_REAL_DEFAULT;
+        Type.REAL();
 
-    case (DAE.T_INTEGER(), DAE.T_REAL())
+    case (Type.INTEGER(), Type.REAL())
       algorithm
-        exp1 := Expression.typeCastElements(exp1, DAE.T_REAL_DEFAULT);
+        exp1 := Expression.typeCastElements(exp1, Type.REAL());
       then
-        DAE.T_REAL_DEFAULT;
+        Type.REAL();
 
     // If one of the expressions is boxed, unbox it.
-    case (DAE.T_METABOXED(), _)
+    case (Type.METABOXED(), _)
       algorithm
         (exp1, exp2, compatType, compatible) :=
           checkTypeCompat(exp1, ty1.ty, exp2, ty2, allowUnknown);
-        exp1 := if Types.isBoxedType(ty2) then exp1 else Expression.UNBOX(exp1, compatType);
+        exp1 := if Type.isBoxedType(ty2) then exp1 else Expression.UNBOX(exp1, compatType);
       then
         ty2;
 
-    case (_, DAE.T_METABOXED())
+    case (_, Type.METABOXED())
       algorithm
         (exp1, exp2, compatType, compatible) :=
           checkTypeCompat(exp1, ty1, exp2, ty2.ty, allowUnknown);
-        exp2 := if Types.isBoxedType(ty1) then exp2 else Expression.UNBOX(exp2, compatType);
+        exp2 := if Type.isBoxedType(ty1) then exp2 else Expression.UNBOX(exp2, compatType);
       then
         ty1;
 
@@ -1695,26 +1689,28 @@ algorithm
     // instead of UNIONTYPE(Absyn.Path), but e.g. a function returning an
     // Absyn.PATH has the type UNIONTYPE(Absyn.PATH). So we'll just pretend that
     // metarecords actually have uniontype type.
-    case (DAE.T_METARECORD(), DAE.T_METAUNIONTYPE(source = {path}))
+    /*
+    case (Type.METARECORD(), Type.METAUNIONTYPE(source = {path}))
       algorithm
         compatible := Absyn.pathEqual(ty1.utPath, path);
       then
         ty2;
 
-    case (DAE.T_METAUNIONTYPE(source = {path}), DAE.T_METARECORD())
+    case (Type.METAUNIONTYPE(source = {path}), Type.T_METARECORD())
       algorithm
         compatible := Absyn.pathEqual(path, ty2.utPath);
       then
         ty1;
+    */
 
     // Allow unknown types in some cases, e.g. () has type T_METALIST(T_UNKNOWN)
-    case (DAE.T_UNKNOWN(), _)
+    case (Type.UNKNOWN(), _)
       algorithm
         compatible := allowUnknown;
       then
         ty2;
 
-    case (_, DAE.T_UNKNOWN())
+    case (_, Type.UNKNOWN())
       algorithm
         compatible := allowUnknown;
       then
@@ -1725,7 +1721,7 @@ algorithm
       algorithm
         compatible := false;
       then
-        DAE.T_UNKNOWN_DEFAULT;
+        Type.UNKNOWN();
 
   end match;
 end checkTypeCompat_cast;
@@ -1854,8 +1850,8 @@ function isValidMatrixMultiplyDims
   @mahge:
   Checks if two dimensions are equal, which is a prerequisite for Matrix/Vector
   multiplication."
-  input DAE.Dimension dim1;
-  input DAE.Dimension dim2;
+  input Dimension dim1;
+  input Dimension dim2;
   output Boolean res;
 algorithm
   res := matchcontinue(dim1, dim2)
@@ -1864,7 +1860,7 @@ algorithm
     // The dimensions are both known and equal.
     case (_, _)
       equation
-        true = DAEExpression.dimensionsKnownAndEqual(dim1, dim2);
+        true = Dimension.dimensionsKnownAndEqual(dim1, dim2);
       then
         true;
     // If checkModel is used we might get unknown dimensions. So use
@@ -1872,13 +1868,13 @@ algorithm
     case (_, _)
       equation
         true = Flags.getConfigBool(Flags.CHECK_MODEL);
-        true = DAEExpression.dimensionsEqual(dim1, dim2);
+        true = Dimension.dimensionsEqual(dim1, dim2);
       then
         true;
     case (_, _)
       equation
         msg = "Dimension mismatch in Vector/Matrix multiplication operation: " +
-              ExpressionDump.dimensionString(dim1) + "x" + ExpressionDump.dimensionString(dim2);
+              Dimension.toString(dim1) + "x" + Dimension.toString(dim2);
         Error.addSourceMessage(Error.COMPILER_ERROR, {msg}, Absyn.dummyInfo);
       then false;
   end matchcontinue;
@@ -1977,9 +1973,9 @@ algorithm
     else
       // TODO: for now let it be unknown. However the expression (end-start)/step + 1 should be the dim expression.
       if stepreal or Type.isReal(inStartTy) or Type.isReal(inEndTy) then
-        outType := Type.ARRAY(Type.REAL(), {Dimension.WHOLE_DIM()});
+        outType := Type.ARRAY(Type.REAL(), {Dimension.WHOLE()});
       else
-        outType := Type.ARRAY(Type.INTEGER(), {Dimension.WHOLE_DIM()});
+        outType := Type.ARRAY(Type.INTEGER(), {Dimension.WHOLE()});
       end if;
     end try;
 
@@ -1993,7 +1989,7 @@ algorithm
     else
       // TODO: for now let it be unknown. However an expression that can deduce the size from the possible true/false
       // combinations should be the dim expression.
-      outType := Type.ARRAY(Type.BOOLEAN(), {Dimension.WHOLE_DIM()});
+      outType := Type.ARRAY(Type.BOOLEAN(), {Dimension.WHOLE()});
     end try;
 
   elseif Type.isEnumeration(inStartTy) and Type.isEnumeration(inEndTy) then
