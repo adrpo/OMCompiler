@@ -121,9 +121,9 @@
 #endif
 #if defined(__x86_64__)
   /* -fPIC needed on x86_64! */
-  #define DEFAULT_LINKER "g++ -shared -Xlinker --export-all-symbols -fPIC"
+  #define DEFAULT_LINKER "g++ -shared -Wl,--unresolved-symbols=ignore-in-shared-libs -Xlinker --export-all-symbols -fPIC"
 #else
-  #define DEFAULT_LINKER "g++ -shared -Xlinker --export-all-symbols"
+  #define DEFAULT_LINKER "g++ -shared -Wl,--unresolved-symbols=ignore-in-shared-libs -Xlinker --export-all-symbols"
 #endif
 
 #define CONFIG_PATH_DELIMITER "/"
